@@ -216,6 +216,21 @@ ${ commonheader("Job Browser", "jobbrowser", user, request) | n,unicode }
     </table>
   </script>
 
+<script type="text/html" id="user-search-autocomp-item">
+  <a>
+    <div>
+      ##<i data-bind="css: icon"></i>
+      <span data-bind="html: $data"></span>
+    </div>
+  </a>
+</script>
+
+<script type="text/html" id="user-search-autocomp-no-match">
+  <div class="no-match">
+    <span>${ _('No match found') }</span>
+  </div>
+</script>
+
   <script type="text/html" id="create-cluster-content">
     <form>
       <fieldset>
@@ -239,8 +254,10 @@ ${ commonheader("Job Browser", "jobbrowser", user, request) | n,unicode }
 
           <span data-bind="visible: jobs.createClusterHasRemoteStorage">
           
-          <input id="userSearchAutocomp" placeholder="${_('Type a username or a group name')}" type="text" data-bind="autocomplete: { source: ['aaaa', 'bbbb'], valueObservable: jobs.clusterCreateRemoteCluster, textInput: jobs.clusterCreateRemoteCluster" class="ui-autocomplete-input" autocomplete="off">
-          
+          ##<input id="userSearchAutocomp" placeholder="${_('Type a username or a group name')}" type="text" data-bind="autocomplete: { source: ['aaaa', 'bbbb'], valueObservable: jobs.clusterCreateRemoteCluster, textInput: jobs.clusterCreateRemoteCluster" class="ui-autocomplete-input" autocomplete="off">
+          <span data-bind="text: jobs.searchInput"></span>
+          <input id="userSearchAutocomp" placeholder="${_('Type a username or a group name')}" type="text" data-bind="autocomplete: { source: ['aaaa', 'bbbb'], itemTemplate: 'user-search-autocomp-item', noMatchTemplate: 'user-search-autocomp-no-match', valueObservable: jobs.searchInput, showSpinner: true, classPrefix: 'hue-', onEnter: handleTypeaheadSelection, appendTo: $('#menu') }, clearable: { value: jobs.searchInput }, textInput: jobs.searchInput" class="ui-autocomplete-input" autocomplete="off" style="width: 460px">
+
             <label for="clusterCreateRemoteCluster">${ _('Compute Cluster') }</label>
             <input id="clusterCreateRemoteCluster" type="text" data-bind="clearable: jobs.clusterCreateRemoteCluster, valueUpdate: 'afterkeydown'">
             <label for="clusterCreateRemoteData">${ _('Data') }</label>
@@ -3113,6 +3130,7 @@ ${ commonheader("Job Browser", "jobbrowser", user, request) | n,unicode }
       self.createClusterAutoPause = ko.observable(false);
       self.createClusterHasRemoteStorage = ko.observable(false);
 
+      self.searchInput = ko.observable('');
       self.clusterCreateRemoteCluster = ko.observable(window.location.hostname);
       self.clusterCreateRemoteData = ko.observable('hdfs-namenode:9820');
       self.clusterCreateRemoteMetadata = ko.observable('thrift://hive:9083');
