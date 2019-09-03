@@ -15,7 +15,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
 import Queue
 import logging
 import socket
@@ -82,6 +81,7 @@ class ConnectionConfig(object):
                use_sasl=False,
                use_ssl=False,
                kerberos_principal="thrift",
+               kerberos_principal_instance=None,
                mechanism='GSSAPI',
                username='hue',
                password='hue',
@@ -129,6 +129,7 @@ class ConnectionConfig(object):
     self.username = username
     self.password = password
     self.kerberos_principal = kerberos_principal
+    self.kerberos_principal_instance = kerberos_principal_instance
     self.ca_certs = ca_certs
     self.keyfile = keyfile
     self.certfile = certfile
@@ -141,7 +142,7 @@ class ConnectionConfig(object):
     self.coordinator_host = coordinator_host
 
   def __str__(self):
-    return ', '.join(map(str, [self.klass, self.host, self.port, self.service_name, self.use_sasl, self.kerberos_principal, self.timeout_seconds,
+    return ', '.join(map(str, [self.klass, self.host, self.port, self.service_name, self.use_sasl, self.kerberos_principal, self.kerberos_principal_instance, self.timeout_seconds,
                                self.mechanism, self.username, self.use_ssl, self.ca_certs, self.keyfile, self.certfile, self.validate, self.transport,
                                self.multiple, self.transport_mode, self.http_url, self.coordinator_host]))
 
@@ -314,8 +315,9 @@ def connect_to_thrift(conf):
   if conf.transport_mode == 'socket' and conf.use_sasl:
     def sasl_factory():
       saslc = sasl.Client()
-      saslc.setAttr("host", str(conf.host))
+      saslc.setAttr("host", str(conf.kerberos_principal_instance))
       saslc.setAttr("service", str(conf.kerberos_principal))
+
       if conf.mechanism == 'PLAIN':
         saslc.setAttr("username", str(conf.username))
         saslc.setAttr("password", str(conf.password)) # Defaults to 'hue' for a non-empty string unless using LDAP

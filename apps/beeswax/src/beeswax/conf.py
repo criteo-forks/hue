@@ -45,6 +45,11 @@ HIVE_SERVER_PORT = Config(
   default=10000,
   type=int)
 
+HIVE_SERVER_CONSUL = Config(
+  key="hive_server_consul",
+  help=_t("HiveServer2 consul  url."),
+  default='')
+
 HIVE_CONF_DIR = Config(
   key='hive_conf_dir',
   help=_t('Hive configuration directory, where hive-site.xml is located.'),
