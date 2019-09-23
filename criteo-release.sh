@@ -15,7 +15,7 @@ sed -i "s/$ORIGINAL_VERSION/$VERSION/g" VERSION
 docker build . -t hue-dev -f tools/docker/dev/Dockerfile
 
 # Build Hue artifact
-docker run --rm -it --volume $PWD:/data --workdir /data --user $(id -u):$(id -g) hue-dev make prod
+docker run --rm --volume $PWD:/data --workdir /data --user $(id -u):$(id -g) hue-dev make prod
 
 # Release to Nexus
 if [ ! -z $MAVEN_PASSWORD ]; then
