@@ -7,8 +7,9 @@ cd $DIR
 VERSION="DUMMY-FOR-CI"
 source VERSION
 ORIGINAL_VERSION=$VERSION
+GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 LAST_COMMIT_ID=$(git rev-parse --short HEAD)
-VERSION=$ORIGINAL_VERSION-criteo-$(date -u +%Y%m%d%H%M%S)-$LAST_COMMIT_ID
+VERSION=$GIT_BRANCH-$(date -u +%Y%m%d%H%M%S)-$LAST_COMMIT_ID
 sed -i "s/$ORIGINAL_VERSION/$VERSION/g" VERSION
 
 # Build release environment Docker image
