@@ -2,7 +2,7 @@
 
 # Welcome to the repository for the Hue Dockerfiles
 
-Availalable on [Docker Hub](https://hub.docker.com/u/gethue/) as well.
+Available on [Docker Hub](https://hub.docker.com/u/gethue/) as well.
 
 [![DockerPulls](https://img.shields.io/docker/pulls/gethue/hue.svg)](https://registry.hub.docker.com/u/gethue/hue/)
 [![DockerStars](https://img.shields.io/docker/stars/gethue/hue.svg)](https://registry.hub.docker.com/u/gethue/hue/)
@@ -10,7 +10,7 @@ Availalable on [Docker Hub](https://hub.docker.com/u/gethue/) as well.
 ## Services
 
 * [Hue](hue)
-
+* [Nginx](nginx)
 
 ## Kubernetes
 

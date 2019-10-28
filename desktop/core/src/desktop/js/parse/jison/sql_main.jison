@@ -149,6 +149,7 @@ NonReservedKeyword
  | '<hive>INPATH'
  | '<hive>INPUTFORMAT'
  | '<hive>JAR'
+ | '<hive>JSONFILE'
  | '<hive>IDXPROPERTIES'
  | '<hive>ITEMS'
  | '<hive>KEY'
@@ -207,6 +208,7 @@ NonReservedKeyword
  | '<hive>TIMESTAMP'
  | '<hive>TINYINT'
  | '<hive>TOUCH'
+ | '<hive>TRANSACTIONAL'
  | '<hive>TRANSACTIONS'
  | '<hive>UNARCHIVE'
  | '<hive>UNIONTYPE'
@@ -351,6 +353,7 @@ NonStartingToken
  | '<hive>INPUTFORMAT'
  | '<hive>ITEMS'
  | '<hive>JAR'
+ | '<hive>JSONFILE'
  | '<hive>KEY'
  | '<hive>KEYS'
  | '<hive>LATERAL'
@@ -416,6 +419,7 @@ NonStartingToken
  | '<hive>TEXTFILE'
  | '<hive>TIMESTAMP' |'<hive>USER'
  | '<hive>TINYINT'
+ | '<hive>TRANSACTIONAL'
  | '<hive>TRANSACTIONS'
  | '<hive>UNIONTYPE'
  | '<hive>USING'
@@ -1101,6 +1105,11 @@ OptionalHiveCascadeOrRestrict
 OptionalHiveTemporary
  :
  | '<hive>TEMPORARY'
+ ;
+
+OptionalHiveTransactional
+ :
+ | '<hive>TRANSACTIONAL'
  ;
 
 OptionalIfExists
@@ -3721,12 +3730,16 @@ SimpleTable_EDIT
 OptionalCorrelationName
  :
  | RegularOrBacktickedIdentifier        -> { alias: $1, location: @1 }
+ | QuotedValue                          -> { alias: $1, location: @1 }
  | AnyAs RegularOrBacktickedIdentifier  -> { alias: $2, location: @2 }
+ | AnyAs QuotedValue                    -> { alias: $2, location: @2 }
  ;
 
 OptionalCorrelationName_EDIT
  : PartialBacktickedIdentifier
+ | QuotedValue_EDIT
  | AnyAs PartialBacktickedIdentifier
+ | AnyAs QuotedValue_EDIT
  | AnyAs 'CURSOR'
  ;
 

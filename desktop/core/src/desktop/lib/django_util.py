@@ -41,6 +41,7 @@ import desktop.lib.thrift_util
 from desktop.lib import django_mako
 from desktop.lib.json_utils import JSONEncoderForHTML
 
+
 LOG = logging.getLogger(__name__)
 
 # Values for template_lib parameter
@@ -216,6 +217,9 @@ def render(template, request, data, json=None, template_lib=None, force_template
   # request.ajax is defined in the AjaxMiddleware. But we might hit
   # errors before getting to that point.
   is_ajax = getattr(request, "ajax", False)
+  if data is None:
+    data = {}
+
   if not force_template and not is_jframe_request(request) and (is_ajax or template is None):
     if json is not None:
       return render_json(json, request.GET.get("callback"), status=status)

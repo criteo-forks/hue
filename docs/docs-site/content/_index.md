@@ -5,10 +5,9 @@ weight = 1
 chapter = false
 pre = "<b>1. </b>"
 +++
-
-# Documentation
-
 ![Hue Logo Back-end]({{% param baseURL %}}images/hue_logo.png)
+
+<span style="font-size:52px; text-align:center; display: block">Documentation</span>
 
 The manual to install, use and develop Hue.
 
@@ -34,6 +33,7 @@ How to extend SQL connectors, reuse the API or build applications is detailed in
 Releases
 --------
 
+* August 12, 2019 --- [Version 4.5.0](releases/release-notes-4.5.0/index.html)
 * March 28, 2019 --- [Version 4.4.0](releases/release-notes-4.4.0/index.html)
 * October 17, 2018 --- [Version 4.3.0](releases/release-notes-4.3.0/index.html)
 * April 4, 2018 --- [Version 4.2.0](releases/release-notes-4.2.0/index.html)

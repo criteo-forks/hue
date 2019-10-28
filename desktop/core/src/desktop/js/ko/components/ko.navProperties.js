@@ -41,47 +41,58 @@ const TEMPLATE = `
   </script>
 
   <!-- ko if: loading -->
-   <div class="hue-nav-properties"><div data-bind="hueSpinner: { spin: loading, inline: true }"></div></div>
-   <!-- /ko -->
-   <!-- ko ifnot: loading -->
-   <!-- ko ifnot: editMode -->
+  <div class="hue-nav-properties"><div data-bind="hueSpinner: { spin: loading, inline: true }"></div></div>
+  <!-- /ko -->
+  <!-- ko ifnot: loading -->
+  <!-- ko ifnot: editMode -->
 
-   <div class="hue-nav-properties" data-bind="click: startEdit, visibleOnHover: { selector: '.editable-inline-action' }">
-     <!-- ko ifnot: properties().length -->
-     <div class="hue-nav-properties-empty">${I18n('Add properties...')}</div>
-     <!-- /ko -->
-     <!-- ko foreach: properties -->
-     <div class="hue-nav-property"><div class="hue-nav-property-key" data-bind="text: key, attr: { 'title': key }"></div><div class="hue-nav-property-value" data-bind="text: value, attr: { 'title': value }"></div></div>
-     <!-- /ko -->
-     <div class="editable-inline-action" title="${I18n(
-       'Edit'
-     )}"><a href="javascript: void(0);" data-bind="click: startEdit"><i class="fa fa-pencil"></i></a></div>
-   </div>
-   <!-- /ko -->
-   <!-- ko if: editMode -->
-   <div class="hue-nav-properties hue-nav-properties-edit">
-     <!-- ko foreach: editProperties -->
-     <div class="hue-nav-property hue-nav-property-edit" data-bind="css: { 'hue-nav-property-invalid': invalid }, templatePopover: { trigger: 'click', placement: 'bottom', visible: editPropertyVisible, contentTemplate: 'nav-property-edit-popover-content' }">
-       <div class="hue-nav-property-key" data-bind="text: key, attr: { 'title': key }"></div><div class="hue-nav-property-value" data-bind="text: value, attr: { 'title': value }"></div>
-       <div class="hue-nav-property-remove"><a href="javascript: void(0);" title="${I18n(
-         'Remove'
-       )}" data-bind="click: function (entry) { $parent.removeProperty(entry); }"><i class="fa fa-times"></i></a></div>
-     </div>
-     <!-- /ko -->
-     <div class="hue-nav-property-add"><a href="javascript: void(0);" title="${I18n(
-       'Add'
-     )}" data-bind="click: addProperty"><i class="fa fa-plus"></i></a></div>
-     <div class="hue-nav-properties-edit-actions">
-       <a href="javascript: void(0);" title="${I18n(
-         'Save'
-       )}" data-bind="click: saveEdit"><i class="fa fa-check"></i></a>
-       <a href="javascript: void(0);" title="${I18n(
-         'Cancel'
-       )}" data-bind="click: cancelEdit"><i class="fa fa-close"></i></a>
-     </div>
-   </div>
-   <!-- /ko -->
-   <!-- /ko -->
+  <!-- ko ifnot: window.HAS_READ_ONLY_CATALOG -->
+  <div class="hue-nav-properties" data-bind="click: startEdit, visibleOnHover: { selector: '.editable-inline-action' }">
+    <!-- ko if: !properties().length -->
+    <div class="hue-nav-properties-empty">${I18n('Add properties...')}</div>
+    <!-- /ko -->
+    <!-- ko foreach: properties -->
+    <div class="hue-nav-property"><div class="hue-nav-property-key" data-bind="text: key, attr: { 'title': key }"></div><div class="hue-nav-property-value" data-bind="text: value, attr: { 'title': value }"></div></div>
+    <!-- /ko -->
+    <div class="editable-inline-action" title="${I18n(
+      'Edit'
+    )}"><a href="javascript: void(0);" data-bind="click: startEdit"><i class="fa fa-pencil"></i></a></div>
+  </div>
+  <!-- /ko -->
+
+  <!-- ko if: window.HAS_READ_ONLY_CATALOG && properties().length -->
+  <div class="hue-nav-properties">
+    <!-- ko foreach: properties -->
+    <div class="hue-nav-property" data-bind="tooltip: { placement: 'bottom' }, attr: { title: title }"><div class="hue-nav-property-key" data-bind="text: key"></div><div class="hue-nav-property-value" data-bind="text: value"></div></div>
+    <!-- /ko -->
+  </div>
+  <!-- /ko -->
+
+  <!-- /ko -->
+  <!-- ko if: editMode -->
+  <div class="hue-nav-properties hue-nav-properties-edit">
+    <!-- ko foreach: editProperties -->
+    <div class="hue-nav-property hue-nav-property-edit" data-bind="css: { 'hue-nav-property-invalid': invalid }, templatePopover: { trigger: 'click', placement: 'bottom', visible: editPropertyVisible, contentTemplate: 'nav-property-edit-popover-content' }">
+      <div class="hue-nav-property-key" data-bind="text: key, attr: { 'title': key }"></div><div class="hue-nav-property-value" data-bind="text: value, attr: { 'title': value }"></div>
+      <div class="hue-nav-property-remove"><a href="javascript: void(0);" title="${I18n(
+        'Remove'
+      )}" data-bind="click: function (entry) { $parent.removeProperty(entry); }"><i class="fa fa-times"></i></a></div>
+    </div>
+    <!-- /ko -->
+    <div class="hue-nav-property-add"><a href="javascript: void(0);" title="${I18n(
+      'Add'
+    )}" data-bind="click: addProperty"><i class="fa fa-plus"></i></a></div>
+    <div class="hue-nav-properties-edit-actions">
+      <a href="javascript: void(0);" title="${I18n(
+        'Save'
+      )}" data-bind="click: saveEdit"><i class="fa fa-check"></i></a>
+      <a href="javascript: void(0);" title="${I18n(
+        'Cancel'
+      )}" data-bind="click: cancelEdit"><i class="fa fa-close"></i></a>
+    </div>
+  </div>
+  <!-- /ko -->
+  <!-- /ko -->
 `;
 
 class NavProperty {
@@ -94,6 +105,8 @@ class NavProperty {
     self.valueEdited = ko.observable(false);
 
     self.editPropertyVisible = ko.observable(isNew);
+
+    self.title = ko.observable();
 
     const keySub = self.key.subscribe(() => {
       keySub.dispose();
@@ -129,6 +142,10 @@ class NavProperty {
       );
     });
   }
+
+  setTitle(title) {
+    this.title(title);
+  }
 }
 
 class NavProperties {
@@ -160,6 +177,9 @@ class NavProperties {
   }
 
   startEdit() {
+    if (window.HAS_READ_ONLY_CATALOG) {
+      return;
+    }
     const self = this;
     const editProperties = [];
     self.properties().forEach(property => {
@@ -264,7 +284,21 @@ class NavProperties {
       .getNavigatorMeta()
       .done(navigatorMeta => {
         const newProps = [];
-        if (navigatorMeta.properties) {
+
+        if (navigatorMeta.classifications) {
+          navigatorMeta.classifications.forEach(classification => {
+            if (classification.attributes) {
+              Object.keys(classification.attributes).forEach(attributeKey => {
+                const property = new NavProperty(
+                  attributeKey,
+                  classification.attributes[attributeKey]
+                );
+                property.setTitle(classification.typeName);
+                newProps.push(property);
+              });
+            }
+          });
+        } else if (navigatorMeta.properties) {
           Object.keys(navigatorMeta.properties).forEach(key => {
             if (!key.startsWith('__cloudera_internal')) {
               newProps.push(new NavProperty(key, navigatorMeta.properties[key]));

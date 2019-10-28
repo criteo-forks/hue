@@ -70,7 +70,7 @@
   ## django_server_email='hue@localhost.localdomain'
 
   # Email backend
-  ## django_email_backend=django.core.mail.backends.smtp.EmailBackend
+  django_email_backend=django.core.mail.backends.console.EmailBackend
 
   # Set to true to use CherryPy as the webserver, set to false
   # to use Gunicorn as the webserver. Defaults to CherryPy if
@@ -301,12 +301,15 @@
   # Number of characters in rest api reponse calls to dump to the logs when debug is enabled. Set to -1 for entire response.
   ## rest_response_size=2000
 
+  # Turn on Prometheus metrics end point /metrics.
+  ## enable_prometheus=false
+
   # Administrators
   # ----------------
   [[django_admins]]
-    ## [[[admin1]]]
-    ## name=john
-    ## email=john@doe.com
+    [[[admin-1]]]
+     name=Hue
+     email=hue@localhost.com
 
   # UI customizations
   # -------------------
@@ -340,6 +343,7 @@
     # - desktop.auth.backend.LdapBackend
     # - desktop.auth.backend.PamBackend
     # - desktop.auth.backend.SpnegoDjangoBackend
+    # - desktop.auth.backend.KnoxSpnegoDjangoBackend
     # - desktop.auth.backend.RemoteUserDjangoBackend
     # - libsaml.backend.SAML2Backend
     # - libopenid.backend.OpenIDBackend
@@ -684,6 +688,15 @@
     # Default email address to use for various automated notification from Hue
     ## default_from_email=hue@localhost
 
+  # Configuration options for KNOX integration for secured CDPD cluster
+  # ------------------------------------------------------------------------
+  [[knox]]
+
+    # This is a list of hosts that knox proxy requests can come from
+    ## knox_proxyhosts="server1.domain.com,server2.domain.com"
+    # Kerberos principal name which is allowed to impersonate others
+    ## knox_principal=knox
+
 
   # Configuration options for Kerberos integration for secured Hadoop clusters
   # ------------------------------------------------------------------------
@@ -760,6 +773,10 @@
     # Create a new user from OpenID Connect on login if it doesn't exist
     ## create_users_on_login=true
 
+    # When creating a new user, which 'claims' attribute from the OIDC provider to be used for creating the username.
+    #      Default to 'preferred_username'. Possible values include: 'email'
+    ## oidc_username_attribute=preferred_username
+
     # The group of users will be created and updated as superuser. To use this feature, setup in Keycloak:
     # 1. add the name of the group here
     # 2. in Keycloak, go to your_realm --> your_clients --> Mappers, add a mapper
@@ -788,17 +805,26 @@
    # If resource intensive or blocking can be delegated to an already running task server.
    ## enabled=False
 
+   # Switch on the integration with the Task Scheduler.
+   ## beat_enabled=False
+
+   # Number of query results rows to fetch into the result storage.
+   ## fetch_result_limit=2000
+
+   # Django file storage class to use to temporarily store query results
+   ## result_storage='{"backend": "django.core.files.storage.FileSystemStorage", "properties": {"location": "./logs"}}'
+
    # How the task server and tasks communicate.
    ## broker_url=amqp://guest:guest@localhost//
 
-   # Local file system path used to store task results when using the file result backend.
-   ## result_backend=file://$HUE_ROOT/logs
+   # Where to store task results. Defaults to local file system path. Celery comes with a several other backends.
+   ## celery_result_backend=file:///$HUE_ROOT/logs
 
    # Default options provided to the task server at startup.
    ## celeryd_opts='--time-limit=300'
 
-   # Switch on the integration with the Task Scheduler.
-   ## beat_enabled=False
+   # Django cache to use to store temporarily used data during query execution. This is in addition to result_file_storage and result_backend.
+   ## execution_storage='{"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "celery-hue"}'
 
 
 ###########################################################################
@@ -841,118 +867,110 @@
   # One entry for each type of snippet.
   [[interpreters]]
     # Define the name and how to connect and execute the language.
-
-    [[[hive]]]
-      # The name of the snippet.
-      name=Hive
-      # The backend connection to use to communicate with the server.
-      interface=hiveserver2
-
-    [[[impala]]]
-      name=Impala
-      interface=hiveserver2
-
-    # [[[sparksql]]]
-    #   name=SparkSql
-    #   interface=hiveserver2
-
-    [[[sparksql]]]
-      name=SparkSql
-      interface=livy
-
-    [[[spark]]]
-      name=Scala
-      interface=livy
-
-    [[[pyspark]]]
-      name=PySpark
-      interface=livy
-
-    [[[r]]]
-      name=R
-      interface=livy
-
-    [[[jar]]]
-      name=Spark Submit Jar
-      interface=livy-batch
-
-    [[[py]]]
-      name=Spark Submit Python
-      interface=livy-batch
-
-    [[[text]]]
-      name=Text
-      interface=text
-
-    [[[markdown]]]
-      name=Markdown
-      interface=text
-
-    [[[mysql]]]
-      name = MySQL
-      interface=rdbms
-
-    [[[sqlite]]]
-      name = SQLite
-      interface=rdbms
-
-    [[[postgresql]]]
-      name = PostgreSQL
-      interface=rdbms
-
-    [[[oracle]]]
-      name = Oracle
-      interface=rdbms
-
-    [[[solr]]]
-      name = Solr SQL
-      interface=solr
-      ## Name of the collection handler
-      # options='{"collection": "default"}'
-
-    [[[pig]]]
-      name=Pig
-      interface=oozie
-
-    [[[java]]]
-      name=Java
-      interface=oozie
-
-    [[[spark2]]]
-      name=Spark
-      interface=oozie
-
-    [[[mapreduce]]]
-      name=MapReduce
-      interface=oozie
-
-    [[[sqoop1]]]
-      name=Sqoop1
-      interface=oozie
-
-    [[[distcp]]]
-      name=Distcp
-      interface=oozie
-
-    [[[shell]]]
-      name=Shell
-      interface=oozie
-
-    # [[[mysql2]]]
-    #   name = MySQL Alchemy
-    #   interface=sqlalchemy
-    #   ## https://docs.sqlalchemy.org/en/latest/core/engines.html#sqlalchemy.create_engine
-    #   ## https://docs.sqlalchemy.org/en/latest/dialects/mysql.html
-    #   options='{"url": "mysql://root:root@localhost:3306/hue"}'
+    # http://cloudera.github.io/hue/latest/administrator/configuration/editor/
 
     # [[[mysql]]]
-    #   name=MySql JDBC
-    #   interface=jdbc
-    #   ## Specific options for connecting to the server.
-    #   ## The JDBC connectors, e.g. mysql.jar, need to be in the CLASSPATH environment variable.
-    #   ## If 'user' and 'password' are omitted, they will be prompted in the UI.
-    #   ## Option 'impersonation_property' used to configure outbound impersonation, e.g. "impersonation_property": "hive.server2.proxy.user".
-    #   options='{"url": "jdbc:mysql://localhost:3306/hue", "driver": "com.mysql.jdbc.Driver", "user": "root", "password": "root", "impersonation_property": ""}'
+    #   name = MySQL
+    #   interface=sqlalchemy
+    #   ## https://docs.sqlalchemy.org/en/latest/dialects/mysql.html
+    #   options='{"url": "mysql://root:secret@database:3306/hue"}'
+    #   ## options='{"url": "mysql://${USER}:${PASSWORD}@localhost:3306/hue"}'
+
+    # [[[hive]]]
+    #   name=Hive
+    #   interface=hiveserver2
+
+    # [[[llap]]]
+    #   name=LLAP
+    #   interface=hiveserver2
+
+    # [[[impala]]]
+    #   name=Impala
+    #   interface=hiveserver2
+
+    # [[[postgresql]]]
+    #   name = postgresql
+    #   interface=sqlalchemy
+    #   options='{"url": "postgresql://hue:hue@host:5432/hue"}'
+
+    # [[[druid]]]
+    #   name = Druid
+    #   interface=sqlalchemy
+    #   options='{"url": "druid://host:8082/druid/v2/sql/"}'
+
+    # [[[sql]]]
+    #   name=SparkSql
+    #   interface=livy
+
+    # [[[spark]]]
+    #   name=Scala
+    #   interface=livy
+
+    # [[[pyspark]]]
+    #   name=PySpark
+    #   interface=livy
+
+    # [[[r]]]
+    #   name=R
+    #   interface=livy
+
+    # [[jar]]]
+    #   name=Spark Submit Jar
+    #   interface=livy-batch
+
+    # [[[py]]]
+    #   name=Spark Submit Python
+    #   interface=livy-batch
+
+    # [[[text]]]
+    #   name=Text
+    #   interface=text
+
+    # [[[markdown]]]
+    #   name=Markdown
+    #   interface=text
+
+    # [[[sqlite]]]
+    #   name = SQLite
+    #   interface=rdbms
+
+    # [[[oracle]]]
+    #   name = Oracle
+    #   interface=rdbms
+
+    # [[[solr]]]
+    #   name = Solr SQL
+    #   interface=solr
+    #   ## Name of the collection handler
+    #   options='{"collection": "default"}'
+
+    # [[[pig]]]
+    #   name=Pig
+    #   interface=oozie
+
+    # [[[java]]]
+    #   name=Java
+    #   interface=oozie
+
+    # [[[spark2]]]
+    #   name=Spark
+    #   interface=oozie
+
+    # [[[mapreduce]]]
+    #   name=MapReduce
+    #   interface=oozie
+
+    # [[[sqoop1]]]
+    #   name=Sqoop1
+    #   interface=oozie
+
+    # [[[distcp]]]
+    #   name=Distcp
+    #   interface=oozie
+
+    # [[[shell]]]
+    #   name=Shell
+    #   interface=oozie
 
     # [[[presto]]]
     #   name=Presto SQL
@@ -968,6 +986,14 @@
     #   ## Specific options for connecting to the ClickHouse server.
     #   ## The JDBC driver clickhouse-jdbc.jar and its related jars need to be in the CLASSPATH environment variable.
     #   options='{"url": "jdbc:clickhouse://localhost:8123", "driver": "ru.yandex.clickhouse.ClickHouseDriver", "user": "readonly", "password": ""}'
+
+    # [[[vertica]]]
+    #   name=Vertica
+    #   interface=jdbc
+    #   ## Specific options for connecting to a Vertica server.
+    #   ## The JDBC driver vertica-jdbc-*.jar and its related jars need to be in the CLASSPATH environment variable.
+    #   ## If 'user' and 'password' are omitted, they will be prompted in the UI.
+    #   options='{"url": "jdbc:vertica://localhost:5434", "driver": "com.vertica.jdbc.Driver"}'
 
 
 ###########################################################################
@@ -1110,6 +1136,50 @@
 
   # Port where HiveServer2 Thrift server runs on.
   ## hive_server_port=10000
+  
+  # Host where LLAP is running
+  ## llap_server_host = localhost
+  
+  # Main Port where LLAP runs
+  ## llap_server_port = 10500
+  
+  # Port where LLAP Thrift server runs on
+  ## llap_server_thrift_port = 10501
+  
+  # Alternatively, use Service Discovery for LLAP (Hive Server Interactive) and/or Hiveserver2, this will override server and thrift port
+  
+  # Whether to use Service Discovery for LLAP 
+  ## hive_discovery_llap = true
+  
+  # is llap (hive server interactive) running in an HA configuration (more than 1)
+  # important as the zookeeper structure is different
+  ## hive_discovery_llap_ha = false
+  
+  # Shortcuts to finding LLAP znode Key
+  # Non-HA - hiveserver-interactive-site - hive.server2.zookeeper.namespace ex hive2 = /hive2
+  # HA-NonKerberized - <llap_app_name>_llap ex app name llap0 = /llap0_llap
+  # HA-Kerberized - <llap_app_name>_llap-sasl ex app name llap0 = /llap0_llap-sasl
+  ## hive_discovery_llap_znode = /hiveserver2-hive2
+  
+  # Whether to use Service Discovery for HiveServer2
+  ## hive_discovery_hs2 = true
+  
+  # Hiveserver2 is hive-site hive.server2.zookeeper.namespace ex hiveserver2 = /hiverserver2
+  ## hive_discovery_hiveserver2_znode = /hiveserver2
+  
+  # Applicable only for LLAP HA
+  # To keep the load on zookeeper to a minimum
+  # ---- we cache the LLAP activeEndpoint for the cache_timeout period
+  # ---- we cache the hiveserver2 endpoint for the length of session
+  # configurations to set the time between zookeeper checks
+  ## cache_timeout = 60
+  
+  # Host where Hive Metastore Server (HMS) is running.
+  # If Kerberos security is enabled, the fully-qualified domain name (FQDN) is required.
+  ## hive_metastore_host=localhost
+
+  # Configure the port the Hive Metastore Server runs on.
+  ## hive_metastore_port=9083
 
   # Hive configuration directory, where hive-site.xml is located
   ## hive_conf_dir=/etc/hive/conf
@@ -1154,6 +1224,9 @@
   # e.g. Used for LDAP/PAM pass-through authentication.
   ## auth_username=hue
   ## auth_password=
+
+  # Use SASL framework to establish connection to host.
+  ## use_sasl=false
 
   [[ssl]]
     # Path to Certificate Authority certificates.
@@ -1230,6 +1303,9 @@
   # Path to the impala configuration dir which has impalad_flags file
   ## impala_conf_dir=${HUE_CONF_DIR}/impala-conf
 
+  # Use SASL framework to establish connection to host.
+  ## use_sasl=true
+
   [[ssl]]
     # SSL communication enabled for this server.
     ## enabled=false
@@ -1267,6 +1343,8 @@
   # Choose whether Hue should validate certificates received from the server.
   ## ssl_cert_ca_verify=true
 
+  # Use SASL framework to establish connection to host.
+  ## use_sasl=false
 
 ###########################################################################
 # Settings to configure the Oozie app
@@ -1320,7 +1398,7 @@
   ## enable_extract_uploaded_archive=true
 
   # Redirect client to WebHdfs or S3 for file download. Note: Turning this on will override notebook/redirect_whitelist for user selected file downloads on WebHdfs & S3.
-  ## redirect_download=true
+  ## redirect_download=false
 
 
 ###########################################################################
@@ -1375,7 +1453,7 @@
 
 [hbase]
   # Comma-separated list of HBase Thrift servers for clusters in the format of '(name|host:port)'.
-  # Use full hostname with security.
+  # Use full hostname. If hbase.thrift.ssl.enabled in hbase-site is set to true, https will be used otherwise it will use http
   # If using Kerberos we assume GSSAPI SASL, not PLAIN.
   ## hbase_clusters=(Cluster|localhost:9090)
 
@@ -1627,6 +1705,12 @@
     [[[default]]]
       ## fs_defaultfs=adl://<account_name>.azuredatalakestore.net
       ## webhdfs_url=https://<account_name>.azuredatalakestore.net/webhdfs/v1
+
+  [[abfs_clusters]]
+    # Default ABFS cluster
+    [[[default]]]
+      ## fs_defaultfs=abfss://<container_name>@<account_name>.dfs.core.windows.net
+      ## webhdfs_url=https://<container_name>@<account_name>.dfs.core.windows.net
 
 ###########################################################################
 # Settings for the Sentry lib
@@ -1924,6 +2008,22 @@
     # Allow admins to upload the last N executed queries in the quick start wizard. Use 0 to disable.
     ## query_history_upload_limit=10000
 
+  [[catalog]]
+    # The type of Catalog: Apache Atlas, Cloudera Navigator...
+    ## interface=atlas
+    # Catalog API URL (without version suffix).
+    ## api_url=http://localhost:21000/atlas/v2
+
+    # Username of the CM user used for authentication.
+    ## server_user=hue
+    # Password of the user used for authentication.
+    ## server_password=
+
+    # Limits found entities to a specific cluster. When empty the entities from all clusters will be included in the
+    # search results.
+    ## search_cluster=
+
+  # Deprecated by [[catalog]]
   [[navigator]]
     # Navigator API URL (without version suffix).
     ## api_url=http://localhost:7187/api

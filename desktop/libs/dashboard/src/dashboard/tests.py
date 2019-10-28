@@ -16,6 +16,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import object
 import json
 
 from django.contrib.auth.models import User
@@ -44,7 +45,7 @@ def test_ranges():
   assert_equal((8000000, 9000000), _round_number_range(9045352))
 
 
-class MockResource():
+class MockResource(object):
   RESPONSE = None
 
   def __init__(self, client):
@@ -73,6 +74,8 @@ class MockResource():
         return SOLR_LUKE_SCHEMA
       else:
         return SOLR_LUKE_
+    elif 'admin/collections' in args[0]:
+      return {'collections': ['collection_1'], 'aliases': []}
     else:
       return MockResource.RESPONSE
 
@@ -508,8 +511,14 @@ class TestWithMockedSolr(TestSearchBase):
     assert_equal('attachment; filename="query_result.xlsx"', xls_response['Content-Disposition'])
 
   def test_index_xss(self):
-    doc = Document2.objects.create(name='test_dashboard', type='search-dashboard', owner=self.user,
-                                   data=json.dumps(self.collection.data), parent_directory=self.home_dir)
+    doc = Document2.objects.create(
+      name='test_dashboard',
+      type='search-dashboard',
+      owner=self.user,
+      data=json.dumps(self.collection.data),
+      parent_directory=self.home_dir
+    )
+
     try:
       response = self.c.get(reverse('dashboard:index') + ('?collection=%s' % doc.id) + '&q=</script><script>alert(%27XSS%27)</script>')
       assert_equal('{"fqs": [], "qs": [{"q": "alert(\'XSS\')"}], "start": 0}', response.context[0]['query'])

@@ -911,7 +911,10 @@ huePubSub.subscribe('app.dom.loaded', app => {
         if (app === 'editor') {
           huePubSub.publish('redraw.fixed.headers');
           huePubSub.publish('hue.scrollleft.show');
-          huePubSub.publish('active.snippet.type.changed', viewModel.editorType());
+          huePubSub.publish('active.snippet.type.changed', {
+            type: viewModel.editorType(),
+            isSqlDialect: viewModel.getSnippetViewSettings(viewModel.editorType()).sqlDialect
+          });
         }
       },
       HUE_PUB_SUB_EDITOR_ID
@@ -1373,6 +1376,7 @@ huePubSub.subscribe('app.dom.loaded', app => {
 
     $(document).on('showAuthModal', (e, data) => {
       viewModel.authSessionUsername(window.LOGGED_USERNAME);
+      viewModel.authSessionMessage(data['message']);
       viewModel.authSessionPassword('');
       viewModel.authSessionType(data['type']);
       viewModel.authSessionCallback(data['callback']);

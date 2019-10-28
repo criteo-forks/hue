@@ -23,10 +23,14 @@ import logging
 import mimetypes
 import os.path
 import re
+import socket
 import tempfile
 import time
 
 import kerberos
+import django.db
+import django.views.static
+import django_prometheus
 
 from django.conf import settings
 from django.contrib import messages
@@ -34,29 +38,28 @@ from django.contrib.auth import REDIRECT_FIELD_NAME, BACKEND_SESSION_KEY, authen
 from django.contrib.auth.middleware import RemoteUserMiddleware
 from django.contrib.auth.models import User
 from django.core import exceptions, urlresolvers
-import django.db
 from django.http import HttpResponseNotAllowed, HttpResponseForbidden
 from django.urls import resolve
 from django.http import HttpResponseRedirect, HttpResponse
 from django.utils.translation import ugettext as _
 from django.utils.http import urlquote, is_safe_url
-import django.views.static
+
+from hadoop import cluster
 
 import desktop.views
 import desktop.conf
 from desktop.conf import IS_EMBEDDED
 from desktop.context_processors import get_app_name
 from desktop.lib import apputil, i18n, fsmanager
-from desktop.lib.django_util import render, render_json
+from desktop.lib.django_util import JsonResponse, render, render_json
 from desktop.lib.exceptions import StructuredException
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.log import get_audit_logger
-from desktop.log.access import access_log, log_page_hit
+from desktop.log.access import access_log, log_page_hit, access_warn
 from desktop import appmanager
 from desktop import metrics
-from hadoop import cluster
-
 from desktop.auth.backend import is_admin
+
 
 LOG = logging.getLogger(__name__)
 
@@ -68,6 +71,9 @@ DJANGO_VIEW_AUTH_WHITELIST = [
   django.views.static.serve,
   desktop.views.is_alive,
 ]
+
+if desktop.conf.ENABLE_PROMETHEUS.get():
+  DJANGO_VIEW_AUTH_WHITELIST.append(django_prometheus.exports.ExportToDjangoView)
 
 
 class AjaxMiddleware(object):
@@ -332,7 +338,9 @@ class LoginAndPermissionMiddleware(object):
 
     logging.info("Redirecting to login page: %s", request.get_full_path())
     access_log(request, 'login redirection', level=access_log_level)
-    no_idle_backends = ("libsaml.backend.SAML2Backend", "desktop.auth.backend.SpnegoDjangoBackend")
+    no_idle_backends = ("libsaml.backend.SAML2Backend",
+                        "desktop.auth.backend.SpnegoDjangoBackend",
+                        "desktop.auth.backend.KnoxSpnegoDjangoBackend")
     if request.ajax and all(no_idle_backend not in desktop.conf.AUTH.BACKEND.get() for no_idle_backend in no_idle_backends):
       # Send back a magic header which causes Hue.Request to interpose itself
       # in the ajax request and make the user login before resubmitting the
@@ -343,6 +351,8 @@ class LoginAndPermissionMiddleware(object):
     else:
       if IS_EMBEDDED.get():
         return HttpResponseForbidden()
+      elif request.GET.get('is_embeddable'):
+        return JsonResponse({'url': "%s?%s=%s" % (settings.LOGIN_URL, REDIRECT_FIELD_NAME, urlquote('/hue' + request.get_full_path().replace('is_embeddable=true', '').replace('&&','&')))}) # Remove embeddable so redirect from & to login works. Login page is not embeddable
       else:
         return HttpResponseRedirect("%s?%s=%s" % (settings.LOGIN_URL, REDIRECT_FIELD_NAME, urlquote(request.get_full_path())))
 
@@ -525,6 +535,64 @@ class HtmlValidationMiddleware(object):
         200 <= response.status_code < 300
 
 
+class ProxyMiddleware(object):
+
+  def __init__(self):
+    if not 'desktop.auth.backend.AllowAllBackend' in desktop.conf.AUTH.BACKEND.get():
+      LOG.info('Unloading ProxyMiddleware')
+      raise exceptions.MiddlewareNotUsed
+
+  def process_response(self, request, response):
+    return response
+
+  def process_request(self, request):
+    view_func = resolve(request.path)[0]
+    if view_func in DJANGO_VIEW_AUTH_WHITELIST:
+      return
+
+    # AuthenticationMiddleware is required so that request.user exists.
+    if not hasattr(request, 'user'):
+      raise exceptions.ImproperlyConfigured(
+        "The Django remote user auth middleware requires the"
+        " authentication middleware to be installed.  Edit your"
+        " MIDDLEWARE_CLASSES setting to insert"
+        " 'django.contrib.auth.middleware.AuthenticationMiddleware'"
+        " before the SpnegoUserMiddleware class.")
+
+    if request.GET.get('user.name'):
+      try:
+        username = request.GET.get('user.name')
+        user = authenticate(username=username, password='')
+        if user:
+          request.user = user
+          login(request, user)
+          msg = 'Successful login for user: %s' % request.user.username
+        else:
+          msg = 'Failed login for user: %s' % request.user.username
+        request.audit = {
+          'operation': 'USER_LOGIN',
+          'username': request.user.username,
+          'operationText': msg
+        }
+        return
+      except:
+        LOG.exception('Unexpected error when authenticating')
+        return
+
+  def clean_username(self, username, request):
+    """
+    Allows the backend to clean the username, if the backend defines a
+    clean_username method.
+    """
+    backend_str = request.session[BACKEND_SESSION_KEY]
+    backend = load_backend(backend_str)
+    try:
+      username = backend.clean_username(username)
+    except AttributeError:
+      pass
+    return username
+
+
 class SpnegoMiddleware(object):
   """
   Based on the WSGI SPNEGO middlware class posted here:
@@ -532,7 +600,9 @@ class SpnegoMiddleware(object):
   """
 
   def __init__(self):
-    if not 'desktop.auth.backend.SpnegoDjangoBackend' in desktop.conf.AUTH.BACKEND.get():
+    if not set(desktop.conf.AUTH.BACKEND.get()).intersection(
+            set(['desktop.auth.backend.SpnegoDjangoBackend', 'desktop.auth.backend.KnoxSpnegoDjangoBackend'])
+            ):
       LOG.info('Unloading SpnegoMiddleware')
       raise exceptions.MiddlewareNotUsed
 
@@ -600,11 +670,33 @@ class SpnegoMiddleware(object):
           username = kerberos.authGSSServerUserName(context)
           kerberos.authGSSServerClean(context)
 
+          # In Trusted knox proxy, Hue must expect following:
+          #   Trusted knox user: KNOX_PRINCIPAL
+          #   Trusted knox proxy host: KNOX_PROXYHOSTS
+          if 'desktop.auth.backend.KnoxSpnegoDjangoBackend' in \
+                desktop.conf.AUTH.BACKEND.get():
+            knox_verification = False
+            if desktop.conf.KNOX.KNOX_PRINCIPAL.get() in username:
+              # This may contain chain of reverse proxies, e.g. knox proxy, hue load balancer
+              # Compare hostname on both HTTP_X_FORWARDED_HOST & KNOX_PROXYHOSTS. Both of these can be configured to use either hostname or IPs and we have to normalize to one or the other
+              req_hosts = self.clean_host(request.META['HTTP_X_FORWARDED_HOST'])
+              knox_proxy = self.clean_host(desktop.conf.KNOX.KNOX_PROXYHOSTS.get())
+              if req_hosts.intersection(knox_proxy):
+                knox_verification = True
+              else:
+                access_warn(request, 'Failed to verify provided host %s with %s ' % (req_hosts, knox_proxy))
+            else:
+              access_warn(request, 'Failed to verify provided username %s with %s ' % (username, desktop.conf.KNOX.KNOX_PRINCIPAL.get()))
+            # If knox authentication failed then generate 401 (Unauthorized error)
+            if not knox_verification:
+              request.META['Return-401'] = ''
+              return
+
           if request.user.is_authenticated():
             if request.user.username == self.clean_username(username, request):
               return
 
-          user = authenticate(username=username)
+          user = authenticate(username=username, request=request)
           if user:
             request.user = user
             login(request, user)
@@ -629,6 +721,11 @@ class SpnegoMiddleware(object):
         request.META['Return-401'] = ''
       return
 
+  def clean_host(self, pattern):
+    if pattern:
+      return set([socket.gethostbyaddr(hostport.split(':')[0].strip())[0] for hostport in pattern.split(',')])
+    return set([])
+
   def clean_username(self, username, request):
     """
     Allows the backend to clean the username, if the backend defines a
@@ -637,7 +734,7 @@ class SpnegoMiddleware(object):
     backend_str = request.session[BACKEND_SESSION_KEY]
     backend = load_backend(backend_str)
     try:
-      username = backend.clean_username(username)
+      username = backend.clean_username(username, request)
     except AttributeError:
       pass
     return username

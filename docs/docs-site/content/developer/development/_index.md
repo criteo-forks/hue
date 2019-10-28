@@ -12,7 +12,7 @@ This section goes into greater detail on how to build and reuse the components o
 
 ### Dependencies
 
-* The OS specific install instructions are listed in the [install guide](/administrator/installation/dependencies/)
+* The OS specific install instructions are listed in the [install guide]({{% param baseURL %}}administrator/installation/dependencies/)
 * Python 2.7+ (Python 3 support tracked in [HUE-8737](https://issues.cloudera.org/browse/HUE-8737))
 * Django (1.11 already included in the distribution)
 * Java (Java 1.8) (should go away after [HUE-8740](https://issues.cloudera.org/browse/HUE-8740))
@@ -20,6 +20,58 @@ This section goes into greater detail on how to build and reuse the components o
 * [Mako](http://www.makotemplates.org/) is the templating language
 * [Bootstrap](http://twitter.github.com/bootstrap/)
 * [Knockout js](http://knockoutjs.com/)
+
+### Quick Start
+
+Build once:
+
+    make apps
+
+Then start the dev server (which will auto reload):
+
+    ./build/env/bin/hue runserver
+
+If you are changing Javascript or CSS files, also start:
+
+    npm run dev
+
+Then it is recommended to use MySQL or PostGres as the database.
+
+Open the `hue.ini` file in a text editor. Directly below the `[[database]]` line, add the following options (and modify accordingly for
+your MySQL setup):
+
+    host=localhost
+    port=3306
+    engine=mysql
+    user=hue
+    password=secretpassword
+    name=hue
+
+### Dev Docker
+
+Try basic changes in Hue without compiling it locally:
+
+    git clone https://github.com/cloudera/hue.git
+    cd hue
+    cp desktop/conf/pseudo-distributed.ini.tmpl desktop/conf/pseudo-distributed.ini
+
+Then edit the `[[database]]` section to specify a proper database, here MySql:
+
+    host=127.0.0.1 # Not localhost if Docker
+    engine=mysql
+    user=hue
+    password=hue
+    name=huedb
+
+Then map the local Hue source code into the running container (so that local edits are seen in the running Hue):
+
+    sudo docker run -it -v $PWD/apps:/usr/share/hue/apps -v $PWD/desktop:/usr/share/hue/desktop -v $PWD/desktop/conf/pseudo-distributed.ini:/usr/share/hue/desktop/conf/z-hue.ini --network="host" gethue/hue
+
+Note: code updates won’t be seen after the Docker container runs. For this Hue would need to be started in dev server mode by replacing the [line](https://github.com/cloudera/hue/blob/master/tools/docker/hue/startup.sh#L5) by
+
+    ./build/env/bin/hue runserver 0.0.0.0:8888
+
+and recompiling the Docker image. It will then auto-restart on Python code changes. For JavaScript, those would need to be [compiled]({{% param baseURL %}}/developer/development/#javascript).
 
 ### Javascript
 
@@ -51,39 +103,11 @@ and possibly fix any issues it might report.
 
 ### Documentation
 
-New website:
+Install [Hugo](https://gohugo.io/getting-started/quick-start/).
 
-Install https://gohugo.io/getting-started/quick-start/.
-
-Develop:
+Build it and see live changes:
 
     hugo serve
-
-Release:
-
-Make sure the base URL is correct:
-
-    cd docs/docs-site
-    vim config.toml
-    baseURL='http://cloudera.github.io/hue/docs-4.4.0/'
-
-Build the doc website:
-
-    hugo
-
-Add it to the github page and push:
-
-    git checkout gh-pages
-    cp ~/docs/docs-site/public docs-4.4.0 -r
-    rm latest
-    ln -s docs-4.4.0 latest
-
-    git push origin HEAD:gh-pages
-
-
-Old documentation:
-
-    make docs
 
 ### CSS / LESS
 
@@ -109,6 +133,28 @@ After modifying files under tools/ace-editor run the following to build ace.js
 
     npm install
     make ace
+
+### SQL Embedded Language Reference manuals
+
+The tools for generating the embedded language reference can be found under hue/tools/sql-docs/
+
+## Hive
+The Hive documentation is generated directly from the Hive wiki by using an exported epub file.
+
+1. Goto https://cwiki.apache.org/confluence/display/Hive/LanguageManual
+2. Click the three dots '...' in the upper right corner
+3. Click 'Export to EPUB'
+4. In the Hue folder run:
+
+        node tools/sql-docs/hiveExtractor.js --epub /path/to/epub/file
+
+## Impala
+The Impala documentation is generated from the ditamap files in the Impala GitHub repo.
+
+1. Clone the Impala repo next to hue from https://github.com/apache/impala
+2. In the Hue folder run:
+
+        node tools/sql-docs/docExtractor.js -c hue -f ../impala/docs/ -d impala_langref.ditamap,impala_keydefs.ditamap,impala.ditamap -o desktop/core/src/desktop/static/desktop/docs/impala/ -m desktop/core/src/desktop/templates/impala_doc_index.mako
 
 ### Internationalization
 
@@ -677,15 +723,75 @@ and greatest in build technologies.
 
 ## Release
 
-How to count the number of commits since the last release and add them and the authors to the release notes:
+Update the versions to the next release (current release +1):
 
-    git log --oneline --since=2018-01-01 | grep 'release'
-    git log --oneline --since=2018-01-01 | grep -n '6df64e3'
-    git log --oneline -1247 > scratch.txt
+    :100644 100644 4db6d5f... f907d04... M	VERSION
+    :100644 100644 9332f95... 45b28ad... M	desktop/libs/librdbms/java/pom.xml
+    :100644 100644 551f62f... 694f021... M	maven/pom.xml
 
-    git log --pretty="%an" | sort | uniq > scratch.txt
+How to count the number of commits since the last release:
+
+    git log --oneline --since=2018-01-01 | grep 'release' -r
+    git log --oneline -449 > commits.txt
+
+    cat commits.txt | sed 's/\(HUE\-[[:digit:]][[:digit:]][[:digit:]][[:digit:]]\)/\[\1\]\(https:\/\/issues.cloudera.org\/browse\/\1\)/' | sed 's/^\(.*\)/* \1/' > commits.md
+
+And add them and the authors to the release notes:
+
+    git log --pretty="%an" | sort | uniq | sed 's/^\(.*\)/* \1/' > authors.txt
+
+Pushing the release branch:
+
+    git push origin HEAD:branch-4.5.0
 
 Tagging the release:
 
-    git tag -a release-4.3.0 -m "release-4.3.0"
-    git push origin release-4.3.0
+    git tag -a release-4.5.0 -m "release-4.5.0"
+    git push origin release-4.5.0
+
+Building the tarball release:
+
+    make prod
+
+Source of the release: https://github.com/cloudera/hue/archive/release-4.5.0.zip
+
+Push to the CDN:
+
+    scp hue-4.5.0.tgz root@cdn.gethue.com:/var/www/cdn.gethue.com/downloads
+
+Other things to update:
+
+* In Jira, setting the [release as shipped](https://issues.cloudera.org/projects/HUE?selectedItem=com.atlassian.jira.jira-projects-plugin%3Arelease-page&status=all) and moving all non finished jiras to another target. Also archiving old releases.
+* Create the after next release tag in Jira and Blog
+* Update http://gethue.com 'Release' menu
+* Update Docker image https://hub.docker.com/u/gethue/
+* Update release date on https://en.wikipedia.org/wiki/Hue_(Software)
+
+Instructions:
+
+    docker build https://github.com/cloudera/hue.git#release-4.5.0 -t gethue/hue:4.5.0 -f tools/docker/hue/Dockerfile
+    docker tag gethue/hue:4.5.0 gethue/latest
+    docker images
+    docker login
+    docker push gethue/hue
+    docker push gethue/hue:4.5.0
+
+Documentation
+
+[Build it](#Documentation) and push it to the CDN.
+
+Build the doc website:
+
+    hugo
+
+Release:
+
+    ssh root@docs.gethue.com
+    cd /var/www/docs.gethue.com
+    mkdir 4.5.0
+    rm latest; ln -s 4.5.0 latest; cp latest/index.html .
+
+    scp -r docs/docs-site/public/* root@docs.gethue.com:/var/www/docs.gethue.com/4.5.0
+
+
+Then send release notes to the [Forum](https://discourse.gethue.com/), [hue-user](https://groups.google.com/a/cloudera.org/forum/#!forum/hue-user), https://twitter.com/gethue!

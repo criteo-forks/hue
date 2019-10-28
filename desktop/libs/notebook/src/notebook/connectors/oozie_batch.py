@@ -37,7 +37,7 @@ try:
   from oozie.views.api import get_log as get_workflow_logs
   from oozie.views.dashboard import check_job_access_permission, check_job_edition_permission
   from oozie.views.editor2 import _submit_workflow
-except Exception, e:
+except Exception as e:
   LOG.exception('Oozie application is not enabled: %s' % e)
 
 
@@ -140,7 +140,7 @@ class OozieApi(Api):
     return logs if logs else oozie_job.log
 
 
-  def progress(self, snippet, logs):
+  def progress(self, notebook, snippet, logs=None):
     job_id = snippet['result']['handle']['id']
 
     oozie_job = check_job_access_permission(self.request, job_id)
@@ -164,7 +164,7 @@ class OozieApi(Api):
     return jobs
 
 
-  def close_statement(self, snippet):
+  def close_statement(self, notebook, snippet):
     pass
 
 
@@ -174,7 +174,7 @@ class OozieApi(Api):
 
   def _get_log_output(self, oozie_workflow):
     log_output = ''
-    q = QueryDict(self.request.GET, mutable=True)
+    q = self.request.GET.copy()
     q['format'] = 'python'  # Hack for triggering the good section in single_task_attempt_logs
     self.request.GET = q
 

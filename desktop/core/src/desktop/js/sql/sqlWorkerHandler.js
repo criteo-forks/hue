@@ -64,9 +64,10 @@ export default {
     if (!window.IS_EMBEDDED && !registered && window.Worker) {
       // It can take a while before the worker is active
       const whenWorkerIsReady = function(worker, message) {
+        message.hueBaseUrl = window.HUE_BASE_URL;
         if (!worker.isReady) {
           window.clearTimeout(worker.pingTimeout);
-          worker.postMessage({ ping: true });
+          worker.postMessage({ ping: true, hueBaseUrl: message.hueBaseUrl });
           worker.pingTimeout = window.setTimeout(() => {
             whenWorkerIsReady(worker, message);
           }, 500);
@@ -77,7 +78,7 @@ export default {
 
       // For syntax checking
       const aceSqlSyntaxWorker = new Worker(
-        '/desktop/workers/aceSqlSyntaxWorker.js?v=' + window.HUE_VERSION
+        window.HUE_BASE_URL + '/desktop/workers/aceSqlSyntaxWorker.js?v=' + window.HUE_VERSION
       );
       aceSqlSyntaxWorker.onmessage = function(e) {
         if (e.data.ping) {
@@ -93,7 +94,7 @@ export default {
 
       // For location marking
       const aceSqlLocationWorker = new Worker(
-        '/desktop/workers/aceSqlLocationWorker.js?v=' + window.HUE_VERSION
+        window.HUE_BASE_URL + '/desktop/workers/aceSqlLocationWorker.js?v=' + window.HUE_VERSION
       );
       aceSqlLocationWorker.onmessage = function(e) {
         if (e.data.ping) {

@@ -21,6 +21,7 @@
 # as local_settings.py.
 
 import gc
+import json
 import logging
 import os
 import pkg_resources
@@ -35,7 +36,6 @@ from desktop.lib.paths import get_desktop_root
 from desktop.lib.python_util import force_dict_to_strings
 
 from aws.conf import is_enabled as is_s3_enabled
-
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', '..', '..'))
@@ -145,6 +145,7 @@ MIDDLEWARE_CLASSES = [
     'django.middleware.common.CommonMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'desktop.middleware.ProxyMiddleware',
     'desktop.middleware.SpnegoMiddleware',
     'desktop.middleware.HueRemoteUserMiddleware',
     'django.middleware.locale.LocaleMiddleware',
@@ -203,6 +204,7 @@ INSTALLED_APPS = [
     # App that keeps track of failed logins.
     'axes',
     'webpack_loader',
+    'django_prometheus',
     #'django_celery_results',
 ]
 
@@ -327,7 +329,7 @@ ALLOWED_HOSTS = desktop.conf.ALLOWED_HOSTS.get()
 
 X_FRAME_OPTIONS = desktop.conf.X_FRAME_OPTIONS.get()
 
-# Configure hue admins
+# Configure admins
 ADMINS = []
 for admin in desktop.conf.DJANGO_ADMINS.get():
   admin_conf = desktop.conf.DJANGO_ADMINS[admin]
@@ -336,11 +338,10 @@ for admin in desktop.conf.DJANGO_ADMINS.get():
 ADMINS = tuple(ADMINS)
 MANAGERS = ADMINS
 
-# Server Email Address
 SERVER_EMAIL = desktop.conf.DJANGO_SERVER_EMAIL.get()
-
-# Email backend
 EMAIL_BACKEND = desktop.conf.DJANGO_EMAIL_BACKEND.get()
+EMAIL_SUBJECT_PREFIX = 'Hue %s - ' % desktop.conf.CLUSTER_ID.get()
+
 
 # Configure database
 if os.getenv('DESKTOP_DB_CONFIG'):
@@ -380,10 +381,22 @@ DATABASES = {
 
 CACHES = {
     'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache', # TODO: Parameterize here for all the caches
         'LOCATION': 'unique-hue'
-    }
+    },
 }
+CACHES_HIVE_DISCOVERY_KEY = 'hive_discovery'
+CACHES[CACHES_HIVE_DISCOVERY_KEY] = {
+    'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+    'LOCATION': CACHES_HIVE_DISCOVERY_KEY
+}
+
+CACHES_CELERY_KEY = 'celery'
+CACHES_CELERY_QUERY_RESULT_KEY = 'celery_query_results'
+if desktop.conf.TASK_SERVER.ENABLED.get():
+  CACHES[CACHES_CELERY_KEY] = json.loads(desktop.conf.TASK_SERVER.EXECUTION_STORAGE.get())
+  if desktop.conf.TASK_SERVER.RESULT_CACHE.get():
+    CACHES[CACHES_CELERY_QUERY_RESULT_KEY] = json.loads(desktop.conf.TASK_SERVER.RESULT_CACHE.get())
 
 # Configure sessions
 SESSION_COOKIE_NAME = desktop.conf.SESSION.COOKIE_NAME.get()
@@ -397,6 +410,9 @@ SESSION_COOKIE_HTTPONLY = desktop.conf.SESSION.HTTP_ONLY.get()
 CSRF_COOKIE_SECURE = desktop.conf.SESSION.SECURE.get()
 CSRF_COOKIE_HTTPONLY = desktop.conf.SESSION.HTTP_ONLY.get()
 CSRF_COOKIE_NAME='csrftoken'
+# This is required for knox
+if desktop.conf.KNOX.KNOX_PROXYHOSTS.get(): # The hosts provided here don't have port. Add default knox port
+  CSRF_TRUSTED_ORIGINS=[host.split(':')[0] + ':' + (host.split(':')[1] if len(host.split(':')) > 1 else '8443') for host in desktop.conf.KNOX.KNOX_PROXYHOSTS.get().split(',')]
 
 SECURE_HSTS_SECONDS = desktop.conf.SECURE_HSTS_SECONDS.get()
 SECURE_HSTS_INCLUDE_SUBDOMAINS = desktop.conf.SECURE_HSTS_INCLUDE_SUBDOMAINS.get()
@@ -432,6 +448,11 @@ EMAIL_HOST_USER = desktop.conf.SMTP.USER.get()
 EMAIL_HOST_PASSWORD = desktop.conf.get_smtp_password()
 EMAIL_USE_TLS = desktop.conf.SMTP.USE_TLS.get()
 DEFAULT_FROM_EMAIL = desktop.conf.SMTP.DEFAULT_FROM.get()
+
+if EMAIL_BACKEND == 'sendgrid_backend.SendgridBackend':
+  SENDGRID_API_KEY = desktop.conf.get_smtp_password()
+  SENDGRID_SANDBOX_MODE_IN_DEBUG = DEBUG
+
 
 # Used for securely creating sessions. Should be unique and not shared with anybody. Changing auth backends will invalidate all open sessions.
 SECRET_KEY = desktop.conf.get_secret_key()
@@ -504,6 +525,7 @@ if is_oidc_configured():
   OIDC_STORE_ID_TOKEN = True
   OIDC_STORE_REFRESH_TOKEN = True
   OIDC_CREATE_USER = desktop.conf.OIDC.CREATE_USERS_ON_LOGIN.get()
+  OIDC_USERNAME_ATTRIBUTE = desktop.conf.OIDC.OIDC_USERNAME_ATTRIBUTE.get()
 
 # OAuth
 OAUTH_AUTHENTICATION='liboauth.backend.OAuthBackend' in AUTHENTICATION_BACKENDS
@@ -657,11 +679,11 @@ if DEBUG and desktop.conf.ENABLE_DJANGO_DEBUG_TOOL.get():
 
 if desktop.conf.TASK_SERVER.ENABLED.get():
   CELERY_BROKER_URL = desktop.conf.TASK_SERVER.BROKER_URL.get()
-  
+
   CELERY_ACCEPT_CONTENT = ['json']
-  CELERY_RESULT_BACKEND = desktop.conf.TASK_SERVER.RESULT_BACKEND.get()
+  CELERY_RESULT_BACKEND = desktop.conf.TASK_SERVER.CELERY_RESULT_BACKEND.get()
   CELERY_TASK_SERIALIZER = 'json'
-  
+
   CELERYD_OPTS = desktop.conf.TASK_SERVER.RESULT_CELERYD_OPTS.get()
 
 # %n will be replaced with the first part of the nodename.
@@ -674,3 +696,13 @@ if desktop.conf.TASK_SERVER.ENABLED.get():
   if desktop.conf.TASK_SERVER.BEAT_ENABLED.get():
     INSTALLED_APPS.append('django_celery_beat')
     INSTALLED_APPS.append('timezone_field')
+
+
+if desktop.conf.ENABLE_PROMETHEUS.get():
+  MIDDLEWARE_CLASSES.insert(0, 'django_prometheus.middleware.PrometheusBeforeMiddleware')
+  MIDDLEWARE_CLASSES.append('django_prometheus.middleware.PrometheusAfterMiddleware')
+
+  if 'mysql' in DATABASES['default']['ENGINE']:
+    DATABASES['default']['ENGINE'] = DATABASES['default']['ENGINE'].replace('django.db.backends', 'django_prometheus.db.backends')
+  for name, val in CACHES.items():
+    val['BACKEND'] = val['BACKEND'].replace('django.core.cache.backends', 'django_prometheus.cache.backends')

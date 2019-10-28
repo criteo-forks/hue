@@ -36,7 +36,6 @@
     padding-right: 10px;
   }
 }
-
 .jobbrowser-components {
   .hue-uncheck::before {
     padding-left: 2px;
@@ -361,7 +360,7 @@
         background-color: @cui-gray-050;
       }
       table.column thead tr td {
-        background-color: #FFFFFF;
+        background-color: @cui-white;
         border-bottom: 1px solid @cui-gray-300;
         text-transform: capitalize;
       }
@@ -385,5 +384,15 @@
   div[data-jobType="queries"] pre {
     overflow-x: auto;
     white-space: pre;
+  }
+  .nav.nav-tabs.scrollable {
+    height: 50px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+  }
+  .nav.nav-tabs > li {
+    display: inline-block;
+    float: initial;
   }
 }

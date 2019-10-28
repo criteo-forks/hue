@@ -16,6 +16,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import str
+from builtins import object
 import json
 import logging
 import re
@@ -24,20 +26,21 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 from django.db.models import Q
 
+from nose.plugins.attrib import attr
 from nose.tools import assert_true, assert_false, assert_equal, assert_not_equal, assert_raises
 
 from desktop.conf import USE_DEFAULT_CONFIGURATION, USE_NEW_EDITOR
 from desktop.lib.django_test_util import make_logged_in_client
 from desktop.lib.test_utils import add_permission, add_to_group, grant_access, remove_from_group
 from desktop.models import DefaultConfiguration, Document, Document2
+from notebook.models import make_notebook, make_notebook2
+from notebook.api import _save_notebook
 
 from oozie.conf import ENABLE_V2
 from oozie.importlib.workflows import generate_v2_graph_nodes
 from oozie.models2 import Node, Workflow, WorkflowConfiguration, find_dollar_variables, find_dollar_braced_variables, \
     _create_graph_adjaceny_list, _get_hierarchy_from_adj_list, WorkflowBuilder, WorkflowDepthReached
 from oozie.tests import OozieMockBase, save_temp_workflow, MockOozieApi
-from notebook.models import make_notebook, make_notebook2
-from notebook.api import _save_notebook
 
 
 LOG = logging.getLogger(__name__)
@@ -54,6 +57,7 @@ class TestEditor(OozieMockBase):
     self.user_not_me = User.objects.get(username="not_perm_user")
 
 
+  @attr('integration')
   def test_create_new_workflow(self):
     response = self.c.get(reverse('oozie:new_workflow'))
     assert_equal(200, response.status_code)
@@ -352,7 +356,7 @@ LIMIT $limit"""))
     try:
       response = self.c.get(reverse('oozie:submit_single_action', args=[wf_doc.id, '3f107997-04cc-8733-60a9-a4bb62cebabc']))
       assert_equal([{'name':'Dryrun', 'value': False}, {'name':'ls_arg', 'value': '-l'}], response.context[0]._data['params_form'].initial)
-    except Exception, ex:
+    except Exception as ex:
       logging.exception(ex)
     finally:
       reset()
@@ -613,7 +617,7 @@ class TestExternalWorkflowGraph(object):
     adj_list = _create_graph_adjaceny_list(self.node_list)
 
     assert_true(len(adj_list) == 7)
-    assert_true('subworkflow-a13f' in adj_list.keys())
+    assert_true('subworkflow-a13f' in list(adj_list.keys()))
     assert_true(adj_list['shell-0f44']['shell']['command'] == 'ls')
     assert_equal(adj_list['fork-68d4'], {u'path2': u'shell-0f44', u'node_type': u'fork', u'ok_to': u'', u'name': u'fork-68d4', u'path1': u'subworkflow-a13f'})
 

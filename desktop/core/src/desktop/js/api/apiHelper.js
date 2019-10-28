@@ -25,13 +25,14 @@ import hueUtils from 'utils/hueUtils';
 
 const AUTOCOMPLETE_API_PREFIX = '/notebook/api/autocomplete/';
 const SAMPLE_API_PREFIX = '/notebook/api/sample/';
+const EXECUTE_API_PREFIX = '/notebook/api/execute/';
 const DOCUMENTS_API = '/desktop/api2/doc/';
 const DOCUMENTS_SEARCH_API = '/desktop/api2/docs/';
 const FETCH_CONFIG = '/desktop/api2/get_config/';
-const HDFS_API_PREFIX = '/filebrowser/view=/';
-const ADLS_API_PREFIX = '/filebrowser/view=adl:/';
+const HDFS_API_PREFIX = '/filebrowser/view=' + encodeURIComponent('/');
+const ADLS_API_PREFIX = '/filebrowser/view=' + encodeURIComponent('adl:/');
 const GIT_API_PREFIX = '/desktop/api/vcs/contents/';
-const S3_API_PREFIX = '/filebrowser/view=S3A://';
+const S3_API_PREFIX = '/filebrowser/view=' + encodeURIComponent('S3A://');
 const IMPALA_INVALIDATE_API = '/impala/api/invalidate';
 const CONFIG_SAVE_API = '/desktop/api/configurations/save/';
 const CONFIG_APPS_API = '/desktop/api/configurations';
@@ -49,11 +50,11 @@ const HBASE_API_PREFIX = '/hbase/api/';
 const SAVE_TO_FILE = '/filebrowser/save';
 
 const NAV_URLS = {
-  ADD_TAGS: '/metadata/api/navigator/add_tags',
-  DELETE_TAGS: '/metadata/api/navigator/delete_tags',
-  FIND_ENTITY: '/metadata/api/navigator/find_entity',
-  LIST_TAGS: '/metadata/api/navigator/list_tags',
-  UPDATE_PROPERTIES: '/metadata/api/navigator/update_properties'
+  ADD_TAGS: '/metadata/api/catalog/add_tags',
+  DELETE_TAGS: '/metadata/api/catalog/delete_tags',
+  FIND_ENTITY: '/metadata/api/catalog/find_entity',
+  LIST_TAGS: '/metadata/api/catalog/list_tags',
+  UPDATE_PROPERTIES: '/metadata/api/catalog/update_properties'
 };
 
 const NAV_OPT_URLS = {
@@ -168,20 +169,8 @@ class ApiHelper {
     const self = this;
     self.queueManager = apiQueueManager;
 
-    huePubSub.subscribe('assist.clear.hdfs.cache', () => {
-      $.totalStorage(self.getAssistCacheIdentifier({ sourceType: 'hdfs' }), {});
-    });
-
-    huePubSub.subscribe('assist.clear.adls.cache', () => {
-      $.totalStorage(self.getAssistCacheIdentifier({ sourceType: 'adls' }), {});
-    });
-
     huePubSub.subscribe('assist.clear.git.cache', () => {
       $.totalStorage(self.getAssistCacheIdentifier({ sourceType: 'git' }), {});
-    });
-
-    huePubSub.subscribe('assist.clear.s3.cache', () => {
-      $.totalStorage(self.getAssistCacheIdentifier({ sourceType: 's3' }), {});
     });
 
     huePubSub.subscribe('assist.clear.collections.cache', () => {
@@ -222,6 +211,10 @@ class ApiHelper {
         clearAllCaches();
       }
     }
+  }
+
+  clearStorageCache(sourceType) {
+    $.totalStorage(this.getAssistCacheIdentifier({ sourceType: sourceType }), {});
   }
 
   hasExpired(timestamp, cacheType) {
@@ -406,6 +399,7 @@ class ApiHelper {
    * @param {function} [options.successCallback]
    * @param {function} [options.errorCallback]
    * @param {boolean} [options.silenceErrors]
+   * @param {string} [options.dataType] - Default: Intelligent Guess (xml, json, script, text, html)
    *
    * @return {Promise}
    */
@@ -413,16 +407,22 @@ class ApiHelper {
     const self = this;
     const deferred = $.Deferred();
 
-    const request = $.post(url, data, data => {
-      if (self.successResponseIsError(data)) {
-        deferred.reject(self.assistErrorCallback(options)(data));
-        return;
-      }
-      if (options && options.successCallback) {
-        options.successCallback(data);
-      }
-      deferred.resolve(data);
-    }).fail(self.assistErrorCallback(options));
+    const request = $.post({
+      url: url,
+      data: data,
+      dataType: options && options.dataType
+    })
+      .done(data => {
+        if (self.successResponseIsError(data)) {
+          deferred.reject(self.assistErrorCallback(options)(data));
+          return;
+        }
+        if (options && options.successCallback) {
+          options.successCallback(data);
+        }
+        deferred.resolve(data);
+      })
+      .fail(self.assistErrorCallback(options));
 
     request.fail(data => {
       deferred.reject(self.assistErrorCallback(options)(data));
@@ -462,8 +462,8 @@ class ApiHelper {
 
   /**
    * @param {string} url
-   * @param {Object} data
-   * @param {Object} options
+   * @param {Object} [data]
+   * @param {Object} [options]
    * @param {function} [options.successCallback]
    * @param {function} [options.errorCallback]
    * @param {boolean} [options.silenceErrors]
@@ -1516,7 +1516,7 @@ class ApiHelper {
       source_type: options.sourceType
     };
     if (options.path.length === 1) {
-      url = '/metastore/databases/' + options.path[1] + '/alter';
+      url = '/metastore/databases/' + options.path[0] + '/alter';
       data.properties = ko.mapping.toJSON(options.properties);
     } else if (options.path.length === 2) {
       url = '/metastore/table/' + options.path[0] + '/' + options.path[1] + '/alter';
@@ -1528,7 +1528,7 @@ class ApiHelper {
           data.new_table_name = options.properties.name;
         }
       }
-    } else if (options.path > 2) {
+    } else if (options.path.length > 2) {
       url = '/metastore/table/' + options.path[0] + '/' + options.path[1] + '/alter_column';
       data.column = options.path.slice(2).join('.');
       if (options.properties) {
@@ -1565,24 +1565,14 @@ class ApiHelper {
     const self = this;
     const deferred = $.Deferred();
 
-    let url;
+    let url = '/notebook/api/describe/' + options.path[0];
 
-    if (options.path.length === 1) {
-      url = '/metastore/databases/' + options.path[0] + '/metadata';
-    } else {
-      url =
-        '/' +
-        (options.sourceType === 'hive' ? 'beeswax' : options.sourceType) +
-        '/api/table/' +
-        options.path[0];
+    if (options.path.length > 1) {
+      url += '/' + options.path[1] + '/';
+    }
 
-      if (options.path.length > 1) {
-        url += '/' + options.path[1] + '/';
-      }
-
-      if (options.path.length > 2) {
-        url += 'stats/' + options.path.slice(2).join('/');
-      }
+    if (options.path.length > 2) {
+      url += 'stats/' + options.path.slice(2).join('/');
     }
 
     const data = {
@@ -1591,7 +1581,7 @@ class ApiHelper {
       source_type: options.sourceType
     };
 
-    const request = self[options.path.length < 3 ? 'simplePost' : 'simpleGet'](url, data, {
+    const request = self['simplePost'](url, data, {
       silenceErrors: options.silenceErrors,
       successCallback: function(response) {
         if (options.path.length === 1) {
@@ -1797,6 +1787,234 @@ class ApiHelper {
 
     waitForAvailable();
     return new CancellablePromise(deferred, undefined, cancellablePromises);
+  }
+
+  /**
+   *
+   * @param {ExecutableStatement} executable
+   *
+   * @return {{snippet: string, notebook: string}}
+   */
+  static adaptExecutableToNotebook(executable) {
+    const statement = executable.getStatement();
+    const snippet = {
+      type: executable.sourceType,
+      result: {
+        handle: executable.handle
+      },
+      status: executable.status,
+      id: executable.snippetId || hueUtils.UUID(),
+      statement_raw: statement,
+      statement: statement,
+      variables: [],
+      compute: executable.compute,
+      database: executable.database,
+      properties: { settings: [] }
+    };
+
+    const notebook = {
+      type: executable.sourceType,
+      snippets: [snippet],
+      id: executable.notebookId,
+      name: '',
+      isSaved: false,
+      sessions: executable.sessions || []
+    };
+
+    return {
+      snippet: JSON.stringify(snippet),
+      notebook: JSON.stringify(notebook)
+    };
+  }
+
+  /**
+   * @typedef {Object} ExecutionHandle
+   * @property {string} guid
+   * @property {boolean} has_more_statements
+   * @property {boolean} has_result_set
+   * @property {Object} log_context
+   * @property {number} modified_row_count
+   * @property {number} operation_type
+   * @property {string} previous_statement_hash
+   * @property {string} secret
+   * @property {string} session_guid
+   * @property {string} statement
+   * @property {number} statement_id
+   * @property {number} statements_count
+   */
+
+  /**
+   * API function to execute an ExecutableStatement
+   *
+   * @param {Object} options
+   * @param {boolean} [options.silenceErrors]
+   * @param {ExecutableStatement} options.executable
+   *
+   * @return {Promise<ExecutionHandle>}
+   */
+  executeStatement(options) {
+    const executable = options.executable;
+    const url = EXECUTE_API_PREFIX + executable.sourceType;
+    const deferred = $.Deferred();
+
+    this.simplePost(url, ApiHelper.adaptExecutableToNotebook(executable), options)
+      .done(response => {
+        if (response.handle) {
+          deferred.resolve(response.handle);
+        } else {
+          deferred.reject('No handle in execute response');
+        }
+      })
+      .fail(deferred.reject);
+
+    const promise = deferred.promise();
+
+    promise.cancel = () => {
+      const cancelDeferred = $.Deferred();
+      deferred
+        .done(handle => {
+          if (options.executable.handle !== handle) {
+            options.executable.handle = handle;
+          }
+          this.cancelStatement(options).always(cancelDeferred.resolve);
+        })
+        .fail(cancelDeferred.resolve);
+      return cancelDeferred;
+    };
+
+    return promise;
+  }
+
+  /**
+   *
+   * @param {Object} options
+   * @param {boolean} [options.silenceErrors]
+   * @param {ExecutableStatement} options.executable
+   *
+   * @return {CancellablePromise<string>}
+   */
+  checkExecutionStatus(options) {
+    const deferred = $.Deferred();
+
+    const request = this.simplePost(
+      '/notebook/api/check_status',
+      ApiHelper.adaptExecutableToNotebook(options.executable),
+      options
+    )
+      .done(response => {
+        deferred.resolve(response.query_status.status);
+      })
+      .fail(deferred.reject);
+
+    return new CancellablePromise(deferred, request);
+  }
+
+  /**
+   *
+   * @param {Object} options
+   * @param {boolean} [options.silenceErrors]
+   * @param {ExecutableStatement} options.executable
+   *
+   * @return {Promise}
+   */
+  cancelStatement(options) {
+    return this.simplePost(
+      '/notebook/api/cancel_statement',
+      ApiHelper.adaptExecutableToNotebook(options.executable),
+      options
+    );
+  }
+
+  /**
+   * @typedef {Object} ResultResponseMeta
+   * @property {string} comment
+   * @property {string} name
+   * @property {string} type
+   */
+
+  /**
+   * @typedef {Object} ResultResponse
+   * @property {Object[]} data
+   * @property {boolean} has_more
+   * @property {boolean} isEscaped
+   * @property {ResultResponseMeta[]} meta
+   * @property {string} type
+   */
+
+  /**
+   *
+   * @param {Object} options
+   * @param {boolean} [options.silenceErrors]
+   * @param {ExecutableStatement} options.executable
+   * @param {number} options.rows
+   * @param {boolean} options.startOver
+   *
+   * @return {Promise<ResultResponse>}
+   */
+  async fetchResults(options) {
+    return new Promise((resolve, reject) => {
+      const data = ApiHelper.adaptExecutableToNotebook(options.executable);
+      data.rows = options.rows;
+      data.startOver = !!options.startOver;
+
+      this.simplePost(
+        '/notebook/api/fetch_result_data',
+        data,
+        {
+          silenceErrors: options.silenceErrors,
+          dataType: 'text'
+        },
+        options
+      )
+        .done(response => {
+          const data = JSON.bigdataParse(response);
+          resolve(data.result);
+        })
+        .fail(reject);
+    });
+  }
+
+  /**
+   *
+   * @param {Object} options
+   * @param {boolean} [options.silenceErrors]
+   * @param {ExecutableStatement} options.executable
+   *
+   * @return {Promise<ResultResponse>}
+   */
+  async fetchResultSize(options) {
+    return new Promise((resolve, reject) => {
+      this.simplePost(
+        '/notebook/api/fetch_result_size',
+        ApiHelper.adaptExecutableToNotebook(options.executable),
+        options
+      )
+        .done(response => {
+          resolve(response.result);
+        })
+        .fail(reject);
+    });
+  }
+
+  /**
+   *
+   * @param {Object} options
+   * @param {boolean} [options.silenceErrors]
+   * @param {ExecutableStatement} options.executable
+   *
+   * @return {Promise}
+   */
+  closeStatement(options) {
+    const executable = options.executable;
+
+    return this.simplePost(
+      '/notebook/api/close_statement',
+      ApiHelper.adaptExecutableToNotebook({
+        sourceType: executable.sourceType,
+        handle: executable.handle
+      }),
+      options
+    );
   }
 
   /**

@@ -272,10 +272,12 @@ Plugin.prototype.navigateTo = function(path) {
     .find('.filechooser-tree')
     .html('<i style="font-size: 24px; color: #DDD" class="fa fa-spinner fa-spin"></i>');
   let pageSize = '?pagesize=1000';
-  if (path.indexOf('?') > -1) {
-    pageSize = pageSize.replace(/\?/, '&');
+  const index = path.indexOf('?');
+  if (index > -1) {
+    pageSize = path.substring(index) + pageSize.replace(/\?/, '&');
+    path = path.substring(0, index);
   }
-  $.getJSON('/filebrowser/view=' + path + pageSize, data => {
+  $.getJSON('/filebrowser/view=' + encodeURIComponent(path) + pageSize, data => {
     $(_parent.element)
       .find('.filechooser-tree')
       .empty();
@@ -335,15 +337,18 @@ Plugin.prototype.navigateTo = function(path) {
               return path;
             }
             const indexFirst = path.indexOf('/');
-            const indexLast = path.lastIndexOf('/');
+            let indexLast = path.lastIndexOf('/');
+            if (indexLast - indexFirst > 1 && indexLast == path.length - 1) {
+              indexLast = path.substring(0, path.length - 1).lastIndexOf('/');
+            }
             return indexLast - indexFirst > 1 && indexLast > 0
               ? path.substring(0, indexLast + 1)
               : path;
           }
           const next =
             path !== _parent.previousPath && getScheme(path) === getScheme(_parent.previousPath)
-              ? _parent.previousPath
-              : getParentPath(path);
+              ? _parent.previousPath || '/'
+              : getParentPath(path) || '/';
           _parent.options.onFolderChange(next);
           _parent.navigateTo(next);
         });

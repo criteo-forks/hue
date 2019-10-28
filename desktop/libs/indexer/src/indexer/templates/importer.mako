@@ -26,19 +26,12 @@
 %>
 
 <%namespace name="actionbar" file="actionbar.mako" />
-<%namespace name="assist" file="/assist.mako" />
 
 %if not is_embeddable:
 ${ commonheader(_("Importer"), "indexer", user, request, "60px") | n,unicode }
 
-<script src="${ static('metastore/js/metastore.ko.js') }"></script>
-
-${ assist.assistJSModels() }
-
 <link rel="stylesheet" href="${ static('notebook/css/notebook.css') }">
 <link rel="stylesheet" href="${ static('notebook/css/notebook-layout.css') }">
-${ assist.assistPanel() }
-
 %endif
 
 <link rel="stylesheet" href="${ static('indexer/css/importer.css') }" type="text/css">
@@ -478,7 +471,7 @@ ${ assist.assistPanel() }
         <!-- ko if: ['table', 'rdbms'].indexOf($root.createWizard.source.inputFormat()) >= 0 && $root.createWizard.source.tables().length > 1 -->
         <ul class="nav nav-tabs" style="margin-top: -14px">
           <!-- ko foreach: $root.createWizard.source.tables -->
-          <li data-bind="css: { 'active': $root.createWizard.source.selectedTableIndex() === $index() }"><a href="#" data-bind="text: name, click: function(){ $root.createWizard.source.selectedTableIndex($index()) }"></a></li>
+          <li data-bind="css: { 'active': $root.createWizard.source.selectedTableIndex() === $index() }"><a href="javascript: void(0)" data-bind="text: name, click: function(){ $root.createWizard.source.selectedTableIndex($index()) }"></a></li>
           <!-- /ko -->
         </ul>
         <!-- /ko -->
@@ -1057,7 +1050,7 @@ ${ assist.assistPanel() }
         <button class="btn btn-primary disable-feedback" data-bind="click: function() { createWizard.indexFile(); }, enable: createWizard.readyToIndex() && !createWizard.indexingStarted()">
           ${ _('Submit') } <i class="fa fa-spinner fa-spin" data-bind="visible: createWizard.indexingStarted"></i>
         </button>
-        
+
         % if ENABLE_ENVELOPE.get():
         <button class="btn disable-feedback" data-bind="click: createWizard.showCommands, enable: createWizard.readyToIndex()">
           ${ _('Show Commands') }
@@ -1389,7 +1382,7 @@ ${ assist.assistPanel() }
               <ul class="nav help-list-spacing">
               </ul>
             </div>
-            <div class="tab-pane" id="help-editor-syntax-multiquery">              
+            <div class="tab-pane" id="help-editor-syntax-multiquery">
             </div>
           </div>
         </div>
@@ -1397,7 +1390,7 @@ ${ assist.assistPanel() }
     </div>
   </div>
   <div class="modal-footer">
-    <a href="#" class="btn" data-dismiss="modal">${_('Close')}</a>
+    <a href="javascript: void(0)" class="btn" data-dismiss="modal">${_('Close')}</a>
   </div>
 </div>
 
@@ -1564,7 +1557,9 @@ ${ assist.assistPanel() }
           }
 
           setTimeout(function () {
-            var types = type.args.filter(function(x){ return x && x.type !== 'checkbox'});
+            var types = type.args.filter(function (x){
+              return x && (x.type !== 'checkbox' || x.name === 'hasHeader');
+            });
             for (var i = 0; i < types.length; i++) {
               self[types[i].name].subscribe(function() {
                 // Update the data preview when tweaking Format options on step 1
@@ -2828,13 +2823,13 @@ ${ assist.assistPanel() }
                         var db = match[1];
                         dataCatalog.getEntry({ sourceType: snippet.type(), namespace: self.namespace(), compute: self.compute(), path: [ db ]}).done(function (dbEntry) {
                           dbEntry.clearCache({ invalidate: 'invalidate', silenceErrors: true }).done(function () {
-                            window.location.href = self.editorVM.selectedNotebook().onSuccessUrl();
+                            huePubSub.publish('open.link', self.editorVM.selectedNotebook().onSuccessUrl());
                           })
                         });
                       } else {
                         dataCatalog.getEntry({ sourceType: snippet.type(), namespace: self.namespace(), compute: self.compute(), path: []}).done(function (sourceEntry) {
                           sourceEntry.clearCache({ silenceErrors: true }).done(function () {
-                            window.location.href = self.editorVM.selectedNotebook().onSuccessUrl();
+                            huePubSub.publish('open.link', self.editorVM.selectedNotebook().onSuccessUrl());
                           })
                         });
                       }

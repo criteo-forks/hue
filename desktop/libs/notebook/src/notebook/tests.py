@@ -18,6 +18,9 @@
 
 import json
 
+from collections import OrderedDict
+from mock import patch, Mock, MagicMock
+from nose.plugins.attrib import attr
 from nose.tools import assert_equal, assert_true, assert_false
 
 from django.contrib.auth.models import User
@@ -37,12 +40,7 @@ from notebook.api import _historify
 from notebook.connectors.base import Notebook, QueryError, Api
 from notebook.decorators import api_error_handler
 from notebook.conf import get_ordered_interpreters, INTERPRETERS_SHOWN_ON_WHEEL, INTERPRETERS
-
-
-try:
-  from collections import OrderedDict
-except ImportError:
-  from ordereddict import OrderedDict # Python 2.6
+from notebook.models import Analytics
 
 
 class TestNotebookApi(object):
@@ -81,8 +79,9 @@ class TestNotebookApi(object):
 
     self.notebook = json.loads(self.notebook_json)
     self.doc2 = Document2.objects.create(id=50010, name=self.notebook['name'], type=self.notebook['type'], owner=self.user)
-    self.doc1 = Document.objects.link(self.doc2, owner=self.user, name=self.doc2.name,
-                                      description=self.doc2.description, extra=self.doc2.type)
+    self.doc1 = Document.objects.link(
+      self.doc2, owner=self.user, name=self.doc2.name, description=self.doc2.description, extra=self.doc2.type
+    )
 
 
   def test_save_notebook(self):
@@ -278,7 +277,7 @@ class TestNotebookApi(object):
 a.key,
 a.*
 FROM customers c, c.addresses a"""
-    response =send_exception(message)
+    response = send_exception(message)
     data = json.loads(response.content)
     assert_equal(1, data['status'])
 
@@ -286,7 +285,7 @@ FROM customers c, c.addresses a"""
 \u2002\u2002a.key,
 \u2002\u2002a.*
 FROM customers c, c.addresses a"""
-    response =send_exception(message)
+    response = send_exception(message)
     data = json.loads(response.content)
     assert_equal(1, data['status'])
 
@@ -294,12 +293,31 @@ FROM customers c, c.addresses a"""
 a.key,
 a.*
 FROM déclenché c, c.addresses a"""
-    response =send_exception(message)
+    response = send_exception(message)
     data = json.loads(response.content)
     assert_equal(1, data['status'])
 
 
 class MockedApi(Api):
+  def execute(self, notebook, snippet):
+    return {
+      'sync': True,
+      'has_result_set': True,
+      'result': {
+        'has_more': False,
+        'data': [['test']],
+        'meta': [{
+          'name': 'test',
+          'type': '',
+          'comment': ''
+        }],
+        'type': 'table'
+      }
+    }
+
+  def close_statement(self, notebook, snippet):
+    pass
+
   def export_data_as_hdfs_file(self, snippet, target_file, overwrite):
     return {'destination': target_file}
 
@@ -353,8 +371,10 @@ class TestNotebookApiMocked(object):
 
     grant_access("test", "default", "notebook")
     grant_access("test", "default", "beeswax")
+    grant_access("test", "default", "hive")
     grant_access("not_perm_user", "default", "notebook")
     grant_access("not_perm_user", "default", "beeswax")
+    grant_access("not_perm_user", "default", "hive")
     add_permission('test', 'has_adls', permname='adls_access', appname='filebrowser')
 
   def tearDown(self):
@@ -365,6 +385,7 @@ class TestNotebookApiMocked(object):
     originalCluster.FS_CACHE["default"] = self.original_fs
 
 
+  @attr('integration')
   def test_export_result(self):
     notebook_json = """
       {
@@ -412,47 +433,76 @@ class TestNotebookApiMocked(object):
     assert_equal('/user/hue/path.csv', data['watch_url']['destination'], data)
 
     if is_adls_enabled():
-        response = self.client.post(reverse('notebook:export_result'), {
-            'notebook': notebook_json,
-            'snippet': json.dumps(json.loads(notebook_json)['snippets'][0]),
-            'format': json.dumps('hdfs-file'),
-            'destination': json.dumps('adl:/user/hue/path.csv'),
-            'overwrite': json.dumps(False)
-        })
+      response = self.client.post(reverse('notebook:export_result'), {
+          'notebook': notebook_json,
+          'snippet': json.dumps(json.loads(notebook_json)['snippets'][0]),
+          'format': json.dumps('hdfs-file'),
+          'destination': json.dumps('adl:/user/hue/path.csv'),
+          'overwrite': json.dumps(False)
+      })
 
-        data = json.loads(response.content)
-        assert_equal(0, data['status'], data)
-        assert_equal('adl:/user/hue/path.csv', data['watch_url']['destination'], data)
+      data = json.loads(response.content)
+      assert_equal(0, data['status'], data)
+      assert_equal('adl:/user/hue/path.csv', data['watch_url']['destination'], data)
+
+
+  def test_download_result(self):
+    notebook_json = """
+      {
+        "selectedSnippet": "hive",
+        "showHistory": false,
+        "description": "Test Hive Query",
+        "name": "Test Hive Query",
+        "sessions": [
+            {
+                "type": "hive",
+                "properties": [],
+                "id": null
+            }
+        ],
+        "type": "query-hive",
+        "id": null,
+        "snippets": [{"id":"2b7d1f46-17a0-30af-efeb-33d4c29b1055","type":"hive","status":"running","statement":"select * from web_logs","properties":{"settings":[],"variables":[],"files":[],"functions":[]},"result":{"id":"b424befa-f4f5-8799-a0b4-79753f2552b1","type":"table","handle":{"log_context":null,"statements_count":1,"end":{"column":21,"row":0},"statement_id":0,"has_more_statements":false,"start":{"column":0,"row":0},"secret":"rVRWw7YPRGqPT7LZ/TeFaA==an","has_result_set":true,"statement":"select * from web_logs","operation_type":0,"modified_row_count":null,"guid":"7xm6+epkRx6dyvYvGNYePA==an"}},"lastExecuted": 1462554843817,"database":"default"}],
+        "uuid": "d9efdee1-ef25-4d43-b8f9-1a170f69a05a"
+    }
+    """
+    response = self.client.post(reverse('notebook:download'), {
+        'notebook': notebook_json,
+        'snippet': json.dumps(json.loads(notebook_json)['snippets'][0]),
+        'format': 'csv'
+    })
+    content = "".join(response)
+    assert_true(len(content) > 0)
 
 
 def test_get_interpreters_to_show():
   default_interpreters = OrderedDict((
       ('hive', {
-          'name': 'Hive', 'interface': 'hiveserver2', 'type': 'hive', 'is_sql': True, 'options': {}
+          'name': 'Hive', 'interface': 'hiveserver2', 'type': 'hive', 'is_sql': True, 'options': {}, 'is_catalog': False, 'category': 'editor', 'dialect': 'hive'
       }),
       ('spark', {
-          'name': 'Scala', 'interface': 'livy', 'type': 'spark', 'is_sql': False, 'options': {}
+          'name': 'Scala', 'interface': 'livy', 'type': 'spark', 'is_sql': False, 'options': {}, 'is_catalog': False, 'category': 'editor', 'dialect': 'scala'
       }),
       ('pig', {
-          'name': 'Pig', 'interface': 'pig', 'type': 'pig', 'is_sql': False, 'options': {}
+          'name': 'Pig', 'interface': 'pig', 'type': 'pig', 'is_sql': False, 'options': {}, 'is_catalog': False, 'category': 'editor', 'dialect': 'pig'
       }),
       ('java', {
-          'name': 'Java', 'interface': 'oozie', 'type': 'java', 'is_sql': False, 'options': {}
+          'name': 'Java', 'interface': 'oozie', 'type': 'java', 'is_sql': False, 'options': {}, 'is_catalog': False, 'category': 'editor', 'dialect': 'java'
       })
     ))
 
   expected_interpreters = OrderedDict((
       ('java', {
-        'name': 'Java', 'interface': 'oozie', 'type': 'java', 'is_sql': False, 'options': {}
+        'name': 'Java', 'interface': 'oozie', 'type': 'java', 'is_sql': False, 'options': {}, 'is_catalog': False, 'category': 'editor', 'dialect': 'java'
       }),
       ('pig', {
-        'name': 'Pig', 'interface': 'pig', 'is_sql': False, 'type': 'pig', 'options': {}
+        'name': 'Pig', 'interface': 'pig', 'is_sql': False, 'type': 'pig', 'options': {}, 'is_catalog': False, 'category': 'editor', 'dialect': 'pig'
       }),
       ('hive', {
-          'name': 'Hive', 'interface': 'hiveserver2', 'is_sql': True, 'type': 'hive', 'options': {}
+          'name': 'Hive', 'interface': 'hiveserver2', 'is_sql': True, 'type': 'hive', 'options': {}, 'is_catalog': False, 'category': 'editor', 'dialect': 'hive'
       }),
       ('spark', {
-          'name': 'Scala', 'interface': 'livy', 'type': 'spark', 'is_sql': False, 'options': {}
+          'name': 'Scala', 'interface': 'livy', 'type': 'spark', 'is_sql': False, 'options': {}, 'is_catalog': False, 'category': 'editor', 'dialect': 'scala'
       })
     ))
 
@@ -463,10 +513,13 @@ def test_get_interpreters_to_show():
     appmanager.load_apps(APP_BLACKLIST.get())
 
     interpreters_shown_on_wheel_unset = get_ordered_interpreters()
-    assert_equal(default_interpreters.values(), interpreters_shown_on_wheel_unset,
-                 'get_interpreters_to_show should return the same as get_interpreters when '
-                 'interpreters_shown_on_wheel is unset. expected: %s, actual: %s'
-                 % (default_interpreters.values(), interpreters_shown_on_wheel_unset))
+    assert_equal(
+      default_interpreters.values(),
+      interpreters_shown_on_wheel_unset,
+      'get_interpreters_to_show should return the same as get_interpreters when interpreters_shown_on_wheel is unset. expected: %s, actual: %s' % (
+          default_interpreters.values(), interpreters_shown_on_wheel_unset
+      )
+    )
 
     resets.append(INTERPRETERS_SHOWN_ON_WHEEL.set_for_testing('java,pig'))
     assert_equal(expected_interpreters.values(), get_ordered_interpreters(),
@@ -478,3 +531,40 @@ def test_get_interpreters_to_show():
     appmanager.DESKTOP_MODULES = []
     appmanager.DESKTOP_APPS = None
     appmanager.load_apps(APP_BLACKLIST.get())
+
+
+class TestAnalytics():
+
+  def setUp(self):
+    self.client = make_logged_in_client(username="test", groupname="default", recreate=True, is_superuser=False)
+    self.user = User.objects.get(username="test")
+
+  def test_basic_stats(self):
+    try:
+      doc, created = Document2.objects.get_or_create(name='test_query_stats', type='query-hive', owner=self.user, data={})
+
+      Analytics.admin_stats()
+      Analytics.user_stats(user=self.user)
+      Analytics.query_stats(query=doc)
+    finally:
+      doc.delete()
+
+
+class TestEditor(object):
+
+  def setUp(self):
+    self.client = make_logged_in_client(username="test", groupname="empty", recreate=True, is_superuser=False)
+
+    self.user = User.objects.get(username="test")
+
+    grant_access("test", "empty", "impala")
+
+  def test_open_saved_impala_query_when_no_hive_interepreter(self):
+    try:
+      doc, created = Document2.objects.get_or_create(name='open_saved_query_with_hive_not_present', type='query-impala', owner=self.user, data={})
+
+      with patch('desktop.middleware.fsmanager') as fsmanager:
+        response = self.client.get(reverse('notebook:editor'), {'editor': doc.id, 'is_embeddable': True})
+        assert_equal(200, response.status_code)
+    finally:
+      doc.delete()

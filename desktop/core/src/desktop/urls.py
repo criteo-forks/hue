@@ -19,13 +19,15 @@ from __future__ import absolute_import
 
 import logging
 import re
-import debug_toolbar
+
 
 # FIXME: This could be replaced with hooking into the `AppConfig.ready()`
 # signal in Django 1.7:
 #
 # https://docs.djangoproject.com/en/1.7/ref/applications/#django.apps.AppConfig.ready
 #
+
+import debug_toolbar
 
 import desktop.lib.metrics.file_reporter
 desktop.lib.metrics.file_reporter.start_file_reporter()
@@ -35,18 +37,19 @@ from django.conf.urls import include, url
 from django.contrib import admin
 from django.views.static import serve
 
-from desktop import appmanager
-from desktop.conf import METRICS, USE_NEW_EDITOR, ENABLE_DJANGO_DEBUG_TOOL
+from notebook import views as notebook_views
+from useradmin import views as useradmin_views
 
-from desktop.auth import views as desktop_auth_views
-from desktop.settings import is_oidc_configured
+from desktop import appmanager
+
 from desktop import views as desktop_views
 from desktop import api as desktop_api
 from desktop import api2 as desktop_api2
-from notebook import views as notebook_views
+from desktop.auth import views as desktop_auth_views
+from desktop.conf import METRICS, USE_NEW_EDITOR, ENABLE_DJANGO_DEBUG_TOOL, ANALYTICS, has_connectors, ENABLE_PROMETHEUS
 from desktop.configuration import api as desktop_configuration_api
-from useradmin import views as useradmin_views
 from desktop.lib.vcs import api as desktop_lib_vcs_api
+from desktop.settings import is_oidc_configured
 
 # Django expects handler404 and handler500 to be defined.
 # django.conf.urls provides them. But we want to override them.
@@ -60,8 +63,8 @@ admin.autodiscover()
 # Some django-wide URLs
 dynamic_patterns = [
   url(r'^hue/accounts/login', desktop_auth_views.dt_login, name='desktop_auth_views_dt_login'),
-  url(r'^accounts/login/$', desktop_auth_views.dt_login), # Deprecated
-  url(r'^accounts/logout/$', desktop_auth_views.dt_logout, {'next_page': '/'}),
+  url(r'^accounts/login/?$', desktop_auth_views.dt_login), # Deprecated
+  url(r'^accounts/logout/?$', desktop_auth_views.dt_logout, {'next_page': '/'}),
   url(r'^profile$', desktop_auth_views.profile),
   url(r'^login/oauth/?$', desktop_auth_views.oauth_login),
   url(r'^login/oauth_authenticated/?$', desktop_auth_views.oauth_authenticated),
@@ -103,7 +106,7 @@ dynamic_patterns += [
   # Mobile
   url(r'^assist_m', desktop_views.assist_m),
   # Hue 4
-  url(r'^hue.*/$', desktop_views.hue, name='desktop_views_hue'),
+  url(r'^hue.*/?$', desktop_views.hue, name='desktop_views_hue'),
   url(r'^403$', desktop_views.path_forbidden),
   url(r'^404$', desktop_views.not_found),
   url(r'^500$', desktop_views.server_error),
@@ -120,6 +123,8 @@ dynamic_patterns += [
   # Web workers
   url(r'^desktop/workers/aceSqlLocationWorker.js', desktop_views.ace_sql_location_worker),
   url(r'^desktop/workers/aceSqlSyntaxWorker.js', desktop_views.ace_sql_syntax_worker),
+
+  url(r'^dynamic_bundle/(?P<config>\w+)/(?P<bundle_name>.+)', desktop_views.dynamic_bundle),
 
   # Unsupported browsers
   url(r'^boohoo$', desktop_views.unsupported, name='desktop_views_unsupported'),
@@ -154,10 +159,10 @@ dynamic_patterns += [
   url(r'^desktop/api2/doc/share/?$', desktop_api2.share_document),
 
   url(r'^desktop/api2/get_config/?$', desktop_api2.get_config),
-  url(r'^desktop/api2/context/namespaces/(?P<interface>\w+)/?$', desktop_api2.get_context_namespaces),
-  url(r'^desktop/api2/context/computes/(?P<interface>\w+)/?$', desktop_api2.get_context_computes),
-  url(r'^desktop/api2/context/clusters/(?P<interface>\w+)/?$', desktop_api2.get_context_clusters),
-  url(r'^desktop/api2/user_preferences/(?P<key>\w+)?$', desktop_api2.user_preferences, name="desktop.api2.user_preferences"),
+  url(r'^desktop/api2/context/namespaces/(?P<interface>[\w\-]+)/?$', desktop_api2.get_context_namespaces),
+  url(r'^desktop/api2/context/computes/(?P<interface>[\w\-]+)/?$', desktop_api2.get_context_computes),
+  url(r'^desktop/api2/context/clusters/(?P<interface>[\w\-]+)/?$', desktop_api2.get_context_clusters),
+  url(r'^desktop/api2/user_preferences(?:/(?P<key>\w+))?/?$', desktop_api2.user_preferences, name="desktop.api2.user_preferences"),
 
   url(r'^desktop/api2/doc/export/?$', desktop_api2.export_documents),
   url(r'^desktop/api2/doc/import/?$', desktop_api2.import_documents),
@@ -190,12 +195,32 @@ dynamic_patterns += [
 # Metrics specific
 if METRICS.ENABLE_WEB_METRICS.get():
   dynamic_patterns += [
-    url(r'^desktop/metrics/', include('desktop.lib.metrics.urls'))
+    url(r'^desktop/metrics/?', include('desktop.lib.metrics.urls'))
+  ]
+
+if has_connectors():
+  dynamic_patterns += [
+    url(r'^desktop/connectors/?', include('desktop.lib.connectors.urls'))
+  ]
+
+if ANALYTICS.IS_ENABLED.get():
+  dynamic_patterns += [
+    url(r'^desktop/analytics/?', include('desktop.lib.analytics.urls'))
   ]
 
 dynamic_patterns += [
-  url(r'^admin/', include(admin.site.urls)),
+  url(r'^scheduler/', include('desktop.lib.scheduler.urls'))
 ]
+
+dynamic_patterns += [
+  url(r'^admin/?', include(admin.site.urls)),
+]
+
+if ENABLE_PROMETHEUS.get():
+  dynamic_patterns += [
+    url('', include('django_prometheus.urls')),
+  ]
+
 
 static_patterns = []
 
@@ -233,12 +258,6 @@ urlpatterns.extend(dynamic_patterns)
 urlpatterns.extend(app_urls_patterns)
 urlpatterns.extend(static_patterns)
 
-for x in dynamic_patterns:
-  logging.debug("Dynamic pattern: %s" % (x,))
-for x in app_urls_patterns:
-  logging.debug("Dynamic pattern: %s" % (x,))
-for x in static_patterns:
-  logging.debug("Static pattern: %s" % (x,))
 
 if settings.DEBUG and ENABLE_DJANGO_DEBUG_TOOL.get():
   urlpatterns += [

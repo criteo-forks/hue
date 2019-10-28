@@ -63,11 +63,7 @@ superusers and users.
 <table>
 <tr><td>First name and Last name</td><td> The user's first and last name.
 </td></tr>
-<tr><td>E-mail address</td><td>The user's e-mail address. The e-mail address is used by the Job
-    Designer and Beeswax applications to send users an e-mail message
-    after certain actions have occurred. The Job Designer sends an
-    e-mail message after a job has completed. Beeswax sends a message
-    after a query has completed. If an e-mail address is not specified,
+<tr><td>E-mail address</td><td>The user's e-mail address. The e-mail address is used by the Editor to send users an e-mail message after a query has completed. If an e-mail address is not specified,
     the application will not attempt to email the user.</td></tr>
 <tr><td>Groups</td><td> The groups to which the user belongs. By default, a user is assigned
     to the **default** group, which allows access to all applications.
@@ -86,7 +82,7 @@ superusers and users.
     the **Add User** wizard.
 
 
-### Importing Users from an LDAP Directory
+### Importing Users
 
 **Note**:
 
@@ -114,7 +110,7 @@ To add a user from an external LDAP directory:
     in User Admin is synced with what is currently in the LDAP
     directory.
 
-### Syncing Users and Groups with an LDAP Directory
+### Syncing Users and Groups
 
 You can sync the Hue user database with the current state of the LDAP
 directory using the **Sync LDAP users/groups** function. This updates
@@ -127,11 +123,15 @@ groups. It does not import any new users or groups.
 3.  In the **Sync LDAP users and groups** dialog, click **Sync** to
     perform the sync.
 
-## Reset a password
+### Reset a password
 
 **Programmatically**
 
 When a Hue administrator loses their password, a more programmatic approach is required to secure the administrator again. Hue comes with a wrapper around the python interpreter called the “shell” command. It loads all the libraries required to work with Hue at a programmatic level. To start the Hue shell, type the following command from the Hue installation root.
+
+If using CM:
+
+    export HUE_CONF_DIR="/var/run/cloudera-scm-agent/process/`ls -alrt /var/run/cloudera-scm-agent/process | grep HUE | tail -1 | awk '{print $9}'`"
 
 Then:
 
@@ -149,6 +149,18 @@ The script can also be invoked in the shell by using input redirection (assuming
 
     build/env/bin/hue shell < script.py
 
+**Via a command**
+
+Go on the Hue machine, then in the Hue home directory and either type:
+
+To change the password of the currently logged in Unix user:
+
+    build/env/bin/hue changepassword
+
+### Reset an Admin
+
+**Programmatically**
+
 How to make a certain user a Hue admin
 
     build/env/bin/hue  shell
@@ -163,20 +175,11 @@ Then set these properties to true:
     a.set_password('my_secret')
     a.save()
 
-** Via a command**
-
-Go on the Hue machine, then in the Hue home directory and either type:
-
-To change the password of the currently logged in Unix user:
-
-    build/env/bin/hue changepassword
+**Via a command**
 
 If you don't remember the admin username, create a new Hue admin (you will then also be able to login and could change the password of another user in Hue):
 
     build/env/bin/hue createsuperuser
-
-
-[Read more about it here](http://gethue.com/password-management-in-hue/).
 
 <div class="note">
 Above works with the `AllowFirstUserBackend`, it might be different if another backend is used.
@@ -185,8 +188,7 @@ Above works with the `AllowFirstUserBackend`, it might be different if another b
 
 ## Groups
 
-Superusers can add and delete groups, configure group permissions, and
-assign users to group memberships.
+Superusers can add and delete groups, configure group permissions, and assign users to group memberships.
 
 ### Adding a Group
 
@@ -207,13 +209,13 @@ import groups from an LDAP directory.
 3.  Click **Add group**.
 
 
-### Limit users can login only if they are belong to one of listed LDAP groups
+### Limit users can login
 
     [desktop]
     [[ldap]]
     login_groups=ldap_grp1,ldap_grp2,ldap_grp3
 
-### Importing Groups from an LDAP Directory
+### Importing Groups
 
 1.  From the **Groups** tab, click **Add/sync LDAP group**.
 2.  Specify the group properties:

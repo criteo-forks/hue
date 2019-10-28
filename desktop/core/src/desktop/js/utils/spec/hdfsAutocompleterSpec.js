@@ -18,7 +18,6 @@ import $ from 'spec/jquery.test';
 import 'spec/jquery.plugins';
 import ko from 'knockout';
 
-import apiHelper from 'api/apiHelper';
 import HdfsAutocompleter from '../hdfsAutocompleter';
 import SqlTestUtils from 'parse/spec/sqlTestUtils';
 
@@ -37,9 +36,6 @@ describe('hdfsAutocompleter.js', () => {
     },
     getContext: function() {
       return ko.mapping.fromJS(null);
-    },
-    getApiHelper: function() {
-      return apiHelper;
     }
   };
 
@@ -96,6 +92,7 @@ describe('hdfsAutocompleter.js', () => {
     ajaxHelper.responseForUrls = testDefinition.serverResponses;
     const callback = createCallbackSpyForValues(testDefinition.expectedSuggestions);
     subject.autocomplete(testDefinition.beforeCursor, testDefinition.afterCursor, callback);
+
     expect(callback).toHaveBeenCalled();
   };
 
@@ -129,7 +126,7 @@ describe('hdfsAutocompleter.js', () => {
   it("should return suggestions for root with '", () => {
     assertAutoComplete({
       serverResponses: {
-        '/filebrowser/view=/': {
+        '/filebrowser/view=%2F': {
           files: [
             { name: '.', type: 'dir' },
             { name: '..', type: 'dir' },
@@ -147,7 +144,7 @@ describe('hdfsAutocompleter.js', () => {
   it('should return suggestions for root with "', () => {
     assertAutoComplete({
       serverResponses: {
-        '/filebrowser/view=/': {
+        '/filebrowser/view=%2F': {
           files: [
             { name: '.', type: 'dir' },
             { name: '..', type: 'dir' },
@@ -165,7 +162,7 @@ describe('hdfsAutocompleter.js', () => {
   it('should return suggestions for non-root', () => {
     assertAutoComplete({
       serverResponses: {
-        '/filebrowser/view=/foo/bar': {
+        '/filebrowser/view=%2Ffoo/bar': {
           files: [
             { name: '.', type: 'dir' },
             { name: '..', type: 'dir' },

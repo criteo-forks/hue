@@ -14,6 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from past.builtins import basestring
+from builtins import object
 import logging
 
 from desktop.lib.python_util import force_dict_to_strings
@@ -66,11 +68,10 @@ class Input(object):
       'type': self.type,
       'name': self.name,
       'sensitive': self.sensitive,
+      'size': self.size,
     }
     if self.value:
       d['value'] = self.value
-    if self.size != -1:
-      d['size'] = self.size
     if self.values:
       d['values'] = ','.join(self.values)
     return d

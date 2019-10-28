@@ -21,7 +21,7 @@ from django.utils.translation import ugettext_lazy as _t
 
 
 from desktop import appmanager
-from desktop.conf import is_oozie_enabled
+from desktop.conf import is_oozie_enabled, has_connectors
 from desktop.lib.conf import Config, UnspecifiedConfigSection, ConfigSection, coerce_json_dict, coerce_bool, coerce_csv
 
 
@@ -35,14 +35,16 @@ SHOW_NOTEBOOKS = Config(
 def _remove_duplications(a_list):
   return list(OrderedDict.fromkeys(a_list))
 
-def check_permissions(user, interpreter):
-  user_apps = appmanager.get_apps_dict(user)
-  return (interpreter == 'hive' and 'beeswax' not in user_apps) or \
+def check_permissions(user, interpreter, user_apps=None):
+  if user_apps is None:
+    user_apps = appmanager.get_apps_dict(user) # Expensive method
+  return (interpreter == 'hive' and 'hive' not in user_apps) or \
          (interpreter == 'impala' and 'impala' not in user_apps) or \
          (interpreter == 'pig' and 'pig' not in user_apps) or \
          (interpreter == 'solr' and 'search' not in user_apps) or \
-         (interpreter in ('spark', 'pyspark', 'r', 'jar', 'py') and 'spark' not in user_apps) or \
+         (interpreter in ('spark', 'pyspark', 'r', 'jar', 'py', 'sparksql') and 'spark' not in user_apps) or \
          (interpreter in ('java', 'spark2', 'mapreduce', 'shell', 'sqoop1', 'distcp') and 'oozie' not in user_apps)
+
 
 def get_ordered_interpreters(user=None):
   if not INTERPRETERS.get():
@@ -51,9 +53,10 @@ def get_ordered_interpreters(user=None):
   interpreters = INTERPRETERS.get()
   interpreters_shown_on_wheel = _remove_duplications(INTERPRETERS_SHOWN_ON_WHEEL.get())
 
+  user_apps = appmanager.get_apps_dict(user)
   user_interpreters = []
   for interpreter in interpreters:
-    if (check_permissions(user, interpreter)):
+    if check_permissions(user, interpreter, user_apps=user_apps):
       pass # Not allowed
     else:
       user_interpreters.append(interpreter)
@@ -62,18 +65,42 @@ def get_ordered_interpreters(user=None):
   if unknown_interpreters:
     raise ValueError("Interpreters from interpreters_shown_on_wheel is not in the list of Interpreters %s" % unknown_interpreters)
 
-  reordered_interpreters = interpreters_shown_on_wheel + [i for i in user_interpreters if i not in interpreters_shown_on_wheel]
+  if has_connectors():
+    from desktop.lib.connectors.api import _get_installed_connectors
+    reordered_interpreters = [{
+        'name': i['nice_name'],
+        'type': i['name'],
+        'dialect': i['dialect'],
+        'category': i['category'],
+        'is_sql': i['is_sql'],
+        'interface': i['interface'],
+        'options': {setting['name']: setting['value'] for setting in i['settings']}
+      } for i in _get_installed_connectors()
+    ]
+  else:
+    reordered_interpreters = interpreters_shown_on_wheel + [i for i in user_interpreters if i not in interpreters_shown_on_wheel]
+    reordered_interpreters = [{
+        'name': interpreters[i].NAME.get(),
+        'type': i,
+        'interface': interpreters[i].INTERFACE.get(),
+        'options': interpreters[i].OPTIONS.get()
+      } for i in reordered_interpreters
+    ]
 
   return [{
-      "name": interpreters[i].NAME.get(),
-      "type": i,
-      "interface": interpreters[i].INTERFACE.get(),
-      "options": interpreters[i].OPTIONS.get(),
-      "is_sql" : interpreters[i].INTERFACE.get() in ["hiveserver2", "rdbms", "jdbc", "solr", "sqlalchemy"]
+      "name": i.get('nice_name', i['name']),
+      "type": i['type'],
+      "interface": i['interface'],
+      "options": i['options'],
+      'dialect': i.get('dialect', i['name']).lower(),
+      'category': i.get('category', 'editor'),
+      "is_sql": i.get('is_sql') or i['interface'] in ["hiveserver2", "rdbms", "jdbc", "solr", "sqlalchemy"],
+      "is_catalog": i['interface'] in ["hms",],
     }
     for i in reordered_interpreters
   ]
 
+# cf. admin wizard too
 
 INTERPRETERS = UnspecifiedConfigSection(
   "interpreters",
@@ -133,6 +160,13 @@ ENABLE_QUERY_BUILDER = Config(
   default=True
 )
 
+ENABLE_NOTEBOOK_2 = Config(
+  key="enable_notebook_2",
+  help=_t("Feature flag to enable Notebook 2."),
+  type=coerce_bool,
+  default=False
+)
+
 # Note: requires Oozie app
 ENABLE_QUERY_SCHEDULING = Config(
   key="enable_query_scheduling",
@@ -181,7 +215,7 @@ def _default_interpreters(user):
   interpreters = []
   apps = appmanager.get_apps_dict(user)
 
-  if 'beeswax' in apps:
+  if 'hive' in apps:
     interpreters.append(('hive', {
       'name': 'Hive', 'interface': 'hiveserver2', 'options': {}
     }),)

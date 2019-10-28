@@ -222,7 +222,10 @@ class Snippet {
 
     self.inFocus.subscribe(newValue => {
       if (newValue) {
-        huePubSub.publish('active.snippet.type.changed', self.type());
+        huePubSub.publish('active.snippet.type.changed', {
+          type: self.type(),
+          isSqlDialect: self.isSqlDialect()
+        });
       }
     });
 
@@ -242,10 +245,6 @@ class Snippet {
 
     self.getPlaceHolder = function() {
       return vm.getSnippetViewSettings(self.type()).placeHolder;
-    };
-
-    self.getApiHelper = function() {
-      return apiHelper;
     };
 
     // namespace and compute might be initialized as empty object {}
@@ -1344,6 +1343,7 @@ class Snippet {
     self.saveResultsModalVisible = ko.observable(false);
 
     self.checkStatusTimeout = null;
+    self.getLogsTimeout = null;
 
     self.getContext = function() {
       return {
@@ -1572,7 +1572,11 @@ class Snippet {
       } else if (data.status == 401) {
         // Auth required
         self.status('expired');
-        $(document).trigger('showAuthModal', { type: self.type(), callback: self.execute });
+        $(document).trigger('showAuthModal', {
+          type: self.type(),
+          callback: self.execute,
+          message: data.message
+        });
       } else if (data.status == 1 || data.status == -1) {
         self.status('failed');
         const match = ERROR_REGEX.exec(data.message);
@@ -1628,6 +1632,7 @@ class Snippet {
             (['spark2'].indexOf(self.type()) != -1 && self.properties().jars().length > 0) ||
             (['shell'].indexOf(self.type()) != -1 && self.properties().command_path().length > 0) ||
             (['mapreduce'].indexOf(self.type()) != -1 && self.properties().app_jar().length > 0) ||
+            (['py'].indexOf(self.type()) != -1 && self.properties().py_file().length > 0) ||
             (['distcp'].indexOf(self.type()) != -1 &&
               self.properties().source_path().length > 0 &&
               self.properties().destination_path().length > 0))) ||
@@ -1669,6 +1674,8 @@ class Snippet {
     self.lastExecutedSelectionRange = undefined;
 
     self.execute = function(automaticallyTriggered) {
+      self.clearActiveExecuteRequests();
+
       if (!automaticallyTriggered && self.ace()) {
         const selectionRange = self.ace().getSelectionRange();
 
@@ -1724,7 +1731,7 @@ class Snippet {
         self.lastAceSelectionRowOffset(Math.min(selectionRange.start.row, selectionRange.end.row));
       }
 
-      self.previousChartOptions = vm._getPreviousChartOptions(self);
+      self.previousChartOptions = vm.getPreviousChartOptions(self);
       $(document).trigger('executeStarted', { vm: vm, snippet: self });
       self.lastExecuted(now);
       $('.jHueNotify').remove();
@@ -1799,8 +1806,10 @@ class Snippet {
           }
 
           if (data.status === 0) {
+            self.result.clear();
             self.result.handle(data.handle);
             self.result.hasResultset(data.handle.has_result_set);
+            self.showLogs(true);
             if (data.handle.sync) {
               self.loadData(data.result, 100);
               self.status('available');
@@ -1830,7 +1839,7 @@ class Snippet {
                 }
               } else {
                 notebook.history.unshift(
-                  notebook._makeHistoryRecord(
+                  notebook.makeHistoryRecord(
                     undefined,
                     data.handle.statement,
                     self.lastExecuted(),
@@ -2231,78 +2240,95 @@ class Snippet {
     };
 
     self.checkStatus = function() {
-      $.post(
-        '/notebook/api/check_status',
-        {
-          notebook: komapping.toJSON(notebook.getContext()),
-          snippet: komapping.toJSON(self.getContext())
-        },
-        data => {
-          if (self.statusForButtons() == 'canceling' || self.status() == 'canceled') {
-            // Query was canceled in the meantime, do nothing
-          } else {
-            self.result.endTime(new Date());
-
-            if (data.status === 0) {
-              self.status(data.query_status.status);
-
-              if (
-                self.status() == 'running' ||
-                self.status() == 'starting' ||
-                self.status() == 'waiting'
-              ) {
-                const delay = self.result.executionTime() > 45000 ? 5000 : 1000; // 5s if more than 45s
-                if (!notebook.unloaded()) {
-                  self.checkStatusTimeout = setTimeout(self.checkStatus, delay);
-                }
-              } else if (self.status() === 'available') {
-                self.fetchResult(100);
-                self.progress(100);
-                if (self.isSqlDialect()) {
-                  if (self.result.handle().has_result_set) {
-                    const _query_id = notebook.id();
-                    setTimeout(() => {
-                      // Delay until we get IMPALA-5555
-                      self.fetchResultSize(10, _query_id);
-                    }, 2000);
-                    self.checkDdlNotification(); // DDL CTAS with Impala
-                  } else if (self.lastExecutedStatement()) {
-                    self.checkDdlNotification();
-                  } else {
-                    self.onDdlExecute();
-                  }
-                }
-                if (notebook.isExecutingAll()) {
-                  notebook.executingAllIndex(notebook.executingAllIndex() + 1);
-                  if (notebook.executingAllIndex() < notebook.snippets().length) {
-                    notebook.snippets()[notebook.executingAllIndex()].execute();
-                  } else {
-                    notebook.isExecutingAll(false);
-                  }
-                }
-                if (!self.result.handle().has_more_statements && vm.successUrl()) {
-                  window.location.href = vm.successUrl(); // Not used anymore in Hue 4
-                }
-              } else if (self.status() === 'success') {
-                self.progress(99);
-              }
-            } else if (data.status === -3) {
-              self.status('expired');
-              notebook.isExecutingAll(false);
+      const _checkStatus = function() {
+        self.lastCheckStatusRequest = $.post(
+          '/notebook/api/check_status',
+          {
+            notebook: komapping.toJSON(notebook.getContext()),
+            snippet: komapping.toJSON(self.getContext())
+          },
+          data => {
+            if (self.statusForButtons() == 'canceling' || self.status() == 'canceled') {
+              // Query was canceled in the meantime, do nothing
             } else {
-              self._ajaxError(data);
-              notebook.isExecutingAll(false);
+              self.result.endTime(new Date());
+
+              if (data.status === 0) {
+                self.status(data.query_status.status);
+
+                if (
+                  self.status() == 'running' ||
+                  self.status() == 'starting' ||
+                  self.status() == 'waiting'
+                ) {
+                  const delay = self.result.executionTime() > 45000 ? 5000 : 1000; // 5s if more than 45s
+                  if (!notebook.unloaded()) {
+                    self.checkStatusTimeout = setTimeout(_checkStatus, delay);
+                  }
+                } else if (self.status() === 'available' || self.status() === 'success') {
+                  if (self.status() === 'available') {
+                    self.fetchResult(100);
+                  }
+                  self.progress(100);
+                  if (self.isSqlDialect()) {
+                    if (self.result.handle().has_result_set) {
+                      const _query_id = notebook.id();
+                      setTimeout(() => {
+                        // Delay until we get IMPALA-5555
+                        self.fetchResultSize(10, _query_id);
+                      }, 2000);
+                      self.checkDdlNotification(); // DDL CTAS with Impala
+                    } else if (self.lastExecutedStatement()) {
+                      self.checkDdlNotification();
+                    } else {
+                      self.onDdlExecute();
+                    }
+                  }
+                  if (notebook.isExecutingAll()) {
+                    notebook.executingAllIndex(notebook.executingAllIndex() + 1);
+                    if (notebook.executingAllIndex() < notebook.snippets().length) {
+                      notebook.snippets()[notebook.executingAllIndex()].execute();
+                    } else {
+                      notebook.isExecutingAll(false);
+                    }
+                  }
+                  if (!self.result.handle().has_more_statements && vm.successUrl()) {
+                    huePubSub.publish('open.link', vm.successUrl()); // Not used anymore in Hue 4
+                  }
+                }
+              } else if (data.status === -3) {
+                self.status('expired');
+                notebook.isExecutingAll(false);
+              } else {
+                self._ajaxError(data);
+                notebook.isExecutingAll(false);
+              }
             }
-            self.getLogs(); // Need to execute at the end, because updating the status impacts log progress results
           }
-        }
-      ).fail((xhr, textStatus, errorThrown) => {
-        if (xhr.status !== 502) {
-          $(document).trigger('error', xhr.responseText || textStatus);
-        }
-        self.status('failed');
-        notebook.isExecutingAll(false);
-      });
+        ).fail((xhr, textStatus, errorThrown) => {
+          if (xhr.stausText !== 'abort') {
+            if (xhr.status !== 502) {
+              $(document).trigger('error', xhr.responseText || textStatus);
+            }
+            self.status('failed');
+            notebook.isExecutingAll(false);
+          }
+        });
+      };
+      const activeStatus = ['running', 'starting', 'waiting'];
+      const _getLogs = function(isLastTime) {
+        window.clearTimeout(self.getLogsTimeout);
+        self.getLogs().then(() => {
+          const lastTime = activeStatus.indexOf(self.status()) < 0; // We to run getLogs at least one time after status is terminated to make sure we have last logs
+          if (lastTime && isLastTime) {
+            return;
+          }
+          const delay = self.result.executionTime() > 45000 ? 5000 : 1000; // 5s if more than 45s
+          self.getLogsTimeout = setTimeout(_getLogs.bind(self, lastTime), delay);
+        });
+      };
+      _checkStatus();
+      _getLogs(activeStatus.indexOf(self.status()) < 0);
     };
 
     self.checkDdlNotification = function() {
@@ -2323,10 +2349,7 @@ class Snippet {
     self.cancel = function() {
       window.clearTimeout(self.executeNextTimeout);
       self.isCanceling(true);
-      if (self.checkStatusTimeout != null) {
-        clearTimeout(self.checkStatusTimeout);
-        self.checkStatusTimeout = null;
-      }
+      self.clearActiveExecuteRequests();
       hueAnalytics.log('notebook', 'cancel');
 
       if (self.executingBlockingOperation != null) {
@@ -2373,10 +2396,7 @@ class Snippet {
     };
 
     self.close = function() {
-      if (self.checkStatusTimeout != null) {
-        clearTimeout(self.checkStatusTimeout);
-        self.checkStatusTimeout = null;
-      }
+      self.clearActiveExecuteRequests();
 
       $.post(
         '/notebook/api/close_statement',
@@ -2399,8 +2419,24 @@ class Snippet {
       });
     };
 
+    self.clearActiveExecuteRequests = function() {
+      apiHelper.cancelActiveRequest(self.lastGetLogsRequest);
+      if (self.getLogsTimeout !== null) {
+        window.clearTimeout(self.getLogsTimeout);
+        self.getLogsTimeout = null;
+      }
+
+      apiHelper.cancelActiveRequest(self.lastCheckStatusRequest);
+      if (self.checkStatusTimeout !== null) {
+        window.clearTimeout(self.checkStatusTimeout);
+        self.checkStatusTimeout = null;
+      }
+    };
+
     self.getLogs = function() {
-      $.post(
+      apiHelper.cancelActiveRequest(self.lastGetLogsRequest);
+
+      self.lastGetLogsRequest = $.post(
         '/notebook/api/get_logs',
         {
           notebook: komapping.toJSON(notebook.getContext()),
@@ -2474,11 +2510,15 @@ class Snippet {
           }
         }
       ).fail((xhr, textStatus, errorThrown) => {
-        if (xhr.status !== 502) {
-          $(document).trigger('error', xhr.responseText || textStatus);
+        if (xhr.statusText !== 'abort') {
+          if (xhr.status !== 502) {
+            $(document).trigger('error', xhr.responseText || textStatus);
+          }
+          self.status('failed');
         }
-        self.status('failed');
       });
+
+      return self.lastGetLogsRequest;
     };
 
     self.uploadQueryHistory = function(n) {
@@ -2602,6 +2642,7 @@ class Snippet {
         },
         data => {
           if (data.status == 0) {
+            // eslint-disable-next-line no-restricted-syntax
             console.log(data.statement_similarity);
           } else {
             $(document).trigger('error', data.message);

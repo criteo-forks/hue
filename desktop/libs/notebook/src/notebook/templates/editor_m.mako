@@ -19,7 +19,6 @@
   from django.utils.translation import ugettext as _
   from desktop.views import _ko
 %>
-<%namespace name="assist" file="/assist.mako" />
 
 ${ commonheader_m(editor_type, editor_type, user, request, "68px") | n,unicode }
 
@@ -160,14 +159,12 @@ ${ commonheader_m(editor_type, editor_type, user, request, "68px") | n,unicode }
 
 </div>
 
-${ assist.assistJSModels() }
-
 <script type="text/javascript">
   if (ko.options) {
     ko.options.deferUpdates = true;
   }
 
-  ace.config.set("basePath", "/static/desktop/js/ace");
+  ace.config.set("basePath", "${ static('desktop/js/ace') }");
 
   var VIEW_MODEL_OPTIONS = $.extend(${ options_json | n,unicode }, {
     user: '${ user.username }',

@@ -24,7 +24,7 @@ import I18n from 'utils/i18n';
 
 const TEMPLATE = `
   <!-- ko if: loading -->
-  <div style="width: 100%; height: 20px; left: 6px; top: 8px; position: relative;" data-bind="hueSpinner: { spin: loading }"></div>
+  <div style="width: 100%; height: 20px; left: 6px; position: relative;" data-bind="hueSpinner: { spin: loading }"></div>
   <!-- /ko -->
   <!-- ko if: !loading() && (!readOnly || readOnly && currentTags().length) -->
   <div class="hue-tags" style="width: 100%" data-bind="ifnot: loading, css: { 'read-only-tags': readOnly }">
@@ -41,7 +41,6 @@ const TEMPLATE = `
       load: getSelectizeTags
     }"></textarea>
    <div class="selectize-error" style="display: none;"><i class="fa fa-exclamation-triangle"></i> <span class="message"></span></div>
-   <!-- /ko -->
   </div>
   <!-- /ko -->
 `;
@@ -64,7 +63,8 @@ class NavTags {
 
     self.catalogEntry = params.catalogEntry;
     self.overflowEllipsis = params.overflowEllipsis;
-    self.readOnly = !window.USER_HAS_METADATA_WRITE_PERM || !!params.readOnly;
+    self.readOnly =
+      !window.USER_HAS_METADATA_WRITE_PERM || !!params.readOnly || window.HAS_READ_ONLY_CATALOG;
 
     self.getSelectizeTags = function(query, callback) {
       callback(

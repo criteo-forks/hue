@@ -24,24 +24,44 @@ from django.shortcuts import redirect
 from django.utils.translation import ugettext as _
 from django.views.decorators.clickjacking import xframe_options_exempt
 
-from desktop.conf import ENABLE_DOWNLOAD, USE_NEW_EDITOR
+from beeswax.data_export import DOWNLOAD_COOKIE_AGE
+from desktop.conf import ENABLE_DOWNLOAD, USE_NEW_EDITOR, TASK_SERVER
+from desktop.lib import export_csvxls
 from desktop.lib.django_util import render, JsonResponse
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.json_utils import JSONEncoderForHTML
 from desktop.models import Document2, Document, FilesystemException
 from desktop.views import serve_403_error
-
 from metadata.conf import has_optimizer, has_catalog, has_workload_analytics
 
+from notebook import tasks as ntasks
 from notebook.conf import get_ordered_interpreters, SHOW_NOTEBOOKS
-from notebook.connectors.base import Notebook, get_api, _get_snippet_name
+from notebook.connectors.base import Notebook, get_api as _get_api, _get_snippet_name
 from notebook.connectors.spark_shell import SparkApi
 from notebook.decorators import check_editor_access_permission, check_document_access_permission, check_document_modify_permission
 from notebook.management.commands.notebook_setup import Command
-from notebook.models import make_notebook
+from notebook.models import make_notebook, _get_editor_type
 
 
 LOG = logging.getLogger(__name__)
+
+
+class ApiWrapper(object):
+  def __init__(self, request, snippet):
+    self.request = request
+    self.api = _get_api(request, snippet)
+  def __getattr__(self, name):
+    if TASK_SERVER.ENABLED.get() and hasattr(ntasks, name):
+      attr = object.__getattribute__(ntasks, name)
+      def _method(*args, **kwargs):
+        return attr(*args, **dict(kwargs, postdict=self.request.POST, user_id=self.request.user.id))
+      return _method
+    else:
+      return object.__getattribute__(self.api, name)
+
+
+def get_api(request, snippet):
+  return ApiWrapper(request, snippet)
 
 
 def notebooks(request):
@@ -109,8 +129,7 @@ def editor(request, is_mobile=False, is_embeddable=False):
     return notebook(request)
 
   if editor_id:  # Open existing saved editor document
-    document = Document2.objects.get(id=editor_id)
-    editor_type = document.type.rsplit('-', 1)[-1]
+    editor_type = _get_editor_type(editor_id)
 
   template = 'editor.mako'
   if is_mobile:
@@ -320,9 +339,21 @@ def download(request):
   notebook = json.loads(request.POST.get('notebook', '{}'))
   snippet = json.loads(request.POST.get('snippet', '{}'))
   file_format = request.POST.get('format', 'csv')
+  user_agent = request.META.get('HTTP_USER_AGENT')
+  file_name = _get_snippet_name(notebook)
 
-  response = get_api(request, snippet).download(notebook, snippet, file_format, user_agent=request.META.get('HTTP_USER_AGENT'))
+  content_generator = get_api(request, snippet).download(notebook, snippet, file_format=file_format)
+  response = export_csvxls.make_response(content_generator, file_format, file_name, user_agent=user_agent)
 
+  if snippet['id']:
+    response.set_cookie(
+      'download-%s' % snippet['id'],
+      json.dumps({
+        'truncated': 'false',
+        'row_counter': '0'
+      }),
+      max_age=DOWNLOAD_COOKIE_AGE
+    )
   if response:
     request.audit = {
       'operation': 'DOWNLOAD',

@@ -14,8 +14,8 @@ components. Your Hue installation is now running.
 
 After installation, you can use Hue by navigating to `http://myserver:8888/`.
 
-Next step is to [configure](/configuration/index.html) Hue to point to the external services.
-Then, the [user guide](/user/index.html) will help users go through the various installed applications.
+Next step is to [configure]({{% param baseURL %}}administrator/configuration/) Hue to point to the external services.
+Then, the [user guide]({{% param baseURL %}}user/index.html) will help users go through the various installed applications.
 
 
 **Supported Browsers**
@@ -52,8 +52,9 @@ software components.
 ## Feedback
 
 Your feedback is welcome. The best way to send feedback is to join the
-[mailing list](https://groups.google.com/a/cloudera.org/group/hue-user), and
-send e-mail, to mailto:hue-user@cloudera.org[hue-user@cloudera.org].
+[mailing list](https://groups.google.com/a/cloudera.org/group/hue-user) and
+send e-mail to [hue-user@cloudera.org](mailto:hue-user@cloudera.org).
+[@gethue](https://twitter.com/gethue) is also a good
 
 ## Reporting Bugs
 

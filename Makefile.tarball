@@ -32,7 +32,10 @@ PROD_INCLUDES := \
 	tools/enable-python27.sh \
 	tools/load-balancer \
 	VERSION \
-	webpack-stats*.json
+	webpack-stats*.json \
+	package.json \
+	webpack.config*.js \
+	.babelrc
 
 # Check for things in BDIST_EXCLUDES in various apps
 PROD_EXCLUDES := \

@@ -28,25 +28,25 @@ import uuid
 import proxy.conf
 import tempfile
 
-from nose.plugins.attrib import attr
-from nose.plugins.skip import SkipTest
-from nose.tools import assert_true, assert_false, assert_equal, assert_not_equal, assert_raises, nottest
+from configobj import ConfigObj
+from django.db.models import query, CharField, SmallIntegerField
 from django.core.management import call_command
 from django.core.paginator import Paginator
 from django.conf.urls import url
 from django.contrib.auth.models import User
 from django.db import connection
 from django.urls import reverse
+from django.test.client import Client
+from django.views.static import serve
 from django.http import HttpResponse
-from django.db.models import query, CharField, SmallIntegerField
-
-from configobj import ConfigObj
-
-from settings import DATABASES
+from nose.plugins.attrib import attr
+from nose.plugins.skip import SkipTest
+from nose.tools import assert_true, assert_false, assert_equal, assert_not_equal, assert_raises, nottest
 
 from beeswax.conf import HIVE_SERVER_HOST
 from pig.models import PigScript
 from useradmin.models import GroupPermission
+from settings import DATABASES
 
 import desktop
 import desktop.conf
@@ -54,7 +54,9 @@ import desktop.urls
 import desktop.redaction as redaction
 import desktop.views as views
 
+from desktop.auth.backend import rewrite_user
 from desktop.appmanager import DESKTOP_APPS
+from desktop.middleware import DJANGO_VIEW_AUTH_WHITELIST
 from desktop.lib.django_test_util import make_logged_in_client
 from desktop.lib.conf import validate_path
 from desktop.lib.django_util import TruncatingModel
@@ -67,8 +69,8 @@ from desktop.models import Directory, Document, Document2, get_data_link, _versi
 from desktop.redaction import logfilter
 from desktop.redaction.engine import RedactionPolicy, RedactionRule
 from desktop.views import check_config, home, generate_configspec, load_confs, collect_validation_messages
-from desktop.auth.backend import rewrite_user
 from dashboard.conf import HAS_SQL_ENABLED
+
 
 LOG = logging.getLogger(__name__)
 
@@ -143,6 +145,17 @@ def test_skip_wizard():
   c.cookies['hueLandingPage'] = ''
   response = c.get('/', follow=True)
   assert_true(['home.mako' in _template.filename for _template in response.templates], [_template.filename for _template in response.templates])
+
+def test_public_views():
+  c = Client()
+
+  for view in DJANGO_VIEW_AUTH_WHITELIST:
+    if view is serve:
+      url = reverse(view, kwargs={'path': 'desktop/art/favicon.ico'})
+    else:
+      url = reverse(view)
+    response = c.get(url)
+    assert_equal(200, response.status_code)
 
 def test_log_view():
   c = make_logged_in_client()
@@ -238,13 +251,17 @@ def test_dump_config():
   response = client_not_me.get(reverse('desktop.views.dump_config'))
   assert_true("You must be a superuser" in response.content, response.content)
 
-  prev_env_conf = os.environ["HUE_CONF_DIR"]
+  prev_env_conf = os.environ.get("HUE_CONF_DIR")
   try:
     os.environ["HUE_CONF_DIR"] = "/tmp/test_hue_conf_dir"
     resp = c.get(reverse('desktop.views.dump_config'))
     assert_true('/tmp/test_hue_conf_dir' in resp.content, resp)
   finally:
-    os.environ["HUE_CONF_DIR"] = prev_env_conf
+    if prev_env_conf is None:
+      os.environ.pop("HUE_CONF_DIR", None)
+    else:
+      os.environ["HUE_CONF_DIR"] = prev_env_conf
+
 
 def hue_version():
   global HUE_VERSION
@@ -460,6 +477,7 @@ def test_app_permissions():
 
     # Access to nothing
     check_app(401, 'beeswax')
+    check_app(401, 'hive')
     check_app(401, 'impala')
     check_app(401, 'hbase')
     check_app(401, 'pig')
@@ -479,9 +497,13 @@ def test_app_permissions():
     assert_false('scheduler' in apps, apps)
     assert_false('sdkapps' in apps, apps)
 
-    # Add access to beeswax
+    # Should always be enabled as it is a lib
     grant_access(USERNAME, GROUPNAME, "beeswax")
+
+    # Add access to hive
+    grant_access(USERNAME, GROUPNAME, "hive")
     check_app(200, 'beeswax')
+    check_app(200, 'hive')
     check_app(401, 'impala')
     check_app(401, 'hbase')
     check_app(401, 'pig')
@@ -504,6 +526,7 @@ def test_app_permissions():
     # Add access to hbase
     grant_access(USERNAME, GROUPNAME, "hbase")
     check_app(200, 'beeswax')
+    check_app(200, 'hive')
     check_app(401, 'impala')
     check_app(200, 'hbase')
     check_app(401, 'pig')
@@ -571,7 +594,7 @@ def test_app_permissions():
 
     # Oozie Editor and Browser
     grant_access(USERNAME, GROUPNAME, "oozie")
-    check_app(401, 'beeswax')
+    check_app(401, 'hive')
     check_app(200, 'impala')
     check_app(401, 'hbase')
     check_app(401, 'pig')
@@ -586,7 +609,7 @@ def test_app_permissions():
     assert_false('spark' in apps.get('editor', {}).get('interpreter_names', []), apps)
 
     grant_access(USERNAME, GROUPNAME, "pig")
-    check_app(401, 'beeswax')
+    check_app(401, 'hive')
     check_app(200, 'impala')
     check_app(401, 'hbase')
     check_app(200, 'pig')
@@ -603,7 +626,7 @@ def test_app_permissions():
 
     if 'search' not in desktop.conf.APP_BLACKLIST.get():
       grant_access(USERNAME, GROUPNAME, "search")
-      check_app(401, 'beeswax')
+      check_app(401, 'hive')
       check_app(200, 'impala')
       check_app(401, 'hbase')
       check_app(200, 'pig')
@@ -620,7 +643,7 @@ def test_app_permissions():
 
     if 'spark' not in desktop.conf.APP_BLACKLIST.get():
       grant_access(USERNAME, GROUPNAME, "spark")
-      check_app(401, 'beeswax')
+      check_app(401, 'hive')
       check_app(200, 'impala')
       check_app(401, 'hbase')
       check_app(200, 'pig')
@@ -735,6 +758,8 @@ def test_validate_path():
   finally:
     reset()
 
+
+@attr('integration')
 @attr('requires_hadoop')
 def test_config_check():
   with tempfile.NamedTemporaryFile() as cert_file:
@@ -757,7 +782,7 @@ def test_config_check():
         for old_conf in reset:
           old_conf()
 
-      prev_env_conf = os.environ["HUE_CONF_DIR"]
+      prev_env_conf = os.environ.get("HUE_CONF_DIR")
       try:
         # Set HUE_CONF_DIR and make sure check_config returns appropriate conf
         os.environ["HUE_CONF_DIR"] = "/tmp/test_hue_conf_dir"
@@ -772,7 +797,10 @@ def test_config_check():
         resp = cli.get('/desktop/debug/check_config')
         assert_true('/tmp/test_hue_conf_dir' in resp.content, resp)
       finally:
-        os.environ["HUE_CONF_DIR"] = prev_env_conf
+        if prev_env_conf is None:
+          os.environ.pop("HUE_CONF_DIR", None)
+        else:
+          os.environ["HUE_CONF_DIR"] = prev_env_conf
         desktop.views.validate_by_spec = desktop.views.real_validate_by_spec
 
 def test_last_access_time():
@@ -809,6 +837,7 @@ def test_ui_customizations():
 
   try:
     c = make_logged_in_client()
+    c.logout()
     resp = c.get('/hue/accounts/login/', follow=False)
     assert_true(custom_message in resp.content, resp)
     resp = c.get('/hue/about', follow=True)
@@ -818,6 +847,7 @@ def test_ui_customizations():
       old_conf()
 
 
+@attr('integration')
 @attr('requires_hadoop')
 def test_check_config_ajax():
   c = make_logged_in_client()

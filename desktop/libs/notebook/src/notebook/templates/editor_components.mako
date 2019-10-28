@@ -17,15 +17,16 @@
 <%!
 from django.utils.translation import ugettext as _
 
+from webpack_loader.templatetags.webpack_loader import render_bundle
+
 from desktop import conf
+from desktop.auth.backend import is_admin
 from desktop.lib.i18n import smart_unicode
 from desktop.views import _ko, antixss
-
 from desktop.conf import IS_EMBEDDED
 from metadata.conf import has_optimizer, OPTIMIZER
+
 from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_BATCH_EXECUTE, ENABLE_EXTERNAL_STATEMENT, ENABLE_PRESENTATION
-from desktop.auth.backend import is_admin
-from webpack_loader.templatetags.webpack_loader import render_bundle
 %>
 
 <%def name="includes(is_embeddable=False, suffix='')">
@@ -160,7 +161,7 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
                   <!-- ko case: 'markdown' -->Markdown<!-- /ko -->
                   <!-- ko case: 'text' -->Text<!-- /ko -->
                   <!-- ko case: 'clickhouse' -->ClickHouse<!-- /ko -->
-                  <!-- ko case: $default -->SQL<!-- /ko -->
+                  <!-- ko case: $default --><span data-bind="text: editorTypeTitle()"></span><!-- /ko -->
                   <!-- /ko -->
                 </span>
               % else:
@@ -189,7 +190,7 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
                 <!-- ko case: 'markdown' -->Markdown<!-- /ko -->
                 <!-- ko case: 'text' -->Text<!-- /ko -->
                 <!-- ko case: 'clickhouse' -->ClickHouse<!-- /ko -->
-                <!-- ko case: $default -->SQL<!-- /ko -->
+                <!-- ko case: $default --><span data-bind="text: editorTypeTitle()"></span><!-- /ko -->
               <!-- /ko -->
               <!-- ko component: { name: 'hue-favorite-app', params: { app: 'editor', interpreter: editorType() }} --><!-- /ko -->
               </a>
@@ -258,7 +259,7 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
         </a>
 
         <!-- ko if: $root.canSave() -->
-        <a class="btn dropdown-toggle" data-toggle="dropdown" href="#"><span class="caret"></span></a>
+        <a class="btn dropdown-toggle" data-toggle="dropdown" href="javascript: void(0)"><span class="caret"></span></a>
         <ul class="dropdown-menu pull-right">
           <li>
             <a class="pointer" title="${ _ko('Whether to open in presentation or editor mode by default') }" data-bind="click: function() { isPresentationModeDefault(!isPresentationModeDefault()); }">
@@ -289,7 +290,7 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
         </a>
 
         <!-- ko if: $root.canSave -->
-        <a class="btn dropdown-toggle" data-toggle="dropdown" href="#"><span class="caret"></span></a>
+        <a class="btn dropdown-toggle" data-toggle="dropdown" href="javascript: void(0)"><span class="caret"></span></a>
         <ul class="dropdown-menu pull-right">
           <li>
             <a class="pointer" data-bind="click: function() { $('#saveAsModal${ suffix }').modal('show'); }">
@@ -394,7 +395,7 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
     <!-- ko component: 'aceKeyboardShortcuts' --><!-- /ko -->
   </div>
   <div class="modal-footer">
-    <a href="#" class="btn" data-dismiss="modal">${_('Close')}</a>
+    <a href="javascript: void(0)" class="btn" data-dismiss="modal">${_('Close')}</a>
   </div>
 </div>
 
@@ -407,7 +408,7 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
     <pre data-bind="oneClickSelect, text: combinedContent"></pre>
   </div>
   <div class="modal-footer">
-    <a href="#" class="btn" data-dismiss="modal">${_('Close')}</a>
+    <a href="javascript: void(0)" class="btn" data-dismiss="modal">${_('Close')}</a>
   </div>
 </div>
 
@@ -566,46 +567,46 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
       <!-- ko ifnot: sessions().length -->
       <p>${ _('There are currently no active sessions, please reload the page.') }</p>
       <!-- /ko -->
+
       <!-- ko foreach: sessions -->
-      <h4 style="clear:left; display: inline-block">
-        <span data-bind="text: $parents[1].getSnippetName(type())"></span>
-        <!-- ko if: typeof session_id != 'undefined' && session_id -->
-          <span data-bind="text: session_id"></span>
-        <!-- /ko -->
-      </h4>
-      <div class="session-actions">
-        <a class="inactive-action pointer" title="${ _('Recreate session') }" rel="tooltip" data-bind="click: function() { $parent.restartSession($data) }">
-          <i class="fa fa-refresh" data-bind="css: { 'fa-spin': restarting }"></i> ${ _('Recreate') }
-        </a>
-        <a class="inactive-action pointer margin-left-10" title="${ _('Close session') }" rel="tooltip" data-bind="click: function() { $parent.closeAndRemoveSession($data) }">
-          <i class="fa fa-times"></i> ${ _('Close') }
-        </a>
-        % if conf.USE_DEFAULT_CONFIGURATION.get():
-          <a class="inactive-action pointer margin-left-10" title="${ _('Save session settings as default') }" rel="tooltip" data-bind="click: function() { $parent.saveDefaultUserProperties($data) }"><i class="fa fa-save"></i> ${ _('Set as default settings') }</a>
-        % endif
-        % if not IS_EMBEDDED.get():
-        <!-- ko if: type() == 'impala' && typeof http_addr != 'undefined' -->
-          <a class="margin-left-10" data-bind="attr: {'href': http_addr()}" target="_blank">
-            <span data-bind="text: http_addr().replace(/^(https?):\/\//, '')"></span> <i class="fa fa-external-link"></i>
+        <h4 style="clear:left; display: inline-block">
+          <span data-bind="text: $parents[1].getSnippetName(type())"></span>
+          <!-- ko if: typeof session_id != 'undefined' && session_id -->
+            <span data-bind="text: session_id"></span>
+          <!-- /ko -->
+        </h4>
+        <div class="session-actions">
+          <a class="inactive-action pointer" title="${ _('Recreate session') }" rel="tooltip" data-bind="click: function() { $parent.restartSession($data) }">
+            <i class="fa fa-refresh" data-bind="css: { 'fa-spin': restarting }"></i> ${ _('Recreate') }
           </a>
-        <!-- /ko -->
+          <a class="inactive-action pointer margin-left-10" title="${ _('Close session') }" rel="tooltip" data-bind="click: function() { $parent.closeAndRemoveSession($data) }">
+            <i class="fa fa-times"></i> ${ _('Close') }
+          </a>
+          % if conf.USE_DEFAULT_CONFIGURATION.get():
+            <a class="inactive-action pointer margin-left-10" title="${ _('Save session settings as default') }" rel="tooltip" data-bind="click: function() { $parent.saveDefaultUserProperties($data) }"><i class="fa fa-save"></i> ${ _('Set as default settings') }</a>
+          % endif
+          % if not IS_EMBEDDED.get():
+          <!-- ko if: type() == 'impala' && typeof http_addr != 'undefined' -->
+            <a class="margin-left-10" data-bind="attr: {'href': http_addr()}" target="_blank">
+              <span data-bind="text: http_addr().replace(/^(https?):\/\//, '')"></span> <i class="fa fa-external-link"></i>
+            </a>
+          <!-- /ko -->
+          % endif
+        </div>
+        % if conf.USE_DEFAULT_CONFIGURATION.get():
+        <div style="width:100%;">
+          <!-- ko component: { name: 'property-selector', params: { properties: properties } } --><!-- /ko -->
+        </div>
         % endif
-      </div>
-      % if conf.USE_DEFAULT_CONFIGURATION.get():
-      <div style="width:100%;">
-        <!-- ko component: { name: 'property-selector', params: { properties: properties } } --><!-- /ko -->
-      </div>
-      % endif
-      <div style="clear:both; padding-left: 120px;">
-        <!-- ko if: availableNewProperties().length -->
-        <a class="pointer" style="padding:5px;" data-bind="click: selectedSessionProperty() && function() {
-                    properties.push(ko.mapping.fromJS({'name': selectedSessionProperty(), 'value': ''}));
-                    selectedSessionProperty('');
-                   }" style="margin-left:10px;vertical-align: text-top;">
-        </a>
-        <!-- /ko -->
-      </div>
-      <!-- /ko -->
+        <div style="clear:both; padding-left: 120px;">
+          <!-- ko if: availableNewProperties().length -->
+          <a class="pointer" style="padding:5px;" data-bind="click: selectedSessionProperty() && function() {
+                      properties.push(ko.mapping.fromJS({'name': selectedSessionProperty(), 'value': ''}));
+                      selectedSessionProperty('');
+                     }" style="margin-left:10px;vertical-align: text-top;">
+          </a>
+          <!-- /ko -->
+        </div>
       <!-- /ko -->
       <br/>
     </fieldset>
@@ -623,7 +624,7 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
 </script>
 
 <script type="text/html" id="snippet-log${ suffix }">
-  <div class="snippet-log-container margin-bottom-10">
+  <div class="snippet-log-container margin-bottom-10" data-bind="visible: showLogs">
     <div data-bind="delayedOverflow: 'slow', css: resultsKlass" style="margin-top: 5px; position: relative;">
       <a href="javascript: void(0)" class="inactive-action close-logs-overlay" data-bind="click: function(){ showLogs(false) }">&times;</a>
       % if not IS_EMBEDDED.get():
@@ -1004,7 +1005,7 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
             </div>
           </div>
           <!-- ko template: { if: ['text', 'markdown'].indexOf(type()) == -1, name: 'snippet-execution-status${ suffix }' } --><!-- /ko -->
-          <!-- ko template: { if: $root.editorMode() && ! $root.isResultFullScreenMode() && ['jar', 'java', 'spark2', 'distcp', 'shell', 'mapreduce'].indexOf(type()) == -1, name: 'snippet-code-resizer${ suffix }' } --><!-- /ko -->
+          <!-- ko template: { if: $root.editorMode() && ! $root.isResultFullScreenMode() && ['jar', 'java', 'spark2', 'distcp', 'shell', 'mapreduce', 'py'].indexOf(type()) == -1, name: 'snippet-code-resizer${ suffix }' } --><!-- /ko -->
           <!-- ko if: !$root.isResultFullScreenMode() -->
             <!-- ko template: 'snippet-log${ suffix }' --><!-- /ko -->
           <!-- /ko -->
@@ -1183,7 +1184,7 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
           minLines: $root.editorMode() ? null : 3
         }
       }, style: {opacity: statementType() !== 'text' || $root.isPresentationMode() ? '0.75' : '1', 'min-height': $root.editorMode() ? '0' : '48px', 'top': $root.editorMode() && statementType() !== 'text' ? '60px' : '0'}"></div>
-      <!-- ko component: { name: 'hueAceAutocompleter', params: { editor: ace, snippet: $data } } --><!-- /ko -->
+      <!-- ko component: { name: 'hueAceAutocompleter', params: { editor: ace.bind($data), snippet: $data } } --><!-- /ko -->
 
       <ul class="table-drop-menu hue-context-menu">
         <li class="editor-drop-value"><a href="javascript:void(0);">"<span class="editor-drop-identifier"></span>"</a></li>
@@ -1222,10 +1223,10 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
       <!-- /ko -->
     <!-- /ko -->
 
-    <a class="btn dropdown-toggle" data-toggle="dropdown" href="#">
+    <a class="btn dropdown-toggle" data-toggle="dropdown" href="javascript: void(0)">
       <span class="caret"></span>
     </a>
-    <ul class="dropdown-menu pull-right">
+    <ul class="dropdown-menu">
       <li>
         <a class="pointer" rel="tooltip" data-placement="bottom" data-bind="click: function() { $root.selectedNotebook().isHidingCode(! $root.isHidingCode()); }, attr: { 'title': $root.isHidingCode() ? '${ _ko('Show the logic') }' : '${ _ko('Hide the logic') }' }">
           <i class="fa fa-fw" data-bind="css: { 'fa-expand': $root.isHidingCode(), 'fa-compress': ! $root.isHidingCode() }"></i>
@@ -1444,8 +1445,8 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
             <input class="all-meta-checked no-margin-top" type="checkbox" data-bind="enable: !result.isMetaFilterVisible() && result.filteredMeta().length > 0, event: { change: function(){ toggleAllResultColumns($element); result.clickFilteredMetaCheck() } }, checked: result.filteredMetaChecked" />
           </th>
           <th colspan="2" class="nav-header-like">
-            <span class="meta-title pointer" data-bind="click: function(){ result.isMetaFilterVisible(true); }, attr: {title: result.filteredMeta().length }">${_('columns')}</span>
-            (<span class="meta-title pointer" data-bind="click: function(){ result.isMetaFilterVisible(true); }, text: result.filteredMeta().length"></span>)
+            <span class="meta-title pointer" data-bind="click: function() { result.isMetaFilterVisible(true); }, attr: { title: result.filteredColumnCount() }">${_('columns')}</span>
+            (<span class="meta-title pointer" data-bind="click: function() { result.isMetaFilterVisible(true); }, text: result.filteredColumnCount()"></span>)
             <span class="inactive-action" href="javascript:void(0)" data-bind="click: function(){ result.isMetaFilterVisible(true); }, css: { 'blue' : result.isMetaFilterVisible }"><i class="pointer fa fa-search" title="${ _('Search') }"></i></span>
           </th>
         </tr>
@@ -1716,7 +1717,7 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
     <a class="inactive-action pull-left snippet-logs-btn" href="javascript:void(0)" data-bind="visible: status() === 'running' && errors().length == 0, click: function() { hideFixedHeaders(); $data.showLogs(!$data.showLogs());}, css: {'blue': $data.showLogs}" title="${ _('Toggle Logs') }"><i class="fa fa-fw" data-bind="css: { 'fa-caret-right': !$data.showLogs(), 'fa-caret-down': $data.showLogs() }"></i></a>
     <div class="snippet-progress-container" data-bind="visible: status() != 'canceled' && status() != 'with-optimizer-report'">
       <div class="progress-snippet progress" data-bind="css: {
-        'progress-starting': progress() == 0 && status() == 'running',
+        'progress-starting': progress() == 0 && (status() == 'running' || status() == 'starting'),
         'progress-warning': progress() > 0 && progress() < 100,
         'progress-success': progress() == 100,
         'progress-danger': progress() == 0 && errors().length > 0}" style="background-color: #FFF; width: 100%">
@@ -1790,7 +1791,7 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
       <div class="pull-left" data-bind="text: (result.statement_id() + 1)"></div><div class="pull-left">/</div><div class="pull-left" data-bind="text: result.statements_count()"></div>
     </div>
     <!-- ko if: !isCanceling() -->
-    <a class="snippet-side-btn red" data-bind="click: cancel, visible: status() == 'running'" title="${ _('Cancel operation') }">
+    <a class="snippet-side-btn red" data-bind="click: cancel, visible: status() == 'running' || status() == 'starting'" title="${ _('Cancel operation') }">
       <i class="fa fa-fw fa-stop snippet-side-single"></i>
     </a>
     <!-- /ko -->
@@ -1806,7 +1807,7 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
       </a>
       <!-- /ko -->
       <!-- ko if: ! isBatchable() || ! wasBatchExecuted() -->
-      <a class="snippet-side-btn" style="padding-right:0" href="javascript: void(0)" data-bind="attr: {'title': $root.editorMode() && result.statements_count() > 1 ? '${ _ko('Execute next statement')}' : '${ _ko('Execute or CTRL + ENTER') }'}, click: function() { wasBatchExecuted(false); execute(); }, visible: status() != 'running' && status() != 'loading', css: {'blue': $parent.history().length == 0 || $root.editorMode(), 'disabled': ! isReady() }, style: {'padding-left': $parent.isBatchable() ? '2px' : '0' }">
+      <a class="snippet-side-btn" style="padding-right:0" href="javascript: void(0)" data-bind="attr: {'title': $root.editorMode() && result.statements_count() > 1 ? '${ _ko('Execute next statement')}' : '${ _ko('Execute or CTRL + ENTER') }'}, click: function() { wasBatchExecuted(false); execute(); }, visible: status() != 'running' && status() != 'loading' && status() != 'starting', css: {'blue': $parent.history().length == 0 || $root.editorMode(), 'disabled': ! isReady() }, style: {'padding-left': $parent.isBatchable() ? '2px' : '0' }">
         <i class="fa fa-fw fa-play" data-bind="css: { 'snippet-side-single' : ! $parent.isBatchable() }"></i>
       </a>
       <!-- /ko -->
@@ -2037,6 +2038,13 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
     <h2 class="modal-title">${_('Connect to the data source')}</h2>
   </div>
   <div class="modal-body">
+    <!-- ko if: $root.authSessionMessage() -->
+      <div class="row-fluid">
+        <div class="alert-warning">
+          <span data-bind="text: authSessionMessage"></span>
+        </div>
+      </div>
+    <!-- /ko -->
     <div class="row-fluid">
       <div class="span6">
         <div class="input-prepend">

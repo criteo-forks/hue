@@ -55,7 +55,7 @@ from dashboard.conf import USE_GRIDSTER, USE_NEW_ADD_METHOD, HAS_REPORT_ENABLED,
   <div class="search-bar-header">
     <div class="search-bar-logo">
       <div class="app-header">
-        <a href="#" data-bind="hueLink: '${ url('dashboard:new_search') }'">
+        <a href="javascript: void(0)" data-bind="hueLink: '${ url('dashboard:new_search') }'">
           <!-- ko template: { name: 'app-icon-template', data: { icon: 'dashboard' } } --><!-- /ko --> ${ _('Dashboard') }
           <!-- ko component: { name: 'hue-favorite-app', params: { app: 'dashboard' }} --><!-- /ko -->
         </a>
@@ -571,50 +571,49 @@ ${ dashboard.layout_skeleton(suffix='search') }
 <script type="text/html" id="facet-toggle2">
   <div class="pull-left margin-right-20">
 
-  <!-- ko if: $root.isEditing -->
+    <!-- ko if: $root.isEditing -->
+    <div class="facet-field-cnt" data-bind="visible: $root.collection.nested.enabled">
+      <span class="spinedit-cnt">
+        <span class="facet-field-label">
+          ${ _('Domain') }
+        </span>
+        ${ _('Parent') }
+        <select data-bind="selectedOptions: properties.domain.blockParent, options: $root.collection.nestedNames" size="5" multiple="true"></select>
+        ${ _('Children') }
+        <select data-bind="selectedOptions: properties.domain.blockChildren, options: $root.collection.nestedNames" size="5" multiple="true"></select>
 
-  <div class="facet-field-cnt" data-bind="visible: $root.collection.nested.enabled">
-    <span class="spinedit-cnt">
-      <span class="facet-field-label">
-        ${ _('Domain') }
+        <input type="text" class="input-medium" data-bind="spinedit: properties.mincount"/>
       </span>
-      ${ _('Parent') }
-      <select data-bind="selectedOptions: properties.domain.blockParent, options: $root.collection.nestedNames" size="5" multiple="true"></select>
-      ${ _('Children') }
-      <select data-bind="selectedOptions: properties.domain.blockChildren, options: $root.collection.nestedNames" size="5" multiple="true"></select>
+    </div>
+    <!-- /ko -->
 
-      <input type="text" class="input-medium" data-bind="spinedit: properties.mincount"/>
-    </span>
-  </div>
-
-  <!-- /ko -->
-
-  <!-- ko if: !$parents[1].isLoading() || widgetType() == 'hit-widget' -->
-  <div class="edit-dimensions" data-bind="css: { 'is-editing': isEditing }">
-    <div data-bind="sortable: { data: properties.facets, allowDrop: false, options: { axis: 'x', handle: '.move-dimension', tolerance: 'pointer'}}" class="inline-block">
-      <div class="badge dimensions-badge-container" data-bind="css: { 'is-editing': isEditing }, click: function(){ $parent.isEditing(true); $parent.isAdding(false); $parent.properties.facets().forEach(function(f){ f.isEditing(false); }); isEditing(true); }" title="${ _('Edit') }">
-        <span data-bind="text: getPrettyMetric($data)"></span>
-        <span class="badge badge-info dimensions-badge" data-bind="text: field, attr: { 'title': field }"></span>
-        <!-- ko if: aggregate.function() != 'field' && aggregate.metrics && $parent.widgetType() != 'hit-widget' -->
-          <i class="fa" data-bind="css: { 'fa-long-arrow-down': sort() == 'desc', 'fa-long-arrow-up': sort() == 'asc' }"></i>
-        <!-- /ko -->
-        <div class="action-icon margin-left-5 move-dimension" data-bind="visible: $parent.properties.facets().length > 1" title="${ _('Move') }">
-          <i class="fa fa-bars"></i>
+    <!-- ko if: !$parents[1].isLoading() || widgetType() == 'hit-widget' -->
+    <div class="edit-dimensions" data-bind="css: { 'is-editing': isEditing }">
+      <div data-bind="sortable: { data: properties.facets, allowDrop: false, options: { axis: 'x', handle: '.move-dimension', tolerance: 'pointer'}}" class="inline-block">
+        <div class="badge dimensions-badge-container" data-bind="css: { 'is-editing': isEditing }, click: function(){ $parent.isEditing(true); $parent.isAdding(false); $parent.properties.facets().forEach(function(f){ f.isEditing(false); }); isEditing(true); }" title="${ _('Edit') }">
+          <span data-bind="text: getPrettyMetric($data)"></span>
+          <span class="badge badge-info dimensions-badge" data-bind="text: field, attr: { 'title': field }"></span>
+          <!-- ko if: aggregate.function() != 'field' && aggregate.metrics && $parent.widgetType() != 'hit-widget' -->
+            <i class="fa" data-bind="css: { 'fa-long-arrow-down': sort() == 'desc', 'fa-long-arrow-up': sort() == 'asc' }"></i>
+          <!-- /ko -->
+          <div class="action-icon margin-left-5 move-dimension" data-bind="visible: $parent.properties.facets().length > 1" title="${ _('Move') }">
+            <i class="fa fa-bars"></i>
+          </div>
+          <!-- ko if: isEditing -->
+          <div class="metric-form" data-bind="template: { name: 'metric-form' }"></div>
+          <!-- /ko -->
         </div>
-        <!-- ko if: isEditing -->
-        <div class="metric-form" data-bind="template: { name: 'metric-form' }"></div>
+      </div>
+      <div class="badge dimensions-badge-container dimensions-badge-container-add" data-bind="css: { 'is-adding': isAdding }, visible: properties.facets().length < 15 && widgetType() != 'hit-widget'">
+        <div class="action-icon" data-bind="click: function(){ isEditing(true); isAdding(true); properties.facets().forEach(function(f){ f.isEditing(false); });  }"><i class="fa fa-plus"></i> ${ _('Add') }</div>
+        <!-- ko if: isAdding -->
+          <div class="metric-form" data-bind="template: { name: 'metric-form', data: properties.facets_form }"></div>
         <!-- /ko -->
       </div>
+      <div class="clearfix"></div>
     </div>
-    <div class="badge dimensions-badge-container dimensions-badge-container-add" data-bind="css: { 'is-adding': isAdding }, visible: properties.facets().length < 15 && widgetType() != 'hit-widget'">
-      <div class="action-icon" data-bind="click: function(){ isEditing(true); isAdding(true); properties.facets().forEach(function(f){ f.isEditing(false); });  }"><i class="fa fa-plus"></i> ${ _('Add') }</div>
-      <!-- ko if: isAdding -->
-        <div class="metric-form" data-bind="template: { name: 'metric-form', data: properties.facets_form }"></div>
-      <!-- /ko -->
-    </div>
-    <div class="clearfix"></div>
+    <!-- /ko -->
   </div>
-  <!-- /ko -->
 
   <div class="clearfix"></div>
 </script>
@@ -856,12 +855,11 @@ ${ dashboard.layout_skeleton(suffix='search') }
 
 <script type="text/html" id="resultset-widget">
   <!-- ko if: $root.collection.template.isGridLayout() -->
-
-   <!-- ko with: $root -->
+    <!-- ko with: $root -->
       <!-- ko if: $root.hasRetrievedResults() && $root.response().response -->
       <span data-bind="template: {name: 'data-grid', data: $root.collection}"></span>
       <!-- /ko -->
-   <!-- /ko -->
+    <!-- /ko -->
   <!-- /ko -->
 </script>
 
@@ -1471,7 +1469,7 @@ ${ dashboard.layout_skeleton(suffix='search') }
         <!-- /ko -->
 
         <!-- ko if: $root.collection.engine() == 'solr' -->
-        <form method="POST" action="${ url('dashboard:download') }" style="display:inline">
+        <form method="POST" style="display:inline" data-bind="attr: { action: window.HUE_BASE_URL + '${ url("dashboard:download") }' }">
           ${ csrf_token(request) | n,unicode }
           <input type="hidden" name="collection" data-bind="value: ko.mapping.toJSON($root.collection)"/>
           <input type="hidden" name="query" data-bind="value: ko.mapping.toJSON($root.query)"/>
@@ -1796,13 +1794,10 @@ ${ dashboard.layout_skeleton(suffix='search') }
           <div class="clearfix"></div>
           <!-- /ko -->
         <!-- /ko -->
-
        </div>
      </div>
-
     </div>
   </div>
-
 </script>
 
 
@@ -1811,13 +1806,10 @@ ${ dashboard.layout_skeleton(suffix='search') }
   ##  <i class="fa fa-spinner fa-spin"></i>
   ##</div>
 
-
   <!-- ko if: $root.getFacetFromQuery(id()).has_data() -->
   <div class="row-fluid" data-bind="with: $root.getFacetFromQuery(id())">
-
     <!-- ko with: $root.collection.getFacetById($parent.id()) -->
     <div>
-
 ##       <input type="text" class="input-medium" data-bind="value: properties.engine"/>
 ##       <textarea data-bind="value: properties.statement"></textarea>
 
@@ -1826,9 +1818,8 @@ ${ dashboard.layout_skeleton(suffix='search') }
 
       <span data-bind="template: { name: 'data-grid' }"></span>
     </div>
-   <!-- /ko -->
+    <!-- /ko -->
   </div>
-
   <!-- /ko -->
 </script>
 
@@ -1872,7 +1863,6 @@ ${ dashboard.layout_skeleton(suffix='search') }
     <span data-bind="template: { name: 'data-grid' }"></span>
    <!-- /ko -->
   </div>
-
   <!-- /ko -->
 </script>
 
@@ -2727,7 +2717,7 @@ ${ dashboard.layout_skeleton(suffix='search') }
           autocompleteFromEntries: $root.collection.template.autocompleteFromFieldsModalFilter
         }
       } --><!-- /ko -->
-      <!--<input id="addFacetInput" type="text" data-bind="clearable: $root.collection.template.fieldsModalFilter, valueUpdate:'afterkeydown'" placeholder="${_('Filter fields')}" class="input" style="float: left" /><br/>-->
+##       <input id="addFacetInput" type="text" data-bind="clearable: $root.collection.template.fieldsModalFilter, valueUpdate:'afterkeydown'" placeholder="${_('Filter fields')}" class="input" style="float: left" /><br/>
     </div>
     <div>
       <ul data-bind="foreach: $root.collection.template.filteredModalFields().sort(function (l, r) { return l.name() > r.name() ? 1 : -1 }), visible: $root.collection.template.filteredModalFields().length > 0"
@@ -2837,8 +2827,6 @@ ${ dashboard.layout_skeleton(suffix='search') }
               </div>
             </div>
             <!-- /ko -->
-            <!-- /ko -->
-
             <!-- /ko -->
           </fieldset>
         </form>
@@ -3150,7 +3138,6 @@ var ALPHA_HIT_OPTIONS = [
 ];
 var HIT_OPTIONS = NUMERIC_HIT_OPTIONS
 ;
-
 
 function prepareShareModal() {
   shareViewModel.setDocUuid(this.collection.uuid());
@@ -4130,7 +4117,7 @@ function loadSearch(collection, query, initial) {
 
   searchViewModel.init(function(){
     $(".chosen-select").trigger("chosen:updated");
-    if (searchViewModel.collection.engine() === 'report') {
+    if (searchViewModel.collection.engine() === 'report' || searchViewModel.collection.engine() === 'solr') {
       if (!searchViewModel.collectionJson.layout.length && (!searchViewModel.collectionJson.gridItems || !searchViewModel.collectionJson.gridItems.length)) {
         magicSearchLayout(searchViewModel);
       }

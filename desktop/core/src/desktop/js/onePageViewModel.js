@@ -232,7 +232,7 @@ class OnePageViewModel {
       $rawHtml.find('a[href]').each(function() {
         let link = $(this).attr('href');
         if (link.startsWith('/') && !link.startsWith('/hue')) {
-          link = '/hue' + link;
+          link = window.HUE_BASE_URL + '/hue' + link;
         }
         $(this).attr('href', link);
       });
@@ -335,26 +335,32 @@ class OnePageViewModel {
                 if (typeof self.currentContextParams()[key.name] !== 'undefined') {
                   if (app === 'filebrowser') {
                     baseURL = baseURL
-                      .replace('*', self.currentContextParams()[key.name])
+                      .replace('*', encodeURIComponent(self.currentContextParams()[key.name]))
                       .replace(/#/g, '%23');
                   } else {
-                    baseURL = baseURL.replace('*', self.currentContextParams()[key.name]);
+                    baseURL = baseURL.replace(
+                      '*',
+                      encodeURI(self.currentContextParams()[key.name])
+                    ); // We have some really funky stuff in here, this should be encodeURIComponent
                   }
                 } else {
                   baseURL = baseURL.replace('*', '');
                 }
               } else {
-                baseURL = baseURL.replace(':' + key.name, self.currentContextParams()[key.name]);
+                baseURL = baseURL.replace(
+                  ':' + key.name,
+                  encodeURI(self.currentContextParams()[key.name])
+                ); // We have some really funky stuff in here, this should be encodeURIComponent
               }
             });
           }
           self.currentContextParams(null);
         }
         if (self.currentQueryString() !== null) {
-          baseURL += (baseURL.indexOf('?') > -1 ? '&' : '?') + self.currentQueryString();
+          baseURL += (baseURL.indexOf('?') > -1 ? '&' : '?') + encodeURI(self.currentQueryString());
           self.currentQueryString(null);
         }
-        baseURL = encodeURI(baseURL);
+
         $.ajax({
           url:
             baseURL +
@@ -383,7 +389,14 @@ class OnePageViewModel {
                 }, 0);
               });
             } else {
-              window.location.href = baseURL;
+              if (type.indexOf('json') > -1) {
+                const presponse = JSON.parse(response);
+                if (presponse && presponse.url) {
+                  window.location.href = window.HUE_BASE_URL + presponse.url;
+                  return;
+                }
+              }
+              window.location.href = window.HUE_BASE_URL + baseURL;
             }
           },
           error: function(xhr) {
@@ -445,7 +458,7 @@ class OnePageViewModel {
     $(window.IS_EMBEDDED ? '.hue-embedded-container a[href]' : 'a[href]').each(function() {
       let link = $(this).attr('href');
       if (link.startsWith('/') && !link.startsWith('/hue')) {
-        link = '/hue' + link;
+        link = window.HUE_BASE_URL + '/hue' + link;
       }
       $(this).attr('href', link);
     });
@@ -458,7 +471,7 @@ class OnePageViewModel {
       }
       page({ hashbang: true });
     } else {
-      page.base('/hue');
+      page.base(window.HUE_BASE_URL + '/hue');
     }
 
     const getUrlParameter = function(name) {
@@ -488,7 +501,7 @@ class OnePageViewModel {
       {
         url: '/accounts/logout',
         app: function() {
-          location.href = '/accounts/logout';
+          location.href = window.HUE_BASE_URL + '/accounts/logout';
         }
       },
       {
@@ -498,6 +511,13 @@ class OnePageViewModel {
         }
       },
       { url: '/dashboard/*', app: 'dashboard' },
+      {
+        url: '/desktop/api/desktop/api2/doc/export*',
+        app: function() {
+          const documents = getUrlParameter('documents');
+          location.href = window.HUE_BASE_URL + '/desktop/api2/doc/export?documents=' + documents;
+        }
+      },
       { url: '/desktop/dump_config', app: 'dump_config' },
       {
         url: '/desktop/debug/threads',
@@ -518,9 +538,27 @@ class OnePageViewModel {
         }
       },
       {
+        url: '/desktop/connectors',
+        app: function() {
+          self.loadApp('connectors');
+          self.getActiveAppViewModel(viewModel => {
+            viewModel.fetchConnectors();
+          });
+        }
+      },
+      {
+        url: '/desktop/analytics',
+        app: function() {
+          self.loadApp('analytics');
+          self.getActiveAppViewModel(viewModel => {
+            viewModel.fetchAnalytics();
+          });
+        }
+      },
+      {
         url: '/desktop/download_logs',
         app: function() {
-          location.href = '/desktop/download_logs';
+          location.href = window.HUE_BASE_URL + '/desktop/download_logs';
         }
       },
       {
@@ -558,7 +596,12 @@ class OnePageViewModel {
         }
       },
       { url: '/filebrowser/view=*', app: 'filebrowser' },
-      { url: '/filebrowser/download=*', app: 'filebrowser' },
+      {
+        url: '/filebrowser/download=*',
+        app: function(ctx) {
+          location.href = window.HUE_BASE_URL + '/filebrowser/download=' + ctx.params[0];
+        }
+      },
       {
         url: '/filebrowser/*',
         app: function() {
@@ -577,6 +620,7 @@ class OnePageViewModel {
       { url: '/catalog', app: 'catalog' },
       { url: '/kafka/', app: 'kafka' },
       { url: '/indexer/topics/*', app: 'kafka' },
+      { url: '/indexer/indexes', app: 'indexes' },
       { url: '/indexer/indexes/*', app: 'indexes' },
       { url: '/indexer/', app: 'indexes' },
       { url: '/indexer/importer/', app: 'importer' },
@@ -748,7 +792,6 @@ class OnePageViewModel {
       { url: '/useradmin/users/add_ldap_groups', app: 'useradmin_addldapgroups' },
       { url: '/useradmin/users/edit/:user', app: 'useradmin_edituser' },
       { url: '/useradmin/users/new', app: 'useradmin_newuser' },
-      { url: '/useradmin/users/', app: 'useradmin_users' },
       { url: '/useradmin', app: 'useradmin_users' }
     ];
 
@@ -795,7 +838,10 @@ class OnePageViewModel {
       if (href) {
         const prefix = window.IS_EMBEDDED ? '' : '/hue';
         if (href.startsWith('/') && !href.startsWith(prefix)) {
-          page(prefix + href);
+          page(window.HUE_BASE_URL + prefix + href);
+        } else if (href.indexOf('#') == 0) {
+          // Only place that seem to use this is hbase onclick row
+          window.location.hash = href;
         } else {
           page(href);
         }

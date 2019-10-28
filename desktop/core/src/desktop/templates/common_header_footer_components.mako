@@ -47,7 +47,7 @@ from metadata.conf import has_optimizer, OPTIMIZER
     }
 
     // check for IE document modes
-    if (document.documentMode && document.documentMode < 9){
+    if (document.documentMode && document.documentMode < 9) {
       location.href = "${ url('desktop_views_unsupported') }";
     }
 
@@ -68,7 +68,7 @@ from metadata.conf import has_optimizer, OPTIMIZER
       try {
         mTime = new Date(mTime);
         if (moment(mTime).isValid()) {
-          return moment.utc(mTime).format("L LT");
+          return moment.utc(mTime).local().format("L LT Z"); // [Local Date] [Local Time] [Timezone offset]
         }
       }
       catch (e) {
@@ -87,6 +87,20 @@ from metadata.conf import has_optimizer, OPTIMIZER
       }
     }
 
+
+    var xhrOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function () {
+      if (arguments[1].indexOf(window.HUE_BASE_URL) < 0) {
+        var index = arguments[1].indexOf(window.location.host);
+        if (index >= 0 && window.HUE_BASE_URL.length) { //Host is present in the url when using an html form.
+          index += window.location.host.length;
+            arguments[1] = arguments[1].substring(0, index) + window.HUE_BASE_URL + arguments[1].substring(index);
+        } else {
+          arguments[1] = window.HUE_BASE_URL + arguments[1];
+        }
+      }
+      return xhrOpen.apply(this, arguments);
+    };
     var xhrSend = XMLHttpRequest.prototype.send;
     XMLHttpRequest.prototype.send = function (data) {
       // Add CSRF Token to all XHR Requests

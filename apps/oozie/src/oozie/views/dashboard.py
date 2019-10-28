@@ -15,11 +15,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from future import standard_library
+standard_library.install_aliases()
+from builtins import str
 import json
 import logging
 import os
 import re
 import time
+import urllib.request, urllib.parse, urllib.error
 
 from django.forms.formsets import formset_factory
 from django.http import HttpResponse
@@ -34,6 +38,7 @@ from desktop.lib.django_util import JsonResponse, render
 from desktop.lib.json_utils import JSONEncoderForHTML
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.i18n import smart_str, smart_unicode
+from desktop.lib.paths import SAFE_CHARACTERS_URI_COMPONENTS
 from desktop.lib.rest.http_client import RestException
 from desktop.lib.view_util import format_duration_in_millis
 from desktop.log.access import access_warn
@@ -130,7 +135,7 @@ def manage_oozie_jobs(request, job_id, action):
     response['status'] = 0
     if 'notification' in request.POST:
       request.info(_(request.POST.get('notification')))
-  except RestException, ex:
+  except RestException as ex:
     ex_message = ex.message
     if ex._headers.get('oozie-error-message'):
       ex_message = ex._headers.get('oozie-error-message')
@@ -159,7 +164,7 @@ def bulk_manage_oozie_jobs(request):
       check_job_edition_permission(job, request.user)
       try:
         oozie_api.job_control(job_id, request.POST.get('action'))
-      except RestException, ex:
+      except RestException as ex:
         LOG.exception("Error performing bulk operation for job_id=%s", job_id)
 
         response['totalErrors'] = response['totalErrors'] + 1
@@ -172,7 +177,7 @@ def show_oozie_error(view_func):
   def decorate(request, *args, **kwargs):
     try:
       return view_func(request, *args, **kwargs)
-    except RestException, ex:
+    except RestException as ex:
       LOG.exception("Error communicating with Oozie in %s", view_func.__name__)
 
       detail = ex._headers.get('oozie-error-message', ex)
@@ -348,7 +353,7 @@ def list_oozie_workflow(request, job_id):
         new_workflow = get_workflow()(document=doc)
         workflow_data = new_workflow.get_data()
 
-    except Exception, e:
+    except Exception as e:
       LOG.exception("Error generating full page for running workflow %s with exception: %s" % (job_id, e.message))
     finally:
       workflow_graph = ''
@@ -359,7 +364,7 @@ def list_oozie_workflow(request, job_id):
           # Hide graph tab when node count > 30
           if workflow_data.get('workflow') and len(workflow_data.get('workflow')['nodes']) > 30:
             workflow_data = {}
-        except Exception, e:
+        except Exception as e:
           LOG.exception('Graph data could not be generated from Workflow %s: %s' % (oozie_workflow.id, e))
   else:
     history = get_history().cross_reference_submission_history(request.user, job_id)
@@ -407,7 +412,7 @@ def list_oozie_workflow(request, job_id):
       'workflow_graph': workflow_graph,
       'layout_json': json.dumps(workflow_data.get('layout', ''), cls=JSONEncoderForHTML) if workflow_data else '',
       'workflow_json': json.dumps(workflow_data.get('workflow', ''), cls=JSONEncoderForHTML) if workflow_data else '',
-      'credentials_json': json.dumps(credentials.credentials.keys(), cls=JSONEncoderForHTML) if credentials else '',
+      'credentials_json': json.dumps(list(credentials.credentials.keys()), cls=JSONEncoderForHTML) if credentials else '',
       'workflow_properties_json': json.dumps(WORKFLOW_NODE_PROPERTIES, cls=JSONEncoderForHTML),
       'doc_uuid': doc.uuid if doc else '',
       'graph_element_id': request.GET.get('element') if request.GET.get('element') else 'loaded ' + doc.uuid + ' graph',
@@ -433,12 +438,12 @@ def list_oozie_workflow(request, job_id):
     'oozie_slas': oozie_slas,
     'hue_workflow': hue_workflow,
     'hue_coord': hue_coord,
-    'parameters': dict((var, val) for var, val in parameters.iteritems() if var not in ParameterForm.NON_PARAMETERS and var != 'oozie.use.system.libpath' or var == 'oozie.wf.application.path'),
+    'parameters': dict((var, val) for var, val in parameters.items() if var not in ParameterForm.NON_PARAMETERS and var != 'oozie.use.system.libpath' or var == 'oozie.wf.application.path'),
     'has_job_edition_permission': has_job_edition_permission,
     'workflow_graph': workflow_graph,
     'layout_json': json.dumps(workflow_data.get('layout', ''), cls=JSONEncoderForHTML) if workflow_data else '',
     'workflow_json': json.dumps(workflow_data.get('workflow', ''), cls=JSONEncoderForHTML) if workflow_data else '',
-    'credentials_json': json.dumps(credentials.credentials.keys(), cls=JSONEncoderForHTML) if credentials else '',
+    'credentials_json': json.dumps(list(credentials.credentials.keys()), cls=JSONEncoderForHTML) if credentials else '',
     'workflow_properties_json': json.dumps(WORKFLOW_NODE_PROPERTIES, cls=JSONEncoderForHTML),
     'doc_uuid': doc.uuid if doc else '',
     'subworkflows_json': json.dumps(_get_workflows(request.user), cls=JSONEncoderForHTML),
@@ -549,7 +554,7 @@ def list_oozie_workflow_action(request, action):
   try:
     action = get_oozie(request.user).get_action(action)
     workflow = check_job_access_permission(request, action.id.split('@')[0])
-  except RestException, ex:
+  except RestException as ex:
     msg = _("Error accessing Oozie action %s.") % (action,)
     LOG.exception(msg)
 
@@ -739,12 +744,12 @@ def sync_coord_workflow(request, job_id):
 
     # Set previous values
     if properties:
-      new_params = dict([(key, properties[key]) if key in properties.keys() else (key, new_params[key]) for key, value in new_params.iteritems()])
+      new_params = dict([(key, properties[key]) if key in list(properties.keys()) else (key, new_params[key]) for key, value in new_params.items()])
 
     initial_params = ParameterForm.get_initial_params(new_params)
     params_form = ParametersFormSet(initial=initial_params)
 
-  popup = render('editor2/submit_job_popup.mako', request, {
+  popup = render('/scheduler/submit_job_popup.mako', request, {
              'params_form': params_form,
              'name': _('Job'),
              'header': _('Sync Workflow definition?'),
@@ -759,6 +764,8 @@ def rerun_oozie_job(request, job_id, app_path=None):
   check_job_edition_permission(oozie_workflow, request.user)
   if app_path is None:
     app_path = oozie_workflow.appPath
+  else:
+    app_path = urllib.parse.unquote(app_path)
   return_json = request.GET.get('format') == 'json'
 
   if request.method == 'POST':
@@ -790,15 +797,13 @@ def rerun_oozie_job(request, job_id, app_path=None):
     initial_params = ParameterForm.get_initial_params(oozie_workflow.conf_dict)
     params_form = ParametersFormSet(initial=initial_params)
 
-  popup = render('dashboard/rerun_workflow_popup.mako', request, {
+    return render('dashboard/rerun_workflow_popup.mako', request, {
                    'rerun_form': rerun_form,
                    'params_form': params_form,
-                   'action': reverse('oozie:rerun_oozie_job', kwargs={'job_id': job_id, 'app_path': app_path}),
+                   'action': reverse('oozie:rerun_oozie_job', kwargs={'job_id': job_id, 'app_path': urllib.parse.quote(app_path.encode('utf-8'), safe=SAFE_CHARACTERS_URI_COMPONENTS) }),
                    'return_json': return_json,
                    'is_mini': request.GET.get('is_mini', False),
-                 }, force_template=True).content
-
-  return JsonResponse(popup, safe=False)
+                 }, force_template=True)
 
 
 def _rerun_workflow(request, oozie_id, run_args, mapping):
@@ -806,7 +811,7 @@ def _rerun_workflow(request, oozie_id, run_args, mapping):
     submission = Submission(user=request.user, fs=request.fs, jt=request.jt, properties=mapping, oozie_id=oozie_id)
     job_id = submission.rerun(**run_args)
     return job_id
-  except RestException, ex:
+  except RestException as ex:
     msg = _("Error re-running workflow %s.") % (oozie_id,)
     LOG.exception(msg)
 
@@ -820,6 +825,8 @@ def rerun_oozie_coordinator(request, job_id, app_path=None):
   ParametersFormSet = formset_factory(ParameterForm, extra=0)
   if app_path is None:
     app_path = oozie_coordinator.coordJobPath
+  else:
+    app_path = urllib.parse.unquote(app_path)
   return_json = request.GET.get('format') == 'json'
 
   if request.method == 'POST':
@@ -854,15 +861,13 @@ def rerun_oozie_coordinator(request, job_id, app_path=None):
     initial_params = ParameterForm.get_initial_params(oozie_coordinator.conf_dict)
     params_form = ParametersFormSet(initial=initial_params)
 
-  popup = render('dashboard/rerun_coord_popup.mako', request, {
+    return render('dashboard/rerun_coord_popup.mako', request, {
                    'rerun_form': rerun_form,
                    'params_form': params_form,
-                   'action': reverse('oozie:rerun_oozie_coord', kwargs={'job_id': job_id, 'app_path': app_path}),
+                   'action': reverse('oozie:rerun_oozie_coord', kwargs={'job_id': job_id, 'app_path': urllib.parse.quote(app_path.encode('utf-8'), safe=SAFE_CHARACTERS_URI_COMPONENTS)}),
                    'return_json': return_json,
                    'is_mini': request.GET.get('is_mini', False),
-                 }, force_template=True).content
-
-  return JsonResponse(popup, safe=False)
+                 }, force_template=True)
 
 
 def _rerun_coordinator(request, oozie_id, args, params, properties):
@@ -870,7 +875,7 @@ def _rerun_coordinator(request, oozie_id, args, params, properties):
     submission = Submission(user=request.user, fs=request.fs, jt=request.jt, oozie_id=oozie_id, properties=properties)
     job_id = submission.rerun_coord(params=params, **args)
     return job_id
-  except RestException, ex:
+  except RestException as ex:
     msg = _("Error re-running coordinator %s.") % (oozie_id,)
     LOG.exception(msg)
 
@@ -882,7 +887,7 @@ def rerun_oozie_bundle(request, job_id, app_path):
   oozie_bundle = check_job_access_permission(request, job_id)
   check_job_edition_permission(oozie_bundle, request.user)
   ParametersFormSet = formset_factory(ParameterForm, extra=0)
-
+  app_path = urllib.parse.unquote(app_path)
   if request.method == 'POST':
     params_form = ParametersFormSet(request.POST)
     rerun_form = RerunBundleForm(request.POST, oozie_bundle=oozie_bundle)
@@ -921,13 +926,11 @@ def rerun_oozie_bundle(request, job_id, app_path):
     initial_params = ParameterForm.get_initial_params(oozie_bundle.conf_dict)
     params_form = ParametersFormSet(initial=initial_params)
 
-  popup = render('dashboard/rerun_bundle_popup.mako', request, {
+    return render('dashboard/rerun_bundle_popup.mako', request, {
                    'rerun_form': rerun_form,
                    'params_form': params_form,
-                   'action': reverse('oozie:rerun_oozie_bundle', kwargs={'job_id': job_id, 'app_path': app_path}),
-                 }, force_template=True).content
-
-  return JsonResponse(popup, safe=False)
+                   'action': reverse('oozie:rerun_oozie_bundle', kwargs={'job_id': job_id, 'app_path': urllib.parse.quote(app_path.encode('utf-8'), safe=SAFE_CHARACTERS_URI_COMPONENTS)}),
+                 }, force_template=True)
 
 
 def _rerun_bundle(request, oozie_id, args, params, properties):
@@ -935,7 +938,7 @@ def _rerun_bundle(request, oozie_id, args, params, properties):
     submission = Submission(user=request.user, fs=request.fs, jt=request.jt, oozie_id=oozie_id, properties=properties)
     job_id = submission.rerun_bundle(params=params, **args)
     return job_id
-  except RestException, ex:
+  except RestException as ex:
     msg = _("Error re-running bundle %s.") % (oozie_id,)
     LOG.exception(msg)
 
@@ -958,7 +961,7 @@ def submit_external_job(request, application_path):
       try:
         submission = Submission(request.user, fs=request.fs, jt=request.jt, properties=mapping)
         job_id = submission.run(application_path)
-      except RestException, ex:
+      except RestException as ex:
         detail = ex._headers.get('oozie-error-message', ex)
         if 'Max retries exceeded with url' in str(detail):
           detail = '%s: %s' % (_('The Oozie server is not running'), detail)
@@ -1170,7 +1173,7 @@ def check_job_access_permission(request, job_id, **kwargs):
         oozie_job = get_job(job_id, **kwargs)
       else:
         oozie_job = get_job(job_id)
-    except RestException, ex:
+    except RestException as ex:
       msg = _("Error accessing Oozie job %s.") % (job_id,)
       LOG.exception(msg)
       raise PopupException(msg, detail=ex._headers.get('oozie-error-message'))

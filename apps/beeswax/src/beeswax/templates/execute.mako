@@ -23,7 +23,6 @@
   from notebook.conf import ENABLE_QUERY_BUILDER
 %>
 
-<%namespace name="assist" file="/assist.mako" />
 <%namespace name="comps" file="beeswax_components.mako" />
 <%namespace name="layout" file="layout.mako" />
 
@@ -793,9 +792,6 @@ ${ commonshare() | n,unicode }
 </script>
 
 <script src="${ static('desktop/js/hue.routie.js') }" type="text/javascript" charset="utf-8"></script>
-
-${ assist.assistJSModels() }
-
 <script src="${ static('beeswax/js/beeswax.vm.js') }"></script>
 <script src="${ static('desktop/js/share.vm.js') }"></script>
 %if ENABLE_QUERY_BUILDER.get():
@@ -850,8 +846,6 @@ ${ assist.assistJSModels() }
 <link href="${ static('desktop/ext/css/bootstrap-editable.css') }" rel="stylesheet">
 
 <script src="${ static('beeswax/js/stats.utils.js') }"></script>
-
-${ assist.assistPanel() }
 
 <style type="text/css">
   h1 {
@@ -1168,9 +1162,6 @@ var editorViewModel = {
 var snippet = {
   type: ko.observable(snippetType),
   isSqlDialect: ko.observable(true),
-  getApiHelper: function() {
-    return apiHelper;
-  },
   database: ko.observable()
 };
 
@@ -2401,7 +2392,7 @@ $(document).on('server.unmanageable_error', function (e, responseText) {
 $(document).on('saved.design', function (e, id) {
   $('#saveAs').modal('hide');
   $(document).trigger('info', "${_('Query saved.')}");
-  window.location.href = "/${ app_name }/execute/design/" + id;
+  huePubSub.publish('open.link', "/${ app_name }/execute/design/" + id);
 });
 $(document).on('error_save.design', function (e, message) {
   var _message = "${_('Could not save design')}";
@@ -2870,12 +2861,12 @@ viewModel.design.fileResources.values.subscribe(function() {
     var successUrl = "${request.GET['on_success_url']}";
     if (viewModel.design.watch.errors().length != 0) {
       window.setTimeout(function(){
-        window.location.href = successUrl + (successUrl.indexOf("?") > -1 ? "&" : "?") + "error=" + encodeURIComponent(viewModel.design.watch.errors().join("\n"));
+        huePubSub.publish('open.link', successUrl + (successUrl.indexOf("?") > -1 ? "&" : "?") + "error=" + encodeURIComponent(viewModel.design.watch.errors().join("\n")));
       }, 200);
     }
     else if (viewModel.design.results.errors().length == 0) {
       window.setTimeout(function(){
-        window.location.href = successUrl + (successUrl.indexOf("?") > -1 ? "&" : "?") + "refresh=true";
+        huePubSub.publish('open.link', successUrl + (successUrl.indexOf("?") > -1 ? "&" : "?") + "refresh=true");
       }, 1000);
     }
   });
