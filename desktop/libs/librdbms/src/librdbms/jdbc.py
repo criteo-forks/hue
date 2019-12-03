@@ -82,9 +82,10 @@ class Jdbc():
       self.connect()
       return True
     except Exception, e:
-      message = force_unicode(smart_str(e))
+      message = force_unicode(smart_str(e)).lower()
+      access_denied_words = ['access denied', 'authentication failed']
       if throw_exception:
-        if 'Access denied' in message:
+        if any(aw in message for aw in access_denied_words):
           raise AuthenticationRequired()
         raise
       else:
@@ -96,6 +97,12 @@ class Jdbc():
     if self.conn is None:
       self.gateway.jvm.Class.forName(self.jdbc_driver)
       self.conn = self.gateway.jvm.java.sql.DriverManager.getConnection(self.db_url, self.username, self.password)
+      if 'presto' in self.jdbc_driver:
+        # Some engines does not check autorization, so we need to force it,
+        # by, for example, fake query - the following request will throw
+        # exception in presto.
+        product_version = self.conn.getMetaData().getDatabaseProductVersion()
+        LOG.info("Database version %s" % product_version)
 
   def cursor(self):
     return Cursor(self.conn)
