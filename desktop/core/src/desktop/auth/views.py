@@ -49,6 +49,7 @@ from hadoop.fs.exceptions import WebHdfsException
 from useradmin.models import get_profile, UserProfile
 from useradmin.views import ensure_home_directory, require_change_password
 from notebook.connectors.base import get_api
+from notebook.conf import get_ordered_interpreters
 
 LOG = logging.getLogger(__name__)
 
@@ -221,6 +222,16 @@ def dt_logout(request, next_page=None):
     except Exception, e:
       LOG.warn("Error closing Impala session: %s" % e)
 
+  session = {"type":"all","sourceMethod":"dt_logout"}
+  apis = get_api(request, session)
+  for api in apis:
+    interpreter = api.interpreter if api.interpreter else {}
+    try:
+      LOG.debug("Close session: %s, interpreter %s" % (api, interpreter))
+      api.close_session(interpreter)
+    except Exception, e:
+      LOG.warn("Error closing %s session: %s" % (api, e))
+
   backends = get_backends()
   if backends:
     for backend in backends:
@@ -301,4 +312,3 @@ def oidc_failed(request):
     return HttpResponseRedirect('/')
   access_warn(request, "401 Unauthorized by oidc")
   return render("oidc_failed.mako", request, dict(uri=request.build_absolute_uri()), status=401)
-

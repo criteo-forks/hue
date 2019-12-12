@@ -86,6 +86,17 @@ class JdbcApi(Api):
 
     return props
 
+  def close_session(self, session):
+    """ Close JDBC session and clear API cache """
+    global API_CACHE
+    jdbc = API_CACHE.get(self.cache_key, None)
+    if not jdbc:
+      return
+
+    LOG.debug("Close session for %s to %s (cache_key=%s)" % (jdbc.username, jdbc.db_url, self.cache_key))
+    jdbc.close()
+    del API_CACHE[self.cache_key]
+
   @query_error_handler
   def execute(self, notebook, snippet):
     if self.db is None:

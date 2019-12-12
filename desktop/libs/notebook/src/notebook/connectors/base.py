@@ -272,14 +272,13 @@ class Notebook(object):
 
     return _execute_notebook(request, notebook_data, snippet)
 
-
-def get_interpreter(connector_type, user=None):
-  interpreter = [
-    interpreter for interpreter in get_ordered_interpreters(user) if connector_type == interpreter['type']
+def get_interpreters(connector_type=None, user=None):
+  interpreters = [
+    interpreter for interpreter in get_ordered_interpreters(user) if connector_type is None or connector_type == interpreter['type']
   ]
-  if not interpreter:
+  if not interpreters:
     if connector_type == 'hbase': # TODO move to connectors
-      interpreter = [{
+      interpreters = [{
         'name': 'hbase',
         'type': 'hbase',
         'interface': 'hbase',
@@ -287,7 +286,7 @@ def get_interpreter(connector_type, user=None):
         'is_sql': False
       }]
     elif connector_type == 'kafka':
-      interpreter = [{
+      interpreters = [{
         'name': 'kafka',
         'type': 'kafka',
         'interface': 'kafka',
@@ -295,7 +294,7 @@ def get_interpreter(connector_type, user=None):
         'is_sql': False
       }]
     elif connector_type == 'solr':
-      interpreter = [{
+      interpreters = [{
         'name': 'solr',
         'type': 'solr',
         'interface': 'solr',
@@ -304,10 +303,16 @@ def get_interpreter(connector_type, user=None):
       }]
     else:
       raise PopupException(_('Snippet type %s is not configured.') % connector_type)
-  elif len(interpreter) > 1:
-    raise PopupException(_('Snippet type %s matching more than one interpreter: %s') % (connector_type, len(interpreter)))
 
-  return interpreter[0]
+  return interpreters
+
+
+def get_interpreter(connector_type, user=None):
+  interpreters = get_interpreters(connector_type, user)
+  if len(interpreters) > 1:
+    raise PopupException(_('Snippet type %s matching more than one interpreter: %s') % (connector_type, len(interpreters)))
+
+  return interpreters[0]
 
 
 def get_api(request, snippet):
@@ -319,84 +324,94 @@ def get_api(request, snippet):
   if snippet['type'] == 'report':
     snippet['type'] = 'impala'
 
-  interpreter = get_interpreter(connector_type=snippet['type'], user=request.user)
-  interface = interpreter['interface']
-
-  if get_cluster_config(request.user)['has_computes']:
-    compute = json.loads(request.POST.get('cluster', '""')) # Via Catalog autocomplete API or Notebook create sessions.
-    if compute == '""' or compute == 'undefined':
-      compute = None
-    if not compute and snippet.get('compute'): # Via notebook.ko.js
-      interpreter['compute'] = snippet['compute']
-
-  LOG.debug('Selected interpreter %s interface=%s compute=%s' % (
-    interpreter['type'],
-    interface,
-    interpreter.get('compute') and interpreter['compute']['name'])
-  )
-
-  if interface == 'hiveserver2':
-    from notebook.connectors.hiveserver2 import HS2Api
-    return HS2Api(user=request.user, request=request, interpreter=interpreter)
-  elif interface == 'oozie':
-    return OozieApi(user=request.user, request=request)
-  elif interface == 'livy':
-    from notebook.connectors.spark_shell import SparkApi
-    return SparkApi(request.user)
-  elif interface == 'livy-batch':
-    from notebook.connectors.spark_batch import SparkBatchApi
-    return SparkBatchApi(request.user)
-  elif interface == 'text' or interface == 'markdown':
-    from notebook.connectors.text import TextApi
-    return TextApi(request.user)
-  elif interface == 'rdbms':
-    from notebook.connectors.rdbms import RdbmsApi
-    return RdbmsApi(request.user, interpreter=snippet['type'], query_server=snippet.get('query_server'))
-  elif interface == 'jdbc':
-    if interpreter['options'] and interpreter['options'].get('url', '').find('teradata') >= 0:
-      from notebook.connectors.jdbc_teradata import JdbcApiTeradata
-      return JdbcApiTeradata(request.user, interpreter=interpreter)
-    if interpreter['options'] and interpreter['options'].get('url', '').find('awsathena') >= 0:
-      from notebook.connectors.jdbc_athena import JdbcApiAthena
-      return JdbcApiAthena(request.user, interpreter=interpreter)
-    elif interpreter['options'] and interpreter['options'].get('url', '').find('presto') >= 0:
-      from notebook.connectors.jdbc_presto import JdbcApiPresto
-      return JdbcApiPresto(request.user, interpreter=interpreter)
-    elif interpreter['options'] and interpreter['options'].get('url', '').find('clickhouse') >= 0:
-      from notebook.connectors.jdbc_clickhouse import JdbcApiClickhouse
-      return JdbcApiClickhouse(request.user, interpreter=interpreter)
-    elif interpreter['options'] and interpreter['options'].get('url', '').find('vertica') >= 0:
-      from notebook.connectors.jdbc_vertica import JdbcApiVertica
-      return JdbcApiVertica(request.user, interpreter=interpreter)
-    else:
-      from notebook.connectors.jdbc import JdbcApi
-      return JdbcApi(request.user, interpreter=interpreter)
-  elif interface == 'teradata':
-    from notebook.connectors.jdbc import JdbcApiTeradata
-    return JdbcApiTeradata(request.user, interpreter=interpreter)
-  elif interface == 'athena':
-    from notebook.connectors.jdbc import JdbcApiAthena
-    return JdbcApiAthena(request.user, interpreter=interpreter)
-  elif interface == 'presto':
-    from notebook.connectors.jdbc_presto import JdbcApiPresto
-    return JdbcApiPresto(request.user, interpreter=interpreter)
-  elif interface == 'sqlalchemy':
-    from notebook.connectors.sql_alchemy import SqlAlchemyApi
-    return SqlAlchemyApi(request.user, interpreter=interpreter)
-  elif interface == 'solr':
-    from notebook.connectors.solr import SolrApi
-    return SolrApi(request.user, interpreter=interpreter)
-  elif interface == 'hbase':
-    from notebook.connectors.hbase import HBaseApi
-    return HBaseApi(request.user)
-  elif interface == 'kafka':
-    from notebook.connectors.kafka import KafkaApi
-    return KafkaApi(request.user)
-  elif interface == 'pig':
-    return OozieApi(user=request.user, request=request) # Backward compatibility until Hue 4
+  if snippet['type'] == 'all':
+    interpreters = get_interpreters(user=request.user)
   else:
-    raise PopupException(_('Notebook connector interface not recognized: %s') % interface)
+    interpreters = [get_interpreter(connector_type=snippet['type'], user=request.user)]
+  result = []
 
+  for interpreter in interpreters:
+    interface = interpreter['interface']
+
+    if get_cluster_config(request.user)['has_computes']:
+      compute = json.loads(request.POST.get('cluster', '""')) # Via Catalog autocomplete API or Notebook create sessions.
+      if compute == '""' or compute == 'undefined':
+        compute = None
+      if not compute and snippet.get('compute'): # Via notebook.ko.js
+        interpreter['compute'] = snippet['compute']
+
+    LOG.debug('Selected interpreter %s interface=%s compute=%s' % (
+      interpreter['type'],
+      interface,
+      interpreter.get('compute') and interpreter['compute']['name'])
+    )
+
+    if interface == 'hiveserver2':
+      from notebook.connectors.hiveserver2 import HS2Api
+      result.append(HS2Api(user=request.user, request=request, interpreter=interpreter))
+    elif interface == 'oozie':
+      result.append(OozieApi(user=request.user, request=request))
+    elif interface == 'livy':
+      from notebook.connectors.spark_shell import SparkApi
+      result.append(SparkApi(request.user))
+    elif interface == 'livy-batch':
+      from notebook.connectors.spark_batch import SparkBatchApi
+      result.append(SparkBatchApi(request.user))
+    elif interface == 'text' or interface == 'markdown':
+      from notebook.connectors.text import TextApi
+      result.append(TextApi(request.user))
+    elif interface == 'rdbms':
+      from notebook.connectors.rdbms import RdbmsApi
+      result.append(RdbmsApi(request.user, interpreter=snippet['type'], query_server=snippet.get('query_server')))
+    elif interface == 'jdbc':
+      if interpreter['options'] and interpreter['options'].get('url', '').find('teradata') >= 0:
+        from notebook.connectors.jdbc_teradata import JdbcApiTeradata
+        result.append(JdbcApiTeradata(request.user, interpreter=interpreter))
+      if interpreter['options'] and interpreter['options'].get('url', '').find('awsathena') >= 0:
+        from notebook.connectors.jdbc_athena import JdbcApiAthena
+        result.append(JdbcApiAthena(request.user, interpreter=interpreter))
+      elif interpreter['options'] and interpreter['options'].get('url', '').find('presto') >= 0:
+        from notebook.connectors.jdbc_presto import JdbcApiPresto
+        result.append(JdbcApiPresto(request.user, interpreter=interpreter))
+      elif interpreter['options'] and interpreter['options'].get('url', '').find('clickhouse') >= 0:
+        from notebook.connectors.jdbc_clickhouse import JdbcApiClickhouse
+        result.append(JdbcApiClickhouse(request.user, interpreter=interpreter))
+      elif interpreter['options'] and interpreter['options'].get('url', '').find('vertica') >= 0:
+        from notebook.connectors.jdbc_vertica import JdbcApiVertica
+        result.append(JdbcApiVertica(request.user, interpreter=interpreter))
+      else:
+        from notebook.connectors.jdbc import JdbcApi
+        result.append(JdbcApi(request.user, interpreter=interpreter))
+    elif interface == 'teradata':
+      from notebook.connectors.jdbc import JdbcApiTeradata
+      result.append(JdbcApiTeradata(request.user, interpreter=interpreter))
+    elif interface == 'athena':
+      from notebook.connectors.jdbc import JdbcApiAthena
+      result.append(JdbcApiAthena(request.user, interpreter=interpreter))
+    elif interface == 'presto':
+      from notebook.connectors.jdbc_presto import JdbcApiPresto
+      result.append(JdbcApiPresto(request.user, interpreter=interpreter))
+    elif interface == 'sqlalchemy':
+      from notebook.connectors.sql_alchemy import SqlAlchemyApi
+      result.append(SqlAlchemyApi(request.user, interpreter=interpreter))
+    elif interface == 'solr':
+      from notebook.connectors.solr import SolrApi
+      result.append(SolrApi(request.user, interpreter=interpreter))
+    elif interface == 'hbase':
+      from notebook.connectors.hbase import HBaseApi
+      result.append(HBaseApi(request.user))
+    elif interface == 'kafka':
+      from notebook.connectors.kafka import KafkaApi
+      result.append(KafkaApi(request.user))
+    elif interface == 'pig':
+      result.append(OozieApi(user=request.user, request=request)) # Backward compatibility until Hue 4
+    else:
+      raise PopupException(_('Notebook connector interface not recognized: %s') % interface)
+
+  if snippet['type'] == 'all':
+    return result
+
+  return result[0]
 
 def _get_snippet_session(notebook, snippet):
   session = [session for session in notebook['sessions'] if session['type'] == snippet['type']]
