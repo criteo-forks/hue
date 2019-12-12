@@ -378,10 +378,10 @@ def get_api(request, snippet):
         result.append(JdbcApiClickhouse(request.user, interpreter=interpreter))
       elif interpreter['options'] and interpreter['options'].get('url', '').find('vertica') >= 0:
         from notebook.connectors.jdbc_vertica import JdbcApiVertica
-        result.append(JdbcApiVertica(request.user, interpreter=interpreter))
+        result.append(JdbcApiVertica(request.user, interpreter=interpreter, request=request))
       else:
         from notebook.connectors.jdbc import JdbcApi
-        result.append(JdbcApi(request.user, interpreter=interpreter))
+        result.append(JdbcApi(request.user, interpreter=interpreter, request=request))
     elif interface == 'teradata':
       from notebook.connectors.jdbc import JdbcApiTeradata
       result.append(JdbcApiTeradata(request.user, interpreter=interpreter))
@@ -390,7 +390,7 @@ def get_api(request, snippet):
       result.append(JdbcApiAthena(request.user, interpreter=interpreter))
     elif interface == 'presto':
       from notebook.connectors.jdbc_presto import JdbcApiPresto
-      result.append(JdbcApiPresto(request.user, interpreter=interpreter))
+      result.append(JdbcApiPresto(request.user, interpreter=interpreter, request=request))
     elif interface == 'sqlalchemy':
       from notebook.connectors.sql_alchemy import SqlAlchemyApi
       result.append(SqlAlchemyApi(request.user, interpreter=interpreter))

@@ -803,6 +803,12 @@ SESSION = ConfigSection(
       help=_("If set, limits the number of concurrent user sessions. 1 represents 1 session per user. Default: 0 (unlimited sessions per user)"),
       type=int,
       default=0,
+    ),
+    STORE_USER_PASSWORD = Config(
+      key="store_user_password",
+      help=_("!!! Insecure. Store user password in session, so it can be reused for login to the other services (vertica, presto,...)"),
+      type=coerce_bool,
+      default=False
     )
   )
 )
