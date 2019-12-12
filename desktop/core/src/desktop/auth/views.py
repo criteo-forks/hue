@@ -42,7 +42,7 @@ from desktop.lib.django_util import render
 from desktop.lib.django_util import login_notrequired
 from desktop.lib.django_util import JsonResponse
 from desktop.log.access import access_log, access_warn, last_access_map
-from desktop.conf import OAUTH
+from desktop.conf import OAUTH, SESSION
 from desktop.settings import LOAD_BALANCER_COOKIE
 
 from hadoop.fs.exceptions import WebHdfsException
@@ -132,6 +132,8 @@ def dt_login(request, from_modal=False):
 
         if request.session.test_cookie_worked():
           request.session.delete_test_cookie()
+        if SESSION.STORE_USER_PASSWORD:
+          request.session['password'] =request.POST.get('password')
 
         try:
           ensure_home_directory(request.fs, user)
