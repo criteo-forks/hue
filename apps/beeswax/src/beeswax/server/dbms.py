@@ -21,6 +21,9 @@ import re
 import sys
 import threading
 import time
+import random
+
+import requests
 import json
 
 from django.core.cache import caches
@@ -42,7 +45,7 @@ from beeswax import hive_site
 from beeswax.conf import HIVE_SERVER_HOST, HIVE_SERVER_PORT, HIVE_SERVER_HOST, HIVE_HTTP_THRIFT_PORT, HIVE_METASTORE_HOST, HIVE_METASTORE_PORT, LIST_PARTITIONS_LIMIT, SERVER_CONN_TIMEOUT, \
   AUTH_USERNAME, AUTH_PASSWORD, APPLY_NATURAL_SORT_MAX, QUERY_PARTITIONS_LIMIT, HIVE_DISCOVERY_HIVESERVER2_ZNODE, \
   HIVE_DISCOVERY_HS2, HIVE_DISCOVERY_LLAP, HIVE_DISCOVERY_LLAP_HA, HIVE_DISCOVERY_LLAP_ZNODE, CACHE_TIMEOUT, \
-  LLAP_SERVER_HOST, LLAP_SERVER_PORT, LLAP_SERVER_THRIFT_PORT, USE_SASL as HIVE_USE_SASL
+  LLAP_SERVER_HOST, LLAP_SERVER_PORT, LLAP_SERVER_THRIFT_PORT, USE_SASL as HIVE_USE_SASL, HIVE_SERVER_CONSUL
 from beeswax.common import apply_natural_sort
 from beeswax.design import hql_query
 from beeswax.hive_site import hiveserver2_use_ssl
@@ -70,16 +73,46 @@ def get(user, query_server=None, cluster=None):
   global DBMS_CACHE
   global DBMS_CACHE_LOCK
 
+
   if query_server is None:
-    query_server = get_query_server_config(connector=cluster)
+    query_server = get_query_server_config(cluster=cluster)
+
+  # ---------------------------------------------------------------------------
+  # Consul logic
+  # ---------------------------------------------------------------------------
+  consul = HIVE_SERVER_CONSUL.get()
+  nodes = None
+  if consul:
+    nodes = get_nodes_from_consul(consul)
+    if not nodes:
+      LOG.error("No healthy nodes in consul %s" % consul)
+  # ---------------------------------------------------------------------------
 
   DBMS_CACHE_LOCK.acquire()
   try:
     DBMS_CACHE.setdefault(user.id, {})
+    # -------------------------------------------------------------------------
+    # If we get nodes from consul check thaty the current client use a healthy
+    # node
+    # -------------------------------------------------------------------------
+    node_not_available = False
+    if nodes and (query_server['server_name'] in DBMS_CACHE[user.id]):
+      server = DBMS_CACHE[user.id][query_server['server_name']]
 
-    if query_server['server_name'] not in DBMS_CACHE[user.id]:
+      current_host = server.client.query_server['server_host']
+      current_port = server.client.query_server['server_port']
+
+      if (current_host, current_port) not in nodes:
+        LOG.debug("Current server is down: %s:%d" % (current_host, current_port))
+        node_not_available = True
+    # -------------------------------------------------------------------------
+    if node_not_available or (query_server['server_name'] not in DBMS_CACHE[user.id]):
       # Avoid circular dependency
       from beeswax.server.hive_server2_lib import HiveServerClientCompatible
+      if nodes:
+        node = random.sample(nodes, 1)[0] # Some kind of Load Balancing
+        query_server.update({'server_host': node[0], 'server_port': node[1]})
+        LOG.debug("Use server from consul: %s:%d" % (query_server['server_host'], query_server['server_port']))
 
       if query_server['server_name'].startswith('impala'):
         from impala.dbms import ImpalaDbms
@@ -91,6 +124,10 @@ def get(user, query_server=None, cluster=None):
       else:
         from beeswax.server.hive_server2_lib import HiveServerClient
         DBMS_CACHE[user.id][query_server['server_name']] = HiveServer2Dbms(HiveServerClientCompatible(HiveServerClient(query_server, user)), QueryHistory.SERVER_TYPE[1][0])
+
+    debug_query_server =  DBMS_CACHE[user.id][query_server['server_name']].client.query_server.copy()
+    debug_query_server['auth_password_used'] = bool(debug_query_server.pop('auth_password'))
+    LOG.debug("Query Server: %s" % debug_query_server)
 
     return DBMS_CACHE[user.id][query_server['server_name']]
   finally:
@@ -196,12 +233,15 @@ def get_query_server_config(name='beeswax', connector=None):
           'use_sasl': SPARK_USE_SASL.get()
       })
 
-  debug_query_server = query_server.copy()
-  debug_query_server['auth_password_used'] = bool(debug_query_server.pop('auth_password', None))
-  LOG.debug("Query Server: %s" % debug_query_server)
+  # debug_query_server = query_server.copy()
+  # debug_query_server['auth_password_used'] = bool(debug_query_server.pop('auth_password', None))
+  # LOG.debug("Query Server: %s" % debug_query_server)
 
   return query_server
 
+def get_nodes_from_consul(consul):
+  jq = requests.get(consul).json()
+  return set([(item['Node']['Node'], item['Service']['Port']) for item in jq])
 
 def get_query_server_config_via_connector(connector):
   connector_name = full_connector_name = connector['type']

@@ -119,6 +119,11 @@ HIVE_HTTP_THRIFT_PORT = Config(
   dynamic_default=get_hive_thrift_http_port,
   type=int)
 
+HIVE_SERVER_CONSUL = Config(
+  key="hive_server_consul",
+  help=_t("HiveServer2 consul  url."),
+  default='')
+
 HIVE_METASTORE_HOST = Config(
   key="hive_metastore_host",
   help=_t("Host where Hive Metastore Server (HMS) is running. If Kerberos security is enabled, "

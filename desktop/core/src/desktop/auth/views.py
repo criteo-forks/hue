@@ -25,6 +25,7 @@ except:
 import cgi
 import logging
 import sys
+import urllib
 from datetime import datetime
 
 from axes.decorators import watch_login
@@ -32,6 +33,7 @@ import django.contrib.auth.views
 from django.core import urlresolvers
 from django.core.exceptions import SuspiciousOperation
 from django.contrib.auth import login, get_backends, authenticate
+from django.contrib.auth.models import User
 from django.contrib.sessions.models import Session
 from django.http import HttpResponseRedirect
 from django.utils.translation import ugettext as _
@@ -49,12 +51,11 @@ from desktop.lib.django_util import render, login_notrequired, JsonResponse
 from desktop.log.access import access_log, access_warn, last_access_map
 from desktop.settings import LOAD_BALANCER_COOKIE
 
-if sys.version_info[0] > 2:
-  import urllib.request, urllib.error
-  from urllib.parse import urlencode as urllib_urlencode
-else:
-  from urllib import urlencode as urllib_urlencode
-
+from hadoop.fs.exceptions import WebHdfsException
+from useradmin.models import get_profile, UserProfile
+from useradmin.views import ensure_home_directory, require_change_password
+from notebook.connectors.base import get_api
+from notebook.conf import get_ordered_interpreters
 
 LOG = logging.getLogger(__name__)
 
@@ -140,6 +141,8 @@ def dt_login(request, from_modal=False):
 
         if request.session.test_cookie_worked():
           request.session.delete_test_cookie()
+        if SESSION.STORE_USER_PASSWORD:
+          request.session['password'] =request.POST.get('password')
 
         try:
           ensure_home_directory(request.fs, user)
@@ -310,3 +313,4 @@ def oidc_failed(request):
     return HttpResponseRedirect('/')
   access_warn(request, "401 Unauthorized by oidc")
   return render("oidc_failed.mako", request, dict(uri=request.build_absolute_uri()), status=401)
+

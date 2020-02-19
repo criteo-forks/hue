@@ -54,10 +54,9 @@ def query_error_handler(func):
 
 class JdbcApi(Api):
 
-  def __init__(self, user, interpreter=None):
+  def __init__(self, user, interpreter=None, request=None):
     global API_CACHE
-    Api.__init__(self, user, interpreter=interpreter)
-
+    Api.__init__(self, user, interpreter=interpreter, request=request)
     self.db = None
     self.options = interpreter['options']
 
@@ -76,6 +75,10 @@ class JdbcApi(Api):
     props['properties'] = {} # We don't store passwords
 
     if self.db is None or not self.db.test_connection(throw_exception='password' not in properties):
+      if ('password' not in properties) and ('password' in self.request.session):
+        properties['password'] = self.request.session['password']
+        properties['user'] = self.user.username
+
       if 'password' in properties:
         user = properties.get('user') or self.options.get('user')
         props['properties'] = {'user': user}
@@ -86,6 +89,17 @@ class JdbcApi(Api):
       raise AuthenticationRequired()
 
     return props
+
+  def close_session(self, session):
+    """ Close JDBC session and clear API cache """
+    global API_CACHE
+    jdbc = API_CACHE.get(self.cache_key, None)
+    if not jdbc:
+      return
+
+    LOG.debug("Close session for %s to %s (cache_key=%s)" % (jdbc.username, jdbc.db_url, self.cache_key))
+    jdbc.close()
+    del API_CACHE[self.cache_key]
 
   @query_error_handler
   def execute(self, notebook, snippet):

@@ -519,10 +519,10 @@ class HiveServerClient(object):
     self.user = user
     self.coordinator_host = ''
 
-    use_sasl, mechanism, kerberos_principal_short_name, impersonation_enabled, auth_username, auth_password = self.get_security()
+    use_sasl, mechanism, kerberos_principal_short_name, kerberos_principal_instance, impersonation_enabled, auth_username, auth_password = self.get_security()
     LOG.info(
-        '%s: server_host=%s, use_sasl=%s, mechanism=%s, kerberos_principal_short_name=%s, impersonation_enabled=%s, auth_username=%s' % (
-        self.query_server['server_name'], self.query_server['server_host'], use_sasl, mechanism, kerberos_principal_short_name, impersonation_enabled, auth_username)
+        '%s: server_host=%s, use_sasl=%s, mechanism=%s, kerberos_principal_short_name=%s, kerberos_principal_instance=%s, impersonation_enabled=%s, auth_username=%s' % (
+        self.query_server['server_name'], self.query_server['server_host'], use_sasl, mechanism, kerberos_principal_short_name, kerberos_principal_instance, impersonation_enabled, auth_username)
     )
 
     self.use_sasl = use_sasl
@@ -566,6 +566,7 @@ class HiveServerClient(object):
         query_server['server_port'],
         service_name=query_server['server_name'],
         kerberos_principal=kerberos_principal_short_name,
+        kerberos_principal_instance=kerberos_principal_instance,
         use_sasl=use_sasl,
         mechanism=mechanism,
         username=username,
@@ -589,9 +590,9 @@ class HiveServerClient(object):
     auth_password = self.query_server['auth_password']
 
     if principal:
-      kerberos_principal_short_name = principal.split('/', 1)[0]
+      kerberos_principal_short_name, kerberos_principal_instance = principal.split('@',1)[0].split('/', 1)
     else:
-      kerberos_principal_short_name = None
+      kerberos_principal_short_name = kerberos_principal_instance = None
 
     use_sasl = self.query_server['use_sasl']
     if self.query_server['server_name'].startswith('impala'):
@@ -607,7 +608,7 @@ class HiveServerClient(object):
       mechanism = HiveServerClient.HS2_MECHANISMS[hive_mechanism]
       impersonation_enabled = hive_site.hiveserver2_impersonation_enabled()
 
-    return use_sasl, mechanism, kerberos_principal_short_name, impersonation_enabled, auth_username, auth_password
+    return use_sasl, mechanism, kerberos_principal_short_name, kerberos_principal_instance, impersonation_enabled, auth_username, auth_password
 
 
   def open_session(self, user):

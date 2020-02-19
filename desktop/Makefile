@@ -94,9 +94,9 @@ syncdb: $(DESKTOP_DB)
 
 $(DESKTOP_DB): $(BLD_DIR_BIN)/hue
 	@if [ -n "$(DESKTOP_DEBUG)" ]; then \
-	  @echo "--- Regenerating database at $@" \
-	  @echo 'Removing old database (DESKTOP_DEBUG is set)' ; \
-	  @rm -f $@ ; \
+	  echo "--- Regenerating database at $@" \
+	  echo 'Removing old database (DESKTOP_DEBUG is set)' ; \
+	  rm -f $@ ; \
 	fi
 
 # Targets that simply recurse into all of the applications

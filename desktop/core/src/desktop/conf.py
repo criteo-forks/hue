@@ -810,6 +810,12 @@ SESSION = ConfigSection(
       type=int,
       default=0,
     ),
+    STORE_USER_PASSWORD = Config(
+      key="store_user_password",
+      help=_("!!! Insecure. Store user password in session, so it can be reused for login to the other services (vertica, presto,...)"),
+      type=coerce_bool,
+      default=False
+    ),
     TRUSTED_ORIGINS = Config(
       key="trusted_origins",
       help=_("A list of hosts which are trusted origins for unsafe requests. See django's CSRF_TRUSTED_ORIGINS for more information"),
@@ -1516,6 +1522,12 @@ DEV = Config("dev",
    help=_("Enable development mode, where notably static files are not cached.")
 )
 
+DEV_EMBEDDED = Config("dev_embedded",
+   type=coerce_bool,
+   default=False,
+   help=_("Enable embedded development mode, where the page will be rendered inside a container div element.")
+)
+
 DISPLAY_APP_SWITCHER = Config(
   key='display_app_switcher',
   help=_('Enable or disable the upper left app switcher menu.'),
@@ -1545,6 +1557,12 @@ HTTP_500_DEBUG_MODE = Config(
   type=coerce_bool,
   default=True
 )
+
+MEMORY_PROFILER = Config(
+  key='memory_profiler',
+  help=_('Enable or disable memory profiling.'),
+  type=coerce_bool,
+  default=False)
 
 def get_instrumentation_default():
   """If django_debug_mode is True, this is automatically enabled"""
