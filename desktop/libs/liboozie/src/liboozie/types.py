@@ -21,12 +21,17 @@ Oozie API classes.
 This is mostly just codifying the datastructure of the Oozie REST API.
 http://incubator.apache.org/oozie/docs/3.2.0-incubating/docs/WebServicesAPI.html
 """
+from __future__ import division
 
+from future import standard_library
+standard_library.install_aliases()
+from builtins import object
 import logging
+import math
 import re
+import sys
 import time
 
-from cStringIO import StringIO
 from time import mktime
 
 from desktop.lib import i18n
@@ -40,6 +45,11 @@ from django.utils.translation import ugettext as _
 from django.urls import reverse
 
 from desktop.auth.backend import is_admin
+
+if sys.version_info[0] > 2:
+  from io import BytesIO as string_io
+else:
+  from cStringIO import StringIO as string_io
 
 LOG = logging.getLogger(__name__)
 
@@ -158,10 +168,13 @@ class WorkflowAction(Action):
       self.retries = int(self.retries)
 
     if self.conf:
-      xml = StringIO(i18n.smart_str(self.conf))
+      conf_data = i18n.smart_str(self.conf)
+      if not isinstance(conf_data, bytes):
+        conf_data = conf_data.encode('utf-8')
+      xml = string_io(conf_data)
       try:
         self.conf_dict = hadoop.confparse.ConfParse(xml)
-      except Exception, e:
+      except Exception as e:
         LOG.error('Failed to parse XML configuration for Workflow action %s: %s' % (self.name, e))
         self.conf_dict = {}
     else:
@@ -234,7 +247,10 @@ class CoordinatorAction(Action):
       self.lastModifiedTime = parse_timestamp(self.lastModifiedTime)
 
     if self.runConf:
-      xml = StringIO(i18n.smart_str(self.runConf))
+      conf_data = i18n.smart_str(self.runConf)
+      if not isinstance(conf_data, bytes):
+        conf_data = conf_data.encode('utf-8')
+      xml = string_io(conf_data)
       self.conf_dict = hadoop.confparse.ConfParse(xml)
     else:
       self.conf_dict = {}
@@ -282,7 +298,10 @@ class BundleAction(Action):
     self.name = self.coordJobName
 
     if self.conf:
-      xml = StringIO(i18n.smart_str(self.conf))
+      conf_data = i18n.smart_str(self.conf)
+      if not isinstance(conf_data, bytes):
+        conf_data = conf_data.encode('utf-8')
+      xml = string_io(conf_data)
       self.conf_dict = hadoop.confparse.ConfParse(xml)
     else:
       self.conf_dict = {}
@@ -297,7 +316,7 @@ class BundleAction(Action):
     end = mktime(parse_timestamp(self.endTime))
 
     if end != start:
-      progress = min(int((1 - (end - next) / (end - start)) * 100), 100)
+      progress = min(int((1 - math.floor((end - next) / (end - start))) * 100), 100)
     else:
       progress = 100
 
@@ -336,7 +355,10 @@ class Job(object):
 
     self.actions = [Action.create(self.ACTION, act_dict) for act_dict in self.actions]
     if self.conf is not None:
-      xml = StringIO(i18n.smart_str(self.conf))
+      conf_data = i18n.smart_str(self.conf)
+      if not isinstance(conf_data, bytes):
+        conf_data = conf_data.encode('utf-8')
+      xml = string_io(conf_data)
       self.conf_dict = hadoop.confparse.ConfParse(xml)
     else:
       self.conf_dict = {}
@@ -568,14 +590,14 @@ class Coordinator(Job):
     end = mktime(self.endTime)
 
     if end != start:
-      progress = min(int((1 - (end - next) / (end - start)) * 100), 100)
+      progress = min(int((1 - math.floor((end - next) / (end - start))) * 100), 100)
     else:
       progress = 100
 
     # Manage case of a rerun
     action_count = float(len(self.actions))
     if action_count != 0 and progress == 100:
-      progress = int(sum([action.is_finished() for action in self.actions]) / action_count * 100)
+      progress = int(math.floor(sum([action.is_finished() for action in self.actions]) / action_count * 100))
 
     return progress
 

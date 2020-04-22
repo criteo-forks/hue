@@ -19,16 +19,15 @@ import logging
 
 from django.utils.translation import ugettext as _
 
-from desktop.conf import CLUSTER_ID
+from desktop.conf import CLUSTER_ID, has_connectors
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.i18n import smart_str
-from desktop.models import Cluster, ClusterConfig
+from desktop.models import Cluster
 from beeswax.design import hql_query
 from beeswax.models import QUERY_TYPES
 from beeswax.server import dbms
-from beeswax.server.dbms import HiveServer2Dbms, QueryServerException, QueryServerTimeoutException,\
+from beeswax.server.dbms import HiveServer2Dbms, QueryServerException, QueryServerTimeoutException, \
   get_query_server_config as beeswax_query_server_config, get_query_server_config_via_connector
-from notebook.conf import get_ordered_interpreters
 
 from impala import conf
 
@@ -42,6 +41,7 @@ def get_query_server_config(connector=None):
   else:
     query_server = {
         'server_name': 'impala',
+        'dialect': 'impala',
         'server_host': conf.SERVER_HOST.get(),
         'server_port': conf.SERVER_PORT.get(),
         'principal': conf.IMPALA_PRINCIPAL.get(),
@@ -181,7 +181,12 @@ class ImpalaDbms(HiveServer2Dbms):
 
 
   def _get_beeswax_tables(self, database):
-    beeswax_query_server = dbms.get(user=self.client.user, query_server=beeswax_query_server_config(name=Cluster(self.client.user).get_app_config().get_hive_metastore_interpreters()[0]))
+    beeswax_query_server = dbms.get(
+      user=self.client.user,
+      query_server=beeswax_query_server_config(
+        name=Cluster(self.client.user).get_app_config().get_hive_metastore_interpreters()[0]
+      )
+    )
     return beeswax_query_server.get_tables(database=database)
 
 

@@ -15,13 +15,15 @@
 // limitations under the License.
 
 import $ from 'jquery';
-import ko from 'knockout';
+import * as ko from 'knockout';
 
 import apiHelper from 'api/apiHelper';
 import dataCatalog from 'catalog/dataCatalog';
 import componentUtils from './componentUtils';
 import huePubSub from 'utils/huePubSub';
 import I18n from 'utils/i18n';
+
+export const NAME = 'hue-global-search';
 
 const TEMPLATE = `
   <script type="text/html" id="top-search-autocomp-item">
@@ -59,18 +61,10 @@ const TEMPLATE = `
         <div class="global-search-category-header" data-bind="text: label"></div>
         <ul>
           <!-- ko foreach: expanded() ? result : topMatches -->
-          <!-- ko if: typeof draggable !== 'undefined' -->
-          <li class="result" data-bind="multiClick: {
-              click: function () { $parents[1].resultSelected($parentContext.$index(), $index()) },
-              dblClick: function () { $parents[1].resultSelected($parentContext.$index(), $index()); $parents[1].openResult(); }
-            }, html: label, css: { 'selected': $parents[1].selectedResult() === $data }, draggableText: { text: draggable, meta: draggableMeta }"></li>
-          <!-- /ko -->
-          <!-- ko if: typeof draggable === 'undefined' -->
           <li class="result" data-bind="multiClick: {
               click: function () { $parents[1].resultSelected($parentContext.$index(), $index()) },
               dblClick: function () { $parents[1].resultSelected($parentContext.$index(), $index()); $parents[1].openResult(); }
             }, html: label, css: { 'selected': $parents[1].selectedResult() === $data }"></li>
-          <!-- /ko -->
           <!-- /ko -->
           <!-- ko if: topMatches.length < result.length && !expanded() -->
           <li class="blue" data-bind="toggle: expanded">${I18n('Show more...')}</li>
@@ -188,18 +182,6 @@ class GlobalSearch {
     huePubSub.subscribe('context.popover.open.in.metastore', deferredCloseIfVisible);
     huePubSub.subscribe('context.popover.show.in.assist', deferredCloseIfVisible);
     huePubSub.subscribe('sample.error.insert.click', deferredCloseIfVisible);
-
-    huePubSub.subscribe('draggable.text.started', meta => {
-      // We have to set the height to 0 when dragging a text, just closing the results will break the
-      // jQuery draggable plugin
-      if (meta.source === 'globalSearch') {
-        huePubSub.subscribeOnce('draggable.text.stopped', () => {
-          self.heightWhenDragging(null);
-          self.close();
-        });
-        self.heightWhenDragging(0);
-      }
-    });
 
     self.querySpec.subscribe(newValue => {
       window.clearTimeout(self.fetchThrottle);
@@ -511,10 +493,6 @@ class GlobalSearch {
             if (doc.hue_name.indexOf('.') !== 0) {
               docCategory.result.push({
                 label: doc.hue_name,
-                draggable: doc.originalName,
-                draggableMeta: {
-                  source: 'globalSearch'
-                },
                 type: 'document',
                 data: doc
               });
@@ -597,8 +575,6 @@ class GlobalSearch {
                 }
                 category.result.push({
                   label: result.hue_name || result.originalName,
-                  draggable: result.originalName,
-                  draggableMeta: meta,
                   type: typeLower,
                   data: result
                 });
@@ -622,4 +598,4 @@ class GlobalSearch {
   }
 }
 
-componentUtils.registerComponent('hue-global-search', GlobalSearch, TEMPLATE);
+componentUtils.registerComponent(NAME, GlobalSearch, TEMPLATE);

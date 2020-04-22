@@ -130,7 +130,11 @@ def new_workflow(request):
   doc = None
   workflow = Workflow(user=request.user)
   workflow.set_workspace(request.user)
-  workflow.check_workspace(request.fs, request.user)
+
+  try:
+    workflow.check_workspace(request.fs, request.user)
+  except Exception as e:
+    raise PopupException(_('Could not create workflow workspace'), detail=e)
 
   return _edit_workflow(request, doc, workflow)
 
@@ -407,9 +411,6 @@ def _submit_workflow_helper(request, workflow, submit_action):
       if '/submit_single_action/' in submit_action:
         mapping['submit_single_action'] = True
 
-      if 'altus' in cluster.get('type', ''):
-        mapping['cluster'] = cluster.get('id')
-
       try:
         job_id = _submit_workflow(request.user, request.fs, request.jt, workflow, mapping)
       except Exception as e:
@@ -428,17 +429,20 @@ def _submit_workflow_helper(request, workflow, submit_action):
     initial_params = ParameterForm.get_initial_params(dict([(param['name'], param['value']) for param in parameters]))
     params_form = ParametersFormSet(initial=initial_params)
 
-
-    return render('/scheduler/submit_job_popup.mako', request, {
-                     'params_form': params_form,
-                     'name': workflow.name,
-                     'action': submit_action,
-                     'show_dryrun': True,
-                     'email_id': request.user.email,
-                     'is_oozie_mail_enabled': _is_oozie_mail_enabled(request.user),
-                     'return_json': request.GET.get('format') == 'json',
-                     'cluster_json': cluster_json
-                   }, force_template=True)
+    return render(
+      '/scheduler/submit_job_popup.mako',
+      request, {
+        'params_form': params_form,
+        'name': workflow.name,
+        'action': submit_action,
+        'show_dryrun': True,
+        'email_id': request.user.email,
+        'is_oozie_mail_enabled': _is_oozie_mail_enabled(request.user),
+        'return_json': request.GET.get('format') == 'json',
+        'cluster_json': cluster_json
+      },
+      force_template=True
+    )
 
 
 def _is_oozie_mail_enabled(user):

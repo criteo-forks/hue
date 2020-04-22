@@ -20,6 +20,8 @@
   from desktop import conf
   from desktop.views import commonheader, commonfooter, commonshare, commonimportexport, _ko
   from filebrowser.conf import SHOW_UPLOAD_BUTTON
+  from beeswax import hive_site
+  from impala import impala_flags
   from notebook.conf import ENABLE_SQL_INDEXER
 
   from indexer.conf import ENABLE_NEW_INDEXER, ENABLE_SQOOP, ENABLE_KAFKA, CONFIG_INDEXER_LIBS_PATH, ENABLE_SCALABLE_INDEXER, ENABLE_ALTUS, ENABLE_ENVELOPE, ENABLE_FIELD_EDITOR
@@ -47,7 +49,7 @@ ${ commonheader(_("Importer"), "indexer", user, request, "60px") | n,unicode }
 % endif
 </style>
 
-<span id="importerComponents" class="notebook importer-main" data-bind="dropzone: { url: '/filebrowser/upload/file?dest=' + DROPZONE_HOME_DIR, params: {dest: DROPZONE_HOME_DIR}, paramName: 'hdfs_file', onComplete: function(path){ createWizard.source.path(path); }, disabled: '${ not SHOW_UPLOAD_BUTTON.get() }' === 'True'  }">
+<span id="importerComponents" class="notebook importer-main" data-bind="dropzone: { url: '/filebrowser/upload/file?dest=' + DROPZONE_HOME_DIR, params: {dest: DROPZONE_HOME_DIR}, paramName: 'hdfs_file', onComplete: function(path){ createWizard.source.path(path); }, disabled: '${ not hasattr(SHOW_UPLOAD_BUTTON, 'get') or not SHOW_UPLOAD_BUTTON.get() }' === 'True'  }">
 <div class="dz-message" data-dz-message></div>
 <div class="navbar hue-title-bar">
   <div class="navbar-inner">
@@ -626,6 +628,14 @@ ${ commonheader(_("Importer"), "indexer", user, request, "60px") | n,unicode }
               <div class="control-group">
                 <label class="checkbox inline-block" data-bind="visible: tableFormat() != 'kudu'">
                   <input type="checkbox" data-bind="checked: useDefaultLocation"> ${_('Store in Default location')}
+                </label>
+              </div>
+              <div class="control-group" data-bind="visible: isTransactionalVisible">
+                <label class="checkbox inline-block">
+                  <input type="checkbox" data-bind="checked: isTransactional"> ${_('Transactional table')}
+                </label>
+                <label class="checkbox inline-block" title="${_('Full transactional support available in Hive with ORC')}">
+                  <input type="checkbox" data-bind="checked: isInsertOnly, enable: isTransactionalUpdateEnabled"> ${_('Insert only')}
                 </label>
               </div>
 
@@ -1659,6 +1669,7 @@ ${ commonheader(_("Importer"), "indexer", user, request, "60px") | n,unicode }
             sourceType: self.sourceType,
             namespace: self.namespace(),
             compute: self.compute(),
+            connector: { type: self.sourceType }, // TODO: Migrate importer to connectors
             name: tableName,
             columns: temporaryColumns,
             sample: self.sample()
@@ -1694,7 +1705,9 @@ ${ commonheader(_("Importer"), "indexer", user, request, "60px") | n,unicode }
         }
       });
       self.inputFormatsAll = ko.observableArray([
+          % if request.fs:
           {'value': 'file', 'name': 'File'},
+          % endif
           % if ENABLE_SQOOP.get():
           {'value': 'rdbms', 'name': 'External Database'},
           % endif
@@ -1734,7 +1747,7 @@ ${ commonheader(_("Importer"), "indexer", user, request, "60px") | n,unicode }
         resizeElements();
       });
       self.isObjectStore = ko.pureComputed(function() {
-        return self.inputFormat() === 'file' && /^(s3a|adl):\/.*$/.test(self.path());
+        return self.inputFormat() === 'file' && /^(s3a|adl|abfs):\/.*$/.test(self.path());
       });
       self.isObjectStore.subscribe(function(newVal) {
         wizard.destination.useDefaultLocation(!newVal);
@@ -2058,7 +2071,7 @@ ${ commonheader(_("Importer"), "indexer", user, request, "60px") | n,unicode }
           "source": ko.mapping.toJSON(self)
         }, function (resp) {
           if (resp.status === 0 && resp.data) {
-            huePubSub.publish('notebook.task.submitted', resp.history_uuid);
+            huePubSub.publish('notebook.task.submitted', resp);
           } else if (resp.status === 1) {
             $(document).trigger("error", "${ _('Connection Failed: ') }" + resp.message);
             self.rdbmsDbIsValid(false);
@@ -2132,11 +2145,12 @@ ${ commonheader(_("Importer"), "indexer", user, request, "60px") | n,unicode }
             dataCatalog.getEntry({
               sourceType: self.sourceType,
               compute: wizard.compute(),
+              connector: {}, // TODO: Use connectors in the importer
               namespace: wizard.namespace(),
               path: self.outputFormat() === 'table' ? [self.databaseName(), self.tableName()] : [],
             }).done(function (catalogEntry) {
               catalogEntry.getSourceMeta({ silenceErrors: true }).done(function (sourceMeta) {
-                self.isTargetExisting((sourceMeta.databases || []).indexOf(self.databaseName()) >= 0);
+                self.isTargetExisting(self.outputFormat() === 'table' ? !sourceMeta.notFound : (sourceMeta.databases || []).indexOf(self.databaseName()) >= 0);
                 self.isTargetChecking(false);
               }).fail(function () {
                 self.isTargetExisting(false);
@@ -2393,11 +2407,21 @@ ${ commonheader(_("Importer"), "indexer", user, request, "60px") | n,unicode }
       self.tableFormats = ko.pureComputed(function() {
         if (wizard.source.inputFormat() === 'kafka') {
           return [{'value': 'kudu', 'name': 'Kudu'}];
+        } else if (vm.sourceType == 'impala') { // Impala supports Kudu
+          return [
+            {'value': 'text', 'name': 'Text'},
+            {'value': 'parquet', 'name': 'Parquet'},
+            {'value': 'kudu', 'name': 'Kudu'},
+            {'value': 'csv', 'name': 'Csv'},
+            {'value': 'avro', 'name': 'Avro'},
+            {'value': 'json', 'name': 'Json'},
+            {'value': 'regexp', 'name': 'Regexp'},
+            {'value': 'orc', 'name': 'ORC'},
+          ];
         }
         return [
           {'value': 'text', 'name': 'Text'},
           {'value': 'parquet', 'name': 'Parquet'},
-          {'value': 'kudu', 'name': 'Kudu'},
           {'value': 'csv', 'name': 'Csv'},
           {'value': 'avro', 'name': 'Avro'},
           {'value': 'json', 'name': 'Json'},
@@ -2424,6 +2448,21 @@ ${ commonheader(_("Importer"), "indexer", user, request, "60px") | n,unicode }
       self.importData = ko.observable(true);
       self.useDefaultLocation = ko.observable(true);
       self.nonDefaultLocation = ko.observable('');
+
+      var isTransactionalVisibleImpala = '${ impala_flags.is_transactional() }'.toLowerCase() == 'true';
+      var isTransactionalVisibleHive = '${ hive_site.has_concurrency_support() }'.toLowerCase() == 'true';
+      var transactionalDefaultType = '${ impala_flags.default_transactional_type() }'.toLowerCase();
+
+      self.isTransactionalVisible = ko.observable((vm.sourceType == 'impala' && isTransactionalVisibleImpala) || (vm.sourceType == 'hive' && isTransactionalVisibleHive));
+      self.isTransactional = ko.observable(self.isTransactionalVisible());
+      self.isInsertOnly = ko.observable(true); // Impala doesn't have yet full support.
+      self.isTransactionalUpdateEnabled = ko.pureComputed(function() {
+        var enabled = self.tableFormat() == 'orc' && (vm.sourceType == 'hive' || (vm.sourceType == 'impala' && transactionalDefaultType.length && transactionalDefaultType != 'insert_only'));
+        if (!enabled) {
+          self.isInsertOnly(true);
+        }
+        return enabled;
+      });
 
       self.hasHeader = ko.observable(false);
 
@@ -2819,15 +2858,16 @@ ${ commonheader(_("Importer"), "indexer", user, request, "60px") | n,unicode }
                   if (!snippet.result.handle().has_more_statements) {
                     if (self.editorVM.selectedNotebook().onSuccessUrl()) {
                       var match = snippet.statement_raw().match(/CREATE TABLE `([^`]+)`/i);
+                      const connector = {} // TODO: Use connector in importer
                       if (match) {
                         var db = match[1];
-                        dataCatalog.getEntry({ sourceType: snippet.type(), namespace: self.namespace(), compute: self.compute(), path: [ db ]}).done(function (dbEntry) {
+                        dataCatalog.getEntry({ sourceType: snippet.type(), connector: connector, namespace: self.namespace(), compute: self.compute(), path: [ db ]}).done(function (dbEntry) {
                           dbEntry.clearCache({ invalidate: 'invalidate', silenceErrors: true }).done(function () {
                             huePubSub.publish('open.link', self.editorVM.selectedNotebook().onSuccessUrl());
                           })
                         });
                       } else {
-                        dataCatalog.getEntry({ sourceType: snippet.type(), namespace: self.namespace(), compute: self.compute(), path: []}).done(function (sourceEntry) {
+                        dataCatalog.getEntry({ sourceType: snippet.type(), connector: connector, namespace: self.namespace(), compute: self.compute(), path: []}).done(function (sourceEntry) {
                           sourceEntry.clearCache({ silenceErrors: true }).done(function () {
                             huePubSub.publish('open.link', self.editorVM.selectedNotebook().onSuccessUrl());
                           })
@@ -2860,7 +2900,7 @@ ${ commonheader(_("Importer"), "indexer", user, request, "60px") | n,unicode }
           if (resp.status === 0) {
             if (resp.history_uuid) {
               $.jHueNotify.info("${ _('Task submitted') }");
-              huePubSub.publish('notebook.task.submitted', resp.history_uuid);
+              huePubSub.publish('notebook.task.submitted', resp);
             } else if (resp.on_success_url) {
               if (resp.pub_sub_url) {
                 huePubSub.publish(resp.pub_sub_url);

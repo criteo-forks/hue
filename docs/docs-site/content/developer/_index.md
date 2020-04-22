@@ -6,22 +6,11 @@ chapter = false
 pre = "<b>3. </b>"
 +++
 
-Hue service integration is generic and lets you integrate with other analytics systems. Here is a list of the main APIs:
+Those are the main categories of development:
 
-* Connect or create SQL connectors to any database (Impala, MySQL, Presto...)
-* List any files from any filesytem (HDFS, S3, ADLS...)
-* List any job or query list (YARN, SQL queries, Kubernetes...)
-* Integrate with a Data Catalog (Cloudera Navigator, Apache Atlas...)
+* **Web application**: ramping-up with on the overall [Hue development](/developer/development) service
+* **SQL parsers**: update or reuse SQL [parsers](/developer/parsers/) or editor scratchpad
+* **Connector**: access your own data services or [data warehouses](/administrator/configuration/connectors/#databases)
 
-In addition, whole new apps can also be created in order to provide end to end solutions.
 
-Upcoming & Contribution ideas
-
-* How to add new SQL grammar and highlighting
-* Improved Query Builder
-* Improved Dashboard & Reporting
-* Framework to add new/embed vizualizations
-* How to integrate smart query troubleshooting/recommendation systems (Cloudera Navigator Optimizer...)
-* Generic workflow system (Apache Oozie, Apache Airflow, Celery Tasks...)
-* ADLS gen2, Google FS integrations
-* Check the [Roadmap](https://github.com/cloudera/hue/blob/master/docs/ROADMAP.md)
+Also check on how to get started on [contribution ideas](https://github.com/cloudera/hue/blob/master/CONTRIBUTING.md).

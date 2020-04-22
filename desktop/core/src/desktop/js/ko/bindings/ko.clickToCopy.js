@@ -15,7 +15,7 @@
 // limitations under the License.
 
 import $ from 'jquery';
-import ko from 'knockout';
+import * as ko from 'knockout';
 
 ko.bindingHandlers.clickToCopy = {
   init: function(element, valueAccessor) {
@@ -23,7 +23,7 @@ ko.bindingHandlers.clickToCopy = {
       const $input = $('<textarea>')
         .css({ opacity: 0 })
         .val(ko.unwrap(valueAccessor()))
-        .appendTo(window.HUE_CONTAINER)
+        .appendTo('body')
         .select();
       document.execCommand('copy');
       $input.remove();

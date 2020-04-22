@@ -14,14 +14,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import ko from 'knockout';
+import * as ko from 'knockout';
 
 import apiHelper from 'api/apiHelper';
 import componentUtils from 'ko/components/componentUtils';
 import huePubSub from 'utils/huePubSub';
 import { PigFunctions, SqlFunctions } from 'sql/sqlFunctions';
 import I18n from 'utils/i18n';
+import { GET_KNOWN_CONFIG_EVENT, CONFIG_REFRESHED_EVENT } from 'utils/hueConfig';
 
+// prettier-ignore
 const TEMPLATE = `
   <div class="assist-inner-panel">
     <div class="assist-flex-panel">
@@ -34,7 +36,9 @@ const TEMPLATE = `
       </div>
       <div class="assist-flex-search">
         <div class="assist-filter">
-          <input class="clearable" type="text" placeholder="Filter..." data-bind="clearable: query, value: query, valueUpdate: 'afterkeydown'">
+          <form autocomplete="off">
+            <input class="clearable" type="text" ${ window.PREVENT_AUTOFILL_INPUT_ATTRS } placeholder="Filter..." data-bind="clearable: query, value: query, valueUpdate: 'afterkeydown'">
+          </form>
         </div>
       </div>
       <div data-bind="css: { 'assist-flex-fill': !selectedFunction(), 'assist-flex-half': selectedFunction() }">
@@ -44,7 +48,7 @@ const TEMPLATE = `
             <a class="black-link" href="javascript: void(0);" data-bind="toggle: open"><i class="fa fa-fw" data-bind="css: { 'fa-chevron-right': !open(), 'fa-chevron-down': open }"></i> <span data-bind="text: name"></span></a>
             <ul class="assist-functions" data-bind="slideVisible: open, foreach: functions">
               <li data-bind="tooltip: { title: description, placement: 'left', delay: 1000 }">
-                <a class="assist-field-link" href="javascript: void(0);" data-bind="draggableText: { text: draggable, meta: { type: 'function' } }, css: { 'blue': $parents[1].selectedFunction() === $data }, multiClick: { click: function () { $parents[1].selectedFunction($data); }, dblClick: function () { huePubSub.publish('editor.insert.at.cursor', draggable); } }, text: signature"></a>
+                <a class="assist-field-link" href="javascript: void(0);" data-bind="draggableText: { text: draggable, meta: { type: 'function' } }, css: { 'blue': $parents[1].selectedFunction() === $data }, multiClick: { click: function () { $parents[1].selectedFunction($data); }, dblClick: function () { huePubSub.publish('editor.insert.at.cursor', { text: draggable }); } }, text: signature"></a>
               </li>
             </ul>
           </li>
@@ -54,7 +58,7 @@ const TEMPLATE = `
         <!-- ko if: filteredFunctions().length > 0 -->
         <ul class="assist-functions" data-bind="foreach: filteredFunctions">
           <li data-bind="tooltip: { title: description, placement: 'left', delay: 1000 }">
-            <a class="assist-field-link" href="javascript: void(0);" data-bind="draggableText: { text: draggable, meta: { type: 'function' } }, css: { 'blue': $parent.selectedFunction() === $data }, multiClick: { click: function () { $parent.selectedFunction($data); }, dblClick: function () { huePubSub.publish('editor.insert.at.cursor', draggable); } }, html: signatureMatch"></a>
+            <a class="assist-field-link" href="javascript: void(0);" data-bind="draggableText: { text: draggable, meta: { type: 'function' } }, css: { 'blue': $parent.selectedFunction() === $data }, multiClick: { click: function () { $parent.selectedFunction($data); }, dblClick: function () { huePubSub.publish('editor.insert.at.cursor', { text: draggable }); } }, html: signatureMatch"></a>
           </li>
         </ul>
         <!-- /ko -->
@@ -68,7 +72,7 @@ const TEMPLATE = `
       <!-- ko if: selectedFunction -->
       <div class="assist-flex-half assist-function-details" data-bind="with: selectedFunction">
         <div class="assist-panel-close"><button class="close" data-bind="click: function() { $parent.selectedFunction(null); }">&times;</button></div>
-        <div class="assist-function-signature blue" data-bind="draggableText: { text: draggable, meta: { type: 'function' } }, text: signature, event: { 'dblclick': function () { huePubSub.publish('editor.insert.at.cursor', draggable); } }"></div>
+        <div class="assist-function-signature blue" data-bind="draggableText: { text: draggable, meta: { type: 'function' } }, text: signature, event: { 'dblclick': function () { huePubSub.publish('editor.insert.at.cursor', { text: draggable }); } }"></div>
         <!-- ko if: description -->
         <div data-bind="html: descriptionMatch"></div>
         <!-- /ko -->
@@ -168,16 +172,12 @@ class AssistFunctionsPanel {
       updateType(details.type);
     });
 
-    const configSub = huePubSub.subscribe('cluster.config.set.config', clusterConfig => {
+    const configUpdated = config => {
       const lastActiveType =
         this.activeType() || apiHelper.getFromTotalStorage('assist', 'function.panel.active.type');
-      if (
-        clusterConfig.app_config &&
-        clusterConfig.app_config.editor &&
-        clusterConfig.app_config.editor.interpreters
-      ) {
+      if (config.app_config && config.app_config.editor && config.app_config.editor.interpreters) {
         const typesIndex = {};
-        clusterConfig.app_config.editor.interpreters.forEach(interpreter => {
+        config.app_config.editor.interpreters.forEach(interpreter => {
           if (
             interpreter.type === 'hive' ||
             interpreter.type === 'impala' ||
@@ -200,9 +200,10 @@ class AssistFunctionsPanel {
       } else {
         this.availableTypes([]);
       }
-    });
+    };
 
-    huePubSub.publish('cluster.config.get.config');
+    huePubSub.publish(GET_KNOWN_CONFIG_EVENT, configUpdated);
+    const configSub = huePubSub.subscribe(CONFIG_REFRESHED_EVENT, configUpdated);
 
     this.disposals.push(() => {
       activeSnippetTypeSub.remove();

@@ -15,7 +15,7 @@
 // limitations under the License.
 
 import $ from 'jquery';
-import ko from 'knockout';
+import * as ko from 'knockout';
 
 ko.bindingHandlers.templateContextMenu = {
   init: function(element, valueAccessor, allBindings, viewModel) {
@@ -40,7 +40,7 @@ ko.bindingHandlers.templateContextMenu = {
             '" class="hue-context-menu" data-bind="template: { name: \'' +
             options.template +
             '\', data: viewModel, afterRender: afterRender }"></ul>'
-        ).appendTo(window.HUE_CONTAINER);
+        ).appendTo('body');
       } else {
         ko.cleanNode($menu[0]);
       }

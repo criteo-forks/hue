@@ -14,7 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import ko from 'knockout';
+import * as ko from 'knockout';
 
 import apiHelper from '../../../api/apiHelper';
 import AssistStorageEntry from './assistStorageEntry';
@@ -22,6 +22,7 @@ import componentUtils from 'ko/components/componentUtils';
 import huePubSub from '../../../utils/huePubSub';
 import I18n from 'utils/i18n';
 
+// prettier-ignore
 const TEMPLATE = `
   <script type="text/html" id="storage-context-items">
     <li><a href="javascript:void(0);" data-bind="click: function (data) { showContextPopover(data, { target: $parentContext.$contextSourceElement }, { left: -15, top: 2 }); }"><i class="fa fa-fw fa-info"></i> ${I18n(
@@ -44,11 +45,11 @@ const TEMPLATE = `
 
   <script type="text/html" id="assist-storage-header-actions">
     <div class="assist-db-header-actions">
-      <!-- ko if: type !== 's3' -->
+      <!-- ko if: source.type !== 's3' && source.type !== 'abfs' -->
       <a class="inactive-action" href="javascript:void(0)" data-bind="click: goHome, attr: { title: I18n('Go to ' + window.USER_HOME_DIR) }"><i class="pointer fa fa-home"></i></a>
       <!-- ko if: window.SHOW_UPLOAD_BUTTON -->
       <a class="inactive-action" data-bind="dropzone: {
-            url: '/filebrowser/upload/file?dest=' + (type === 'adls' ? 'adl:' : '') + path,
+            url: '/filebrowser/upload/file?dest=' + (source.type === 'adls' ? 'adl:' : '') + path,
             params: { dest: path },
             paramName: 'hdfs_file',
             onError: function(x, e){ $(document).trigger('error', e); },
@@ -60,6 +61,20 @@ const TEMPLATE = `
         )}"></i></div>
       </a>
       <!-- /ko -->
+      <!-- /ko -->
+      <!-- ko if: source.type === 'abfs' && path !== '/' && window.SHOW_UPLOAD_BUTTON -->
+      <a class="inactive-action" data-bind="dropzone: {
+            url: '/filebrowser/upload/file?dest=' + 'abfs:/' + path,
+            params: { dest: 'abfs:/' + path },
+            paramName: 'hdfs_file',
+            onError: function(x, e){ $(document).trigger('error', e); },
+            onComplete: function () { huePubSub.publish('assist.storage.refresh'); } }" title="${I18n(
+              'Upload file'
+            )}" href="javascript:void(0)">
+        <div class="dz-message inline" data-dz-message><i class="pointer fa fa-plus" title="${I18n(
+          'Upload file'
+        )}"></i></div>
+      </a>
       <!-- /ko -->
       <a class="inactive-action" href="javascript:void(0)" data-bind="click: function () { huePubSub.publish('assist.storage.refresh'); }" title="${I18n(
         'Manual refresh'
@@ -78,7 +93,7 @@ const TEMPLATE = `
   <div class="assist-flex-fill">
     <ul class="assist-tables" data-bind="foreach: sources">
       <li class="assist-table">
-        <a class="assist-table-link" href="javascript: void(0);" data-bind="click: function () { $parent.activeSource($data); }"><i class="fa fa-fw fa-server muted valign-middle"></i> <span data-bind="text: $data.toUpperCase()"></span></a>
+        <a class="assist-table-link" href="javascript: void(0);" data-bind="click: function () { $parent.activeSource($data); }"><i class="fa fa-fw fa-server muted valign-middle"></i> <span data-bind="text: $data.displayName"></span></a>
       </li>
     </ul>
   </div>
@@ -103,7 +118,7 @@ const TEMPLATE = `
     <a href="javascript: void(0);" data-bind="click: function () { $parent.activeSource(undefined) }">
       <i class="fa fa-fw fa-chevron-left"></i>
       <i class="fa fa-fw fa-server"></i>
-      <span data-bind="text: $parent.activeSource().toUpperCase()"></span>
+      <span data-bind="text: $parent.activeSource().displayName"></span>
     </a>
     <!-- /ko -->
     <!-- ko template: 'assist-storage-header-actions' --><!-- /ko -->
@@ -113,7 +128,7 @@ const TEMPLATE = `
       <form autocomplete="off">
         <input class="clearable" type="text" placeholder="${I18n(
           'Filter...'
-        )}" autocorrect="off" autocomplete="do-not-autocomplete" autocapitalize="off" spellcheck="false"
+        )}" ${ window.PREVENT_AUTOFILL_INPUT_ATTRS }
         data-bind="clearable: filter, value: filter, valueUpdate: 'afterkeydown'"/>
       </form>
     </div>
@@ -125,7 +140,7 @@ const TEMPLATE = `
       <ul class="assist-tables" data-bind="foreachVisible: { data: entries, minHeight: 22, container: '.assist-storage-scrollable', fetchMore: $data.fetchMore.bind($data) }">
         <li class="assist-entry assist-table-link" style="position: relative;" data-bind="appAwareTemplateContextMenu: { template: 'storage-context-items', scrollContainer: '.assist-storage-scrollable' }, visibleOnHover: { override: contextPopoverVisible, 'selector': '.assist-actions' }">
           <div class="assist-actions table-actions" style="opacity: 0;" >
-            <a style="padding: 0 3px;" class="inactive-action" href="javascript:void(0);" data-bind="click: showContextPopover, css: { 'blue': contextPopoverVisible }">
+            <a style="padding: 0 3px;" class="inactive-action" href="javascript:void(0);" data-bind="popoverOnHover: showContextPopover, css: { 'blue': contextPopoverVisible }">
               <i class='fa fa-info' title="${I18n('Details')}"></i>
             </a>
           </div>
@@ -137,7 +152,7 @@ const TEMPLATE = `
             <!-- ko if: definition.type === 'file' -->
             <i class="fa fa-fw fa-file-o muted valign-middle"></i>
             <!-- /ko -->
-            <span draggable="true" data-bind="text: definition.name, draggableText: { text: '\\'' + path + '\\'', meta: {'type': type, 'definition': definition} }"></span>
+            <span draggable="true" data-bind="text: definition.name, draggableText: { text: '\\'' + path + '\\'', meta: {'type': source.type, 'definition': definition} }"></span>
           </a>
         </li>
       </ul>
@@ -150,38 +165,58 @@ const TEMPLATE = `
       <!-- /ko -->
     </div>
     <!-- ko hueSpinner: { spin: loading, center: true, size: 'large' } --><!-- /ko -->
-    <div class="assist-errors" data-bind="visible: ! loading() && hasErrors()">
-      <span>${I18n('Error loading contents.')}</span>
-    </div>
+    <span class="assist-errors" data-bind="visible: ! loading() && hasErrors(), text: errorText() || '${I18n(
+      'Error loading contents.'
+    )}'">
+    </span>
   </div>
   <!-- /ko -->
   <!-- /ko -->
 `;
 
+const rootPathRegex = /.*%3A%2F%2F(.+)$/;
+
+/**
+ * This takes the initial path from the "browser" config, used in cases where the users can't access '/'
+ */
+const getRootPath = source => {
+  if (source) {
+    const match = source.page.match(rootPathRegex);
+    if (match) {
+      return match[1] + '/';
+    }
+  }
+  return '';
+};
+
 class AssistStoragePanel {
   /**
    * @param {Object} options
-   * @param {String[]} options.sources
+   * @param {Interpreter[]} options.sources
    * @constructor
    **/
   constructor(options) {
     this.sources = ko.observableArray(options.sources);
 
-    let lastSource = apiHelper.getFromTotalStorage('assist', 'lastStorageSource', 'hdfs');
+    const lastSourceType = apiHelper.getFromTotalStorage('assist', 'lastStorageSource', 'hdfs');
 
-    if (options.sources.indexOf(lastSource) === -1) {
-      lastSource = options.sources.indexOf('hdfs') !== -1 ? 'hdfs' : options.sources[0];
+    let foundLastSource = this.sources().find(source => source.type === lastSourceType);
+
+    if (!foundLastSource && this.sources().length) {
+      foundLastSource = this.sources().find(source => source.type === 'hdfs') || this.sources()[0];
     }
 
-    this.activeSource = ko.observable(lastSource);
+    this.activeSource = ko.observable(foundLastSource);
     this.loading = ko.observable();
     this.initialized = false;
+    this.rootPath = getRootPath(this.activeSource());
 
     this.selectedStorageEntry = ko.observable();
 
     this.activeSource.subscribe(newValue => {
       if (newValue) {
-        apiHelper.setInTotalStorage('assist', 'lastStorageSource', newValue);
+        this.rootPath = getRootPath(this.activeSource());
+        apiHelper.setInTotalStorage('assist', 'lastStorageSource', newValue.type);
         this.selectedStorageEntry(undefined);
         this.reload();
       }
@@ -193,14 +228,17 @@ class AssistStoragePanel {
     });
 
     huePubSub.subscribe('assist.storage.refresh', () => {
-      apiHelper.clearStorageCache(this.activeSource());
+      apiHelper.clearStorageCache(this.activeSource().type);
       this.reload();
     });
 
     huePubSub.subscribe('assist.storage.go.home', () => {
-      const path = this.activeSource() === 's3' ? '/' : window.USER_HOME_DIR;
+      const path =
+        this.activeSource().type === 's3' || this.activeSource().type === 'abfs'
+          ? '/'
+          : window.USER_HOME_DIR;
       this.loadPath(path);
-      apiHelper.setInTotalStorage('assist', 'currentStoragePath_' + this.activeSource(), path);
+      apiHelper.setInTotalStorage('assist', 'currentStoragePath_' + this.activeSource().type, path);
     });
 
     this.init();
@@ -208,13 +246,18 @@ class AssistStoragePanel {
 
   loadPath(path) {
     this.loading(true);
-    const parts = path.split('/');
+    let relativePath = path;
+    if (this.rootPath) {
+      relativePath = relativePath.replace(this.rootPath, '/');
+    }
+    const parts = relativePath.split('/');
     parts.shift();
 
     const currentEntry = new AssistStorageEntry({
-      type: this.activeSource(),
+      source: this.activeSource(),
+      rootPath: this.rootPath,
       definition: {
-        name: '/',
+        name: this.rootPath,
         type: 'dir'
       },
       parent: null
@@ -231,8 +274,8 @@ class AssistStoragePanel {
     this.loadPath(
       apiHelper.getFromTotalStorage(
         'assist',
-        'currentStoragePath_' + this.activeSource(),
-        this.activeSource() === 'hdfs' ? window.USER_HOME_DIR : '/'
+        'currentStoragePath_' + this.activeSource().type,
+        this.activeSource().type === 'hdfs' ? window.USER_HOME_DIR : '/'
       )
     );
   }

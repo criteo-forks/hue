@@ -184,7 +184,6 @@ var Node = function (node, vm) {
 
 
 var Workflow = function (vm, workflow) {
-
   var self = this;
 
   self.id = ko.observable(typeof workflow.id != "undefined" && workflow.id != null ? workflow.id : null);
@@ -276,13 +275,13 @@ var Workflow = function (vm, workflow) {
       },
       success: function (data) {
         if (data.status == 0) {
-          viewModel.addActionProperties.removeAll();
+          window.workflowEditorViewModel.addActionProperties.removeAll();
           $.each(data.properties, function (i, prop) {
-            viewModel.addActionProperties.push(ko.mapping.fromJS(prop));
+            window.workflowEditorViewModel.addActionProperties.push(ko.mapping.fromJS(prop));
           });
 
           if (data.workflows.length > 0) {
-            viewModel.subworkflows(getOtherSubworkflows(viewModel, data.workflows));
+            window.workflowEditorViewModel.subworkflows(getOtherSubworkflows(window.workflowEditorViewModel, data.workflows));
           }
 
           if (callback) {
@@ -297,7 +296,7 @@ var Workflow = function (vm, workflow) {
   self.addNode = function (widget, copiedNode) {
     $.post("/oozie/editor/workflow/add_node/", {
       "node": ko.mapping.toJSON(widget),
-      "properties": ko.mapping.toJSON(viewModel.addActionProperties()),
+      "properties": ko.mapping.toJSON(window.workflowEditorViewModel.addActionProperties()),
       "copiedProperties": copiedNode ? ko.mapping.toJSON(copiedNode.properties) : "{}"
     }, function (data) {
       if (data.status == 0) {
@@ -1268,22 +1267,25 @@ var WorkflowEditorViewModel = function (layout_json, workflow_json, credentials_
       var _to = $("#wdg_" + (typeof toId == "function" ? toId() : toId));
       if (_from.length > 0 && _to.length > 0) {
         var $painter = $(document.body);
-        var correction = 0;
+        var heightCorrection = 0;
+        var widthCorrection = 0;
 
-        if ($('.oozie_workflowComponents:visible').length > 0) {
-          $painter = $('.oozie_workflowComponents:visible');
-          correction = $('.page-content').scrollTop();
+        var $workflowWidgets = $('.workflow-widgets');
+        if ($workflowWidgets.length > 0) {
+          $painter = $workflowWidgets;
+          heightCorrection = $workflowWidgets.scrollTop();
+          widthCorrection = $workflowWidgets.scrollLeft();
         }
 
         var _fromCenter = {
-          x: _from.position().left + _from.outerWidth() / 2,
-          y: _from.position().top + correction + _from.outerHeight() + 3
-        }
+          x: _from.position().left + widthCorrection + _from.outerWidth() / 2,
+          y: _from.position().top + heightCorrection + _from.outerHeight() + 3
+        };
 
         var _toCenter = {
-          x: _to.position().left + _to.outerWidth() / 2,
-          y: _to.position().top + correction - 5
-        }
+          x: _to.position().left + widthCorrection + _to.outerWidth() / 2,
+          y: _to.position().top + heightCorrection - 5
+        };
 
         var _curveCoords = {};
 

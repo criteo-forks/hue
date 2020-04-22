@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from past.builtins import basestring
 import json
 import logging
 import math
@@ -46,37 +47,44 @@ def check_editor_access_permission():
     def decorate(request, *args, **kwargs):
       editor_id = request.GET.get('editor')
       editor_type = request.GET.get('type', 'hive')
+      gist_id = request.POST.get('gist')
 
-      if editor_id:  # Open existing saved editor document
-        editor_type = _get_editor_type(editor_id)
+      if editor_type == 'gist' or gist_id: # Gist don't have permissions currently
+        pass
+      else:
+        if editor_id:  # Open existing saved editor document
+          try:
+            editor_type = _get_editor_type(editor_id)
+          except Document2.DoesNotExist:
+            raise PopupException(_('Query id %s can not be found, please open a new editor') % editor_id)
 
-      if check_permissions(request.user, editor_type):
-        raise PopupException(_('Missing permission to access the %s Editor' % editor_type), error_code=401)
-      return view_func(request, *args, **kwargs)
-    return wraps(view_func)(decorate)
-  return inner
-
-
-def check_document_access_permission():
-  def inner(view_func):
-    def decorate(request, *args, **kwargs):
-      notebook_id = request.GET.get('notebook', request.GET.get('editor'))
-      if not notebook_id:
-        notebook_id = json.loads(request.POST.get('notebook', '{}')).get('id')
-
-      try:
-        if notebook_id:
-          if str(notebook_id).isdigit():
-            document = Document2.objects.get(id=notebook_id)
-            document.can_read_or_exception(request.user)
-          else:
-            Document2.objects.get_by_uuid(user=request.user, uuid=notebook_id)
-      except Document2.DoesNotExist:
-        raise PopupException(_('Document %(id)s does not exist') % {'id': notebook_id})
+        if check_permissions(request.user, editor_type):
+          raise PopupException(_('Missing permission to access the %s Editor' % editor_type), error_code=401)
 
       return view_func(request, *args, **kwargs)
     return wraps(view_func)(decorate)
   return inner
+
+
+def check_document_access_permission(f):
+  @wraps(f)
+  def wrapper(request, *args, **kwargs):
+    notebook_id = request.GET.get('notebook', request.GET.get('editor'))
+    if not notebook_id:
+      notebook_id = json.loads(request.POST.get('notebook', '{}')).get('id')
+
+    try:
+      if notebook_id:
+        if str(notebook_id).isdigit():
+          document = Document2.objects.get(id=notebook_id)
+          document.can_read_or_exception(request.user)
+        else:
+          Document2.objects.get_by_uuid(user=request.user, uuid=notebook_id)
+    except Document2.DoesNotExist:
+      raise PopupException(_('Document %(id)s does not exist') % {'id': notebook_id})
+
+    return f(request, *args, **kwargs)
+  return wrapper
 
 
 def check_document_modify_permission():
@@ -97,33 +105,34 @@ def check_document_modify_permission():
   return inner
 
 
-def api_error_handler(func):
-  def decorator(*args, **kwargs):
+def api_error_handler(f):
+  @wraps(f)
+  def wrapper(*args, **kwargs):
     response = {}
 
     try:
-      return func(*args, **kwargs)
-    except SessionExpired, e:
+      return f(*args, **kwargs)
+    except SessionExpired as e:
       response['status'] = -2
-    except QueryExpired, e:
+    except QueryExpired as e:
       response['status'] = -3
       if e.message and isinstance(e.message, basestring):
         response['message'] = e.message
-    except AuthenticationRequired, e:
+    except AuthenticationRequired as e:
       response['status'] = 401
       if e.message and isinstance(e.message, basestring):
         response['message'] = e.message
-    except ValidationError, e:
-      LOG.exception('Error validation %s' % func)
+    except ValidationError as e:
+      LOG.exception('Error validation %s' % f)
       response['status'] = -1
       response['message'] = e.message
-    except OperationTimeout, e:
+    except OperationTimeout as e:
       response['status'] = -4
-    except FilesystemException, e:
+    except FilesystemException as e:
       response['status'] = 2
       response['message'] = e.message
-    except QueryError, e:
-      LOG.exception('Error running %s' % func.__name__)
+    except QueryError as e:
+      LOG.exception('Error running %s' % f.__name__)
       response['status'] = 1
       response['message'] = smart_unicode(e)
       if response['message'].index("max_row_size"):
@@ -139,22 +148,22 @@ def api_error_handler(func):
         response['handle'] = e.handle
       if e.extra:
         response.update(e.extra)
-    except OperationNotSupported, e:
+    except OperationNotSupported as e:
       response['status'] = 5
       response['message'] = e.message
-    except RestException, e:
+    except RestException as e:
       message = extract_solr_exception_message(e)
       response['status'] = 1
       response['message'] = message.get('error')
-    except Exception, e:
-      LOG.exception('Error running %s' % func.__name__)
+    except Exception as e:
+      LOG.exception('Error running %s' % f.__name__)
       response['status'] = -1
       response['message'] = smart_unicode(e)
     finally:
       if response:
         return JsonResponse(response)
 
-  return decorator
+  return wrapper
 
 def _closest_power_of_2(number):
   return math.pow(2, math.ceil(math.log(number, 2)))
@@ -177,9 +186,9 @@ def json_error_handler(view_fn):
   def decorator(*args, **kwargs):
     try:
       return view_fn(*args, **kwargs)
-    except Http404, e:
+    except Http404 as e:
       raise e
-    except Exception, e:
+    except Exception as e:
       response = {
         'error': str(e)
       }

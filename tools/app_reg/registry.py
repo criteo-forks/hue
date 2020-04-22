@@ -19,14 +19,22 @@
 Registry for the applications
 """
 
+from builtins import object
 import glob
 import logging
 import os
+import sys
 import json
 
 import common
+from common import cmp
+
+if sys.version_info[0] > 2:
+  from builtins import object
+
 
 LOG = logging.getLogger(__name__)
+
 
 class AppRegistry(object):
   """
@@ -42,7 +50,10 @@ class AppRegistry(object):
   def _open(self):
     """Open the registry file. May raise OSError"""
     if os.path.exists(self._reg_path):
-      reg_file = file(self._reg_path)
+      if sys.version_info[0] > 2:
+        reg_file = open(self._reg_path)
+      else:
+        reg_file = file(self._reg_path)
       app_list = json.load(reg_file)
       reg_file.close()
 
@@ -55,8 +66,11 @@ class AppRegistry(object):
 
   def _write(self, path):
     """Write out the registry to the given path"""
-    outfile = file(path, 'w')
-    json.dump(self._apps.values(), outfile, cls=AppJsonEncoder, indent=2)
+    if sys.version_info[0] > 2:
+      outfile = open(path, 'w')
+    else:
+      outfile = file(path, 'w')
+    json.dump(list(self._apps.values()), outfile, cls=AppJsonEncoder, indent=2)
     outfile.close()
 
   def contains(self, app):
@@ -98,7 +112,7 @@ class AppRegistry(object):
 
   def get_all_apps(self):
     """get_all_apps() -> List of HueApp"""
-    return self._apps.values()
+    return list(self._apps.values())
 
   def save(self):
     """Save and write out the registry"""
@@ -189,7 +203,7 @@ class HueApp(object):
           if not os.path.exists(cur):
             os.unlink(link_name)
             LOG.warn("Removing broken link: %s" % (link_name,))
-        except OSError, ex:
+        except OSError as ex:
           LOG.warn("Error checking for existing link %s: %s" % (link_name, ex))
 
       # Actually install the link
@@ -197,12 +211,12 @@ class HueApp(object):
         os.symlink(target, link_name)
         LOG.info('Symlink config %s -> %s' % (link_name, target))
         installed.append(link_name)
-      except OSError, ex:
+      except OSError as ex:
         LOG.error("Failed to symlink %s to %s: %s" % (target, link_name, ex))
         for lnk in installed:
           try:
             os.unlink(lnk)
-          except OSError, ex2:
+          except OSError as ex2:
             LOG.error("Failed to cleanup link %s: %s" % (link_name, ex2))
         return False
     return True
@@ -225,7 +239,7 @@ class HueApp(object):
         try:
           os.unlink(path)
           LOG.info('Remove config symlink %s -> %s' % (path, target))
-        except OSError, ex:
+        except OSError as ex:
           LOG.error("Failed to remove configuration link %s: %s" % (path, ex))
           return False
     return True

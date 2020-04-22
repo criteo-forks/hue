@@ -15,7 +15,7 @@
 // limitations under the License.
 
 import $ from 'jquery';
-import ko from 'knockout';
+import * as ko from 'knockout';
 
 import apiHelper from 'api/apiHelper';
 import huePubSub from 'utils/huePubSub';
@@ -61,6 +61,7 @@ class DataCatalogContext {
                 .dataCatalog.getEntry({
                   namespace: self.catalogEntry().namespace,
                   compute: self.catalogEntry().compute,
+                  connector: self.catalogEntry().connector,
                   path: this.path,
                   temporaryOnly: self.catalogEntry().isTemporary
                 })

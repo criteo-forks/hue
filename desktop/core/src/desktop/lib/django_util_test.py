@@ -16,7 +16,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import object
 import datetime
+import sys
 
 from nose.tools import assert_true, assert_equal, assert_not_equal, assert_raises
 from django.http import HttpResponse, HttpResponseRedirect
@@ -28,8 +30,11 @@ configure_django_for_test()
 from desktop.lib import django_util, exceptions
 from django.db import models
 
+if sys.version_info[0] > 2:
+  unichr = chr
+
 class TestModel(models.Model):
-  class Meta:
+  class Meta(object):
     app_label = "TEST_APP"
 
   my_int = models.IntegerField()
@@ -119,7 +124,7 @@ class TestDjangoUtil(object):
     pass
 
   def test_render_json_jsonp(self):
-    assert_equal("foo(3);", django_util.render_json(3, jsonp_callback="foo").content)
+    assert_equal(b"foo(3);", django_util.render_json(3, jsonp_callback="foo").content)
 
   def test_render_json_jsonp_bad_name(self):
     # Bad names
@@ -136,7 +141,7 @@ class TestDjangoUtil(object):
     the_file = "foobar"
     try:
       raise exceptions.MessageException(msg, the_file)
-    except Exception, e:
+    except Exception as e:
       assert_equal(msg, e.message)
       assert_equal(the_file, e.data['filename'])
       assert_true(msg in str(e))
@@ -146,15 +151,15 @@ def test_popup_injection():
   """Test that result injection works"""
   base = HttpResponse('<html><head></head><body>Hello</body></html>')
   resp = django_util.render_injected(base, ' Cookie monster')
-  assert_true('Hello Cookie monster' in resp.content)
+  assert_true(b'Hello Cookie monster' in resp.content)
 
   redirect = HttpResponseRedirect('http://www.cnn.com')
   resp = django_util.render_injected(redirect, 'Cookie monster')
-  assert_true('Cookie monster' not in resp.content)
+  assert_true(b'Cookie monster' not in resp.content)
 
   json = django_util.render_json('blah')
   resp = django_util.render_injected(json, 'Cookie monster')
-  assert_true('Cookie monster' not in resp.content)
+  assert_true(b'Cookie monster' not in resp.content)
 
   assert_raises(AssertionError, django_util.render_injected, "foo", "bar")
 

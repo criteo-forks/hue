@@ -15,10 +15,11 @@
 // limitations under the License.
 
 import $ from 'jquery';
-import ko from 'knockout';
+import * as ko from 'knockout';
 
 import apiHelper from 'api/apiHelper';
 import huePubSub from 'utils/huePubSub';
+import { GET_KNOWN_CONFIG_EVENT } from '../../../utils/hueConfig';
 
 const PAGE_SIZE = 100;
 
@@ -26,6 +27,10 @@ const TYPE_SPECIFICS = {
   adls: {
     apiHelperFetchFunction: 'fetchAdlsPath',
     dblClickPubSubId: 'assist.dblClickAdlsItem'
+  },
+  abfs: {
+    apiHelperFetchFunction: 'fetchAbfsPath',
+    dblClickPubSubId: 'assist.dblClickAbfsItem'
   },
   hdfs: {
     apiHelperFetchFunction: 'fetchHdfsPath',
@@ -43,17 +48,18 @@ class AssistStorageEntry {
    * @param {object} options.definition
    * @param {string} options.definition.name
    * @param {string} options.definition.type (file, dir)
-   * @param {string} options.type - The storage type ('adls', 'hdfs', 's3')
+   * @param {string} options.source - The storage source
    * @param {string} [options.originalType] - The original storage type ('adl', 's3a')
    * @param {AssistStorageEntry} options.parent
    * @constructor
    */
   constructor(options) {
     const self = this;
-    self.type = options.type;
+    self.source = options.source;
     self.originalType = options.originalType;
     self.definition = options.definition;
     self.parent = options.parent;
+    self.rootPath = options.rootPath || '';
     self.path = '';
     if (self.parent !== null) {
       self.path = self.parent.path;
@@ -98,7 +104,7 @@ class AssistStorageEntry {
   }
 
   dblClick() {
-    huePubSub.publish(TYPE_SPECIFICS[self.type].dblClickPubSubId, this);
+    huePubSub.publish(TYPE_SPECIFICS[self.source.type].dblClickPubSubId, this);
   }
 
   loadPreview() {
@@ -107,7 +113,7 @@ class AssistStorageEntry {
     apiHelper
       .fetchStoragePreview({
         path: self.getHierarchy(),
-        type: self.type,
+        type: self.source.type,
         silenceErrors: true
       })
       .done(data => {
@@ -130,18 +136,21 @@ class AssistStorageEntry {
     self.loading(true);
     self.hasErrors(false);
 
-    apiHelper[TYPE_SPECIFICS[self.type].apiHelperFetchFunction]({
+    apiHelper[TYPE_SPECIFICS[self.source.type].apiHelperFetchFunction]({
       pageSize: PAGE_SIZE,
       page: self.currentPage,
       filter: self.filter().trim() ? self.filter() : undefined,
       pathParts: self.getHierarchy(),
+      rootPath: self.rootPath,
       successCallback: data => {
         self.hasMorePages = data.page.next_page_number > self.currentPage;
         const filteredFiles = data.files.filter(file => file.name !== '.' && file.name !== '..');
         self.entries(
           filteredFiles.map(file => {
             return new AssistStorageEntry({
-              type: self.type,
+              originalType: self.originalType,
+              rootPath: self.rootPath,
+              source: self.source,
               definition: file,
               parent: self
             });
@@ -149,6 +158,8 @@ class AssistStorageEntry {
         );
         self.loaded = true;
         self.loading(false);
+        self.hasErrors(!!data.s3_listing_not_allowed); // Special case where we want errors inline instead of the default popover. We don't want errorCallback handling
+        self.errorText(data.s3_listing_not_allowed);
         if (callback) {
           callback();
         }
@@ -206,10 +217,16 @@ class AssistStorageEntry {
 
   getHierarchy() {
     const self = this;
-    const parts = [];
+    let parts = [];
     let entry = self;
-    while (entry != null) {
-      parts.push(entry.definition.name);
+    while (entry) {
+      if (!entry.parent && entry.definition.name) {
+        const rootParts = entry.definition.name.split('/').filter(Boolean);
+        rootParts.reverse();
+        parts = parts.concat(rootParts);
+      } else {
+        parts.push(entry.definition.name);
+      }
       entry = entry.parent;
     }
     parts.reverse();
@@ -245,7 +262,7 @@ class AssistStorageEntry {
     self.loadingMore(true);
     self.hasErrors(false);
 
-    apiHelper[TYPE_SPECIFICS[self.type].apiHelperFetchFunction]({
+    apiHelper[TYPE_SPECIFICS[self.source.type].apiHelperFetchFunction]({
       pageSize: PAGE_SIZE,
       page: self.currentPage,
       filter: self.filter().trim() ? self.filter() : undefined,
@@ -258,7 +275,9 @@ class AssistStorageEntry {
             filteredFiles.map(
               file =>
                 new AssistStorageEntry({
-                  type: self.type,
+                  originalType: self.originalType,
+                  rootPath: self.rootPath,
+                  source: self.source,
                   definition: file,
                   parent: self
                 })
@@ -328,21 +347,48 @@ class AssistStorageEntry {
     type = typeMatch ? typeMatch[1] : type || 'hdfs';
     type = type.replace(/s3.*/i, 's3');
     type = type.replace(/adl.*/i, 'adls');
+    type = type.replace(/abfs.*/i, 'abfs');
 
-    const rootEntry = new AssistStorageEntry({
-      type: type.toLowerCase(),
-      originalType: typeMatch && typeMatch[1],
-      definition: {
-        name: '/',
-        type: 'dir'
-      },
-      parent: null,
-      apiHelper: apiHelper
+    huePubSub.publish(GET_KNOWN_CONFIG_EVENT, config => {
+      if (config && config.app_config && config.app_config.browsers) {
+        const source = config.app_config.browsers.interpreters.find(
+          interpreter => interpreter.type === type
+        );
+        if (source) {
+          const rootEntry = new AssistStorageEntry({
+            source: source,
+            originalType: typeMatch && typeMatch[1],
+            definition: {
+              name: '/',
+              type: 'dir'
+            },
+            parent: null,
+            apiHelper: apiHelper
+          });
+
+          if (type === 'abfs' || type === 'adls') {
+            // ABFS / ADLS can have domain name in path. To prevent regression with s3 which allow periods in bucket name handle separately.
+            const azureMatch = path.match(
+              /^([^:]+):\/(\/((\w+)@)?[\w]+([\-\.]{1}\w+)*\.[\w]*)?(\/.*)?\/?/i
+            );
+            path = (azureMatch ? azureMatch[6] || '' : path)
+              .replace(/(?:^\/)|(?:\/$)/g, '')
+              .split('/');
+            if (azureMatch && azureMatch[4]) {
+              path.unshift(azureMatch[4]);
+            }
+          } else {
+            path = (typeMatch ? typeMatch[2] : path).replace(/(?:^\/)|(?:\/$)/g, '').split('/');
+          }
+
+          rootEntry.loadDeep(path, deferred.resolve);
+        } else {
+          deferred.reject();
+        }
+      } else {
+        deferred.reject();
+      }
     });
-
-    path = (typeMatch ? typeMatch[2] : path).replace(/(?:^\/)|(?:\/$)/g, '').split('/');
-
-    rootEntry.loadDeep(path, deferred.resolve);
 
     return deferred.promise();
   }

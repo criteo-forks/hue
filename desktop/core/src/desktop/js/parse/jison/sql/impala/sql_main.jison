@@ -100,7 +100,6 @@ NonReservedKeyword
  | 'KEY'
  | 'OPTION'
  | 'OWNER'
- | 'ROLE'
  | 'SERVER'
  | 'STRUCT'
  | 'URI'
@@ -292,6 +291,7 @@ NonStartingToken
  | 'INPATH'
  | 'INSENSITIVE'
  | 'INT'
+ | 'INTEGER'
  | 'INTERMEDIATE'
  | 'INTERSECT'
  | 'INTERSECTION'
@@ -551,6 +551,13 @@ FromOrIn
 DatabasesOrSchemas
  : 'DATABASES'
  | 'SCHEMAS'
+ ;
+
+
+GroupRoleOrUser
+ : 'GROUP'
+ | 'ROLE'
+ | 'USER'
  ;
 
 RoleOrUser
@@ -1181,6 +1188,7 @@ PrimitiveType
  : 'TINYINT'
  | 'SMALLINT'
  | 'INT'
+ | 'INTEGER'
  | 'BIGINT'
  | 'BOOLEAN'
  | 'FLOAT'

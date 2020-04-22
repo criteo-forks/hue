@@ -181,6 +181,7 @@
 'INSENSITIVE'                              { return 'INSENSITIVE'; }
 'INSERT'                                   { parser.determineCase(yytext); parser.addStatementTypeLocation('INSERT', yylloc); return 'INSERT'; }
 'INT'                                      { return 'INT'; }
+'INTEGER'                                  { return 'INTEGER'; }
 'INTERMEDIATE'                             { return 'INTERMEDIATE'; }
 'INTERSECT'                                { return 'INTERSECT'; }
 'INTERSECTION'                             { return 'INTERSECTION'; }
@@ -455,9 +456,9 @@ SYSTEM\s*\(                                { yy.lexer.unput('('); yytext = 'syst
 
 <hdfs>'\u2020'                             { parser.yy.cursorFound = true; return 'CURSOR'; }
 <hdfs>'\u2021'                             { parser.yy.cursorFound = true; return 'PARTIAL_CURSOR'; }
-<hdfs>\s+[']                               { return 'HDFS_START_QUOTE'; }
-<hdfs>[^'\u2020\u2021]+                    { parser.addFileLocation(yylloc, yytext); return 'HDFS_PATH'; }
-<hdfs>[']                                  { this.popState(); return 'HDFS_END_QUOTE'; }
+<hdfs>\s+['"]                              { return 'HDFS_START_QUOTE'; }
+<hdfs>[^'"\u2020\u2021]+                   { parser.addFileLocation(yylloc, yytext); return 'HDFS_PATH'; }
+<hdfs>['"]                                 { this.popState(); return 'HDFS_END_QUOTE'; }
 <hdfs><<EOF>>                              { return 'EOF'; }
 
 '&&'                                       { return 'AND'; }

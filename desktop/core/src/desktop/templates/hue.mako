@@ -18,15 +18,16 @@
   from django.utils.translation import ugettext as _
 
   from desktop import conf
-  from desktop.conf import IS_EMBEDDED, DEV_EMBEDDED, IS_MULTICLUSTER_ONLY, has_multi_clusters
+  from desktop.conf import IS_MULTICLUSTER_ONLY, has_multi_clusters
   from desktop.views import _ko, commonshare, login_modal
   from desktop.lib.i18n import smart_unicode
-  from desktop.models import PREFERENCE_IS_WELCOME_TOUR_SEEN, ANALYTIC_DB, hue_version, get_cluster_config
+  from desktop.models import PREFERENCE_IS_WELCOME_TOUR_SEEN, hue_version, get_cluster_config
 
   from dashboard.conf import IS_ENABLED as IS_DASHBOARD_ENABLED
   from filebrowser.conf import SHOW_UPLOAD_BUTTON
   from indexer.conf import ENABLE_NEW_INDEXER
   from metadata.conf import has_optimizer, OPTIMIZER
+  from notebook.conf import ENABLE_NOTEBOOK_2
 
   from desktop.auth.backend import is_admin
   from webpack_loader.templatetags.webpack_loader import render_bundle
@@ -42,52 +43,22 @@
   <meta charset="utf-8">
   <title>Hue</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-  <link rel="icon" type="image/x-icon" href="${ static('desktop/art/favicon.ico') }"/>
-  <meta name="description" content="">
-  <meta name="author" content="">
-
-% if DEV_EMBEDDED.get():
-  <style>
-    html {
-      height: 100%;
-      width: 100%;
-      margin: 0;
-      font-size: 1em;
-    }
-
-    body {
-      position: relative;
-      height: 100%;
-      width: 100%;
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      background-color: pink;
-    }
-
-    .hue-embedded-container {
-      position: absolute !important;
-      top: 60px !important;
-      left: 0 !important;
-      bottom: 0 !important;
-      right: 0 !important;
-    }
-  </style>
-% endif
+  % if conf.CUSTOM.LOGO_SVG.get():
+    <link rel="icon" type="image/x-icon" href="${ static('desktop/art/custom-branding/favicon.ico') }"/>
+  % else:
+    <link rel="icon" type="image/x-icon" href="${ static('desktop/art/favicon.ico') }"/>
+  % endif
+  <meta name="description" content="Open source SQL Query Assistant for Databases/Warehouses.">
+  <meta name="author" content="Hue Team">
 
   <link href="${ static('desktop/css/roboto.css') }" rel="stylesheet">
   <link href="${ static('desktop/ext/css/font-awesome.min.css') }" rel="stylesheet">
-% if IS_EMBEDDED.get():
-  <link href="${ static('desktop/css/hue-bootstrap-embedded.css') }" rel="stylesheet">
-  <link href="${ static('desktop/css/hue-embedded.css') }" rel="stylesheet">
-% else:
   <link href="${ static('desktop/ext/css/cui/cui.css') }" rel="stylesheet">
   <link href="${ static('desktop/ext/css/cui/bootstrap2.css') }" rel="stylesheet">
   <link href="${ static('desktop/ext/css/cui/bootstrap-responsive2.css') }" rel="stylesheet">
   <link href="${ static('desktop/css/hue.css') }" rel="stylesheet">
   <link href="${ static('desktop/css/jquery-ui.css') }" rel="stylesheet">
   <link href="${ static('desktop/css/home.css') }" rel="stylesheet">
-% endif
   <link rel="stylesheet" href="${ static('desktop/ext/chosen/chosen.min.css') }">
   <link rel="stylesheet" href="${ static('desktop/ext/select2/select2.css') }">
 
@@ -97,40 +68,7 @@
   <link rel="stylesheet" href="${ static('desktop/ext/css/leaflet.zoombox.css') }">
   <link rel="stylesheet" href="${ static('desktop/ext/css/nv.d3.min.css') }">
   <link rel="stylesheet" href="${ static('desktop/css/nv.d3.css') }">
-
-  <script type="text/javascript">
-% if IS_EMBEDDED.get():
-  // Bootstrap 2.3.2 relies on the hide css class presence for modals but doesn't remove it when opened for fade type
-  // modals, a parent container might have it set to !important which will prevent the modal from showing. This
-  // redefines all .hide definitions to exclude .modal.fade
-  try {
-    for (var i = 0; i < document.styleSheets.length; i++) {
-      if (document.styleSheets[i] && document.styleSheets[i].cssRules) {
-        for (var j = document.styleSheets[i].cssRules.length - 1; j > 0; j--) {
-          if (document.styleSheets[i] && document.styleSheets[i].cssRules[j] && document.styleSheets[i].cssRules[j].selectorText === '.hide') {
-            var originalCssText = document.styleSheets[i].cssRules[j].cssText;
-            if (originalCssText.indexOf('!important') !== -1) {
-              document.styleSheets[i].deleteRule(j);
-              document.styleSheets[i].insertRule(originalCssText.replace('.hide', '.hide:not(.modal):not(.fade)'));
-            }
-          }
-        }
-      }
-    }
-  } catch (e) {
-    console.warn(e);
-  }
-
-  // Add modified URL for .clearable background
-  var originalClearableImgUrl = '${ static('desktop/art/clearField@2x.png') }';
-  var clearableImgUrl = typeof adaptHueEmbeddedUrls !== 'undefined' ? adaptHueEmbeddedUrls(originalClearableImgUrl) : originalClearableImgUrl;
-
-  var style = document.createElement('style');
-  style.type = 'text/css';
-  style.appendChild(document.createTextNode('.clearable { background: url(' + clearableImgUrl + ') no-repeat right -10px center; }'));
-  document.head.appendChild(style);
-% endif
-  </script>
+  <link rel="stylesheet" href="${ static('desktop/ext/css/bootstrap-fileupload.css') }" >
 
   ${ commonHeaderFooterComponents.header_i18n_redirection() }
   <%
@@ -144,10 +82,6 @@
 </head>
 
 <body>
-
-% if IS_EMBEDDED.get():
-<div class="hue-embedded-container">
-% endif
 
 % if is_demo:
   <ul class="side-labels unstyled">
@@ -191,62 +125,9 @@ ${ hueIcons.symbols() }
       </div>
     % endif
 
-    % if not IS_EMBEDDED.get():
     <nav class="navbar navbar-default">
       <div class="navbar-inner top-nav">
-        <div class="top-nav-left">
-          % if not IS_EMBEDDED.get():
-            % if not (IS_MULTICLUSTER_ONLY.get() and get_cluster_config(user)['has_computes']):
-            <a class="hamburger hamburger-hue pull-left" data-bind="toggle: leftNavVisible, css: { 'is-active': leftNavVisible }">
-              <span class="hamburger-box"><span class="hamburger-inner"></span></span>
-            </a>
-            % endif
-          % endif
-
-          % if not IS_MULTICLUSTER_ONLY.get():
-          <div class="btn-group" data-bind="visible: true" style="display:none; margin-top: 8px">
-            <!-- ko if: mainQuickCreateAction -->
-            <!-- ko with: mainQuickCreateAction -->
-            <a class="btn btn-primary disable-feedback hue-main-create-btn" data-bind="hueLink: url, attr: {title: tooltip}, style: { borderBottomRightRadius: $parent.quickCreateActions().length > 1 ? '0px' : '4px', borderTopRightRadius: $parent.quickCreateActions().length > 1 ? '0px' : '4px' }">
-              <span data-bind="text: displayName"></span>
-            </a>
-            <!-- /ko -->
-            <!-- /ko -->
-            <button class="btn btn-primary dropdown-toggle hue-main-create-btn-dropdown" data-toggle="dropdown" data-bind="visible: quickCreateActions().length > 1 || (quickCreateActions().length == 1 && quickCreateActions()[0].children && quickCreateActions()[0].children.length > 1)">
-              <!-- ko ifnot: mainQuickCreateAction -->${ _('More') } <!-- /ko -->
-              <span class="caret"></span>
-            </button>
-            <ul class="dropdown-menu hue-main-create-dropdown" data-bind="foreach: { data: quickCreateActions, as: 'item' }">
-              <!-- ko template: 'quick-create-item-template' --><!-- /ko -->
-            </ul>
-          </div>
-          % endif
-
-          <script type="text/html" id="quick-create-item-template">
-            <!-- ko if: item.dividerAbove -->
-            <li class="divider"></li>
-            <!-- /ko -->
-            <li data-bind="css: { 'dropdown-submenu': item.isCategory && item.children.length > 1 }">
-              <!-- ko if: item.url -->
-                <a href="javascript: void(0);" data-bind="hueLink: item.url">
-                  <!-- ko if: item.icon -->
-                  <!-- ko template: { name: 'app-icon-template', data: item } --><!-- /ko -->
-                  <!-- /ko -->
-                  <span data-bind="css: { 'dropdown-no-icon': !item.icon }, text: item.displayName"></span>
-                </a>
-              <!-- /ko -->
-              <!-- ko if: item.href -->
-                <a data-bind="attr: { href: item.href }, text: item.displayName" target="_blank"></a>
-              <!-- /ko -->
-              <!-- ko if: item.isCategory && item.children.length > 1 -->
-              <ul class="dropdown-menu" data-bind="foreach: { data: item.children, as: 'item' }">
-                <!-- ko template: 'quick-create-item-template' --><!-- /ko -->
-              </ul>
-              <!-- /ko -->
-            </li>
-          </script>
-        </div>
-
+        <div class="top-nav-left"></div>
 
         <div class="top-nav-middle">
           <div class="search-container-top" data-bind="component: 'hue-global-search'"></div>
@@ -257,6 +138,9 @@ ${ hueIcons.symbols() }
             <select data-bind="options: clusters, optionsText: 'name', value: 'id'" class="input-small" style="margin-top:8px">
             </select>
           % endif
+          <!-- ko if: window.ENABLE_NOTEBOOK_2 -->
+            <!-- ko component: 'quick-query-action' --><!-- /ko -->
+          <!-- /ko -->
           <!-- ko component: 'hue-history-panel' --><!-- /ko -->
           <!-- ko if: hasJobBrowser -->
             <!-- ko component: { name: 'hue-job-browser-links', params: { onePageViewModel: onePageViewModel }} --><!-- /ko -->
@@ -275,7 +159,6 @@ ${ hueIcons.symbols() }
       </div>
       <div id="mini_jobbrowser"></div>
     </div>
-    % endif
 
     <div class="content-wrapper">
       <div class="left-panel" data-bind="css: { 'side-panel-closed': !leftAssistVisible() }, visibleOnHover: { selector: '.hide-left-side-panel' }">
@@ -304,8 +187,10 @@ ${ hueIcons.symbols() }
         onPosition: function() { huePubSub.publish('split.draggable.position') }
       }"><div class="resize-bar"></div></div>
 
-
       <div class="page-content">
+        <!-- ko if: window.ENABLE_NOTEBOOK_2 -->
+        <!-- ko component: 'session-panel' --><!-- /ko -->
+        <!-- /ko -->
         <!-- ko hueSpinner: { spin: isLoadingEmbeddable, center: true, size: 'xlarge', blackout: true } --><!-- /ko -->
         <div id="embeddable_editor" class="embeddable"></div>
         <div id="embeddable_notebook" class="embeddable"></div>
@@ -328,6 +213,7 @@ ${ hueIcons.symbols() }
         <div id="embeddable_useradmin_groups" class="embeddable"></div>
         <div id="embeddable_useradmin_newgroup" class="embeddable"></div>
         <div id="embeddable_useradmin_editgroup" class="embeddable"></div>
+        <div id="embeddable_useradmin_organizations" class="embeddable"></div>
         <div id="embeddable_useradmin_permissions" class="embeddable"></div>
         <div id="embeddable_useradmin_editpermission" class="embeddable"></div>
         <div id="embeddable_useradmin_configurations" class="embeddable"></div>
@@ -367,6 +253,7 @@ ${ hueIcons.symbols() }
           }
         }" style="display: none;"></div>
 
+      %if not ENABLE_NOTEBOOK_2.get():
       <div class="context-panel" data-bind="slideVisible: contextPanelVisible">
         <div class="margin-top-10 padding-left-10 padding-right-10">
           <h4 class="margin-bottom-30"><i class="fa fa-cogs"></i> ${_('Session')}</h4>
@@ -378,19 +265,20 @@ ${ hueIcons.symbols() }
             <!-- /ko -->
 
             <!-- ko ifnot: sessionsAvailable() && templateApp() -->
-            ${_('There are currently no information about the sessions.')}
+            ${_('There is currently no information about the sessions.')}
             <!-- /ko -->
           </div>
         </div>
-        <a class="pointer demi-modal-chevron" style="position: absolute; bottom: 0" data-bind="click: function () { huePubSub.publish('context.panel.visible.editor', false); }"><i class="fa fa-chevron-up"></i></a>
+        <a class="pointer demi-modal-chevron" style="position: absolute; bottom: 0" data-bind="click: function () { huePubSub.publish('context.panel.visible', false); }"><i class="fa fa-chevron-up"></i></a>
       </div>
+      %endif
     </div>
   </div>
 </div>
 ${ commonshare() | n,unicode }
 
 ${ render_bundle('vendors~hue~notebook~tableBrowser') | n,unicode }
-${ render_bundle('vendors~hue~tableBrowser') | n,unicode }
+${ render_bundle('vendors~hue~notebook') | n,unicode }
 ${ render_bundle('vendors~hue') | n,unicode }
 ${ render_bundle('hue~notebook') | n,unicode }
 ${ render_bundle('hue~notebook~tableBrowser') | n,unicode }
@@ -404,6 +292,7 @@ ${ render_bundle('hue') | n,unicode }
 <script src="${ static('desktop/ext/js/moment-timezone-with-data.min.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/tzdetect.js') }" type="text/javascript" charset="utf-8"></script>
 
+<script src="${ static('desktop/ext/js/bootstrap-fileupload.js') }"></script>
 <script src="${ static('desktop/js/bootstrap-tooltip.js') }"></script>
 <script src="${ static('desktop/js/bootstrap-typeahead-touchscreen.js') }"></script>
 <script src="${ static('desktop/ext/js/bootstrap-better-typeahead.min.js') }"></script>
@@ -431,9 +320,6 @@ ${ notebookKoComponents.downloadSnippetResults() }
 ${ hueAceAutocompleter.hueAceAutocompleter() }
 
 ${ commonHeaderFooterComponents.header_pollers(user, is_s3_enabled, apps) }
-
-## clusterConfig makes an Ajax call so it needs to be after commonHeaderFooterComponents
-<script src="${ static('desktop/js/clusterConfig.js') }"></script>
 
 % if request is not None:
 ${ smart_unicode(login_modal(request).content) | n,unicode }
@@ -477,6 +363,7 @@ ${ smart_unicode(login_modal(request).content) | n,unicode }
     useradmin_permissions: { url: '/useradmin/permissions', title: '${_('User Admin - Permissions')}' },
     useradmin_editpermission: { url: '/useradmin/permissions/edit/*', title: '${_('User Admin - Edit Permission')}' },
     useradmin_configurations: { url: '/useradmin/configurations', title: '${_('User Admin - Configurations')}' },
+    useradmin_organizations: { url: '/useradmin/organizations', title: '${_('User Admin - Organizations')}' },
     useradmin_newuser: { url: '/useradmin/users/new', title: '${_('User Admin - New User')}' },
     useradmin_addldapusers: { url: '/useradmin/users/add_ldap_users', title: '${_('User Admin - Add LDAP User')}' },
     useradmin_edituser: { url: '/useradmin/users/edit/:user', title: '${_('User Admin - Edit User')}' },
@@ -504,10 +391,11 @@ ${ smart_unicode(login_modal(request).content) | n,unicode }
   }
 
   window.SKIP_CACHE = [
-    'home', 'oozie_workflow', 'oozie_coordinator', 'oozie_bundle', 'dashboard', 'metastore',
-    'filebrowser', 'useradmin_users', 'useradmin_groups', 'useradmin_newgroup', 'useradmin_editgroup',
+    'home', 'oozie_workflow', 'oozie_coordinator', 'oozie_bundle', 'dashboard', 'metastore', 'filebrowser',
+    'useradmin_users', 'useradmin_groups', 'useradmin_newgroup', 'useradmin_editgroup',
     'useradmin_permissions', 'useradmin_editpermission', 'useradmin_configurations', 'useradmin_newuser',
-    'useradmin_addldapusers', 'useradmin_addldapgroups', 'useradmin_edituser', 'importer',
+    'useradmin_addldapusers', 'useradmin_addldapgroups', 'useradmin_edituser', 'useradmin_organizations',
+    'importer',
     'security_hive', 'security_hdfs', 'security_hive2', 'security_solr', 'logs',
     % if hasattr(ENABLE_NEW_INDEXER, 'get') and ENABLE_NEW_INDEXER.get():
       'indexes',
@@ -526,7 +414,7 @@ ${ smart_unicode(login_modal(request).content) | n,unicode }
     % endfor
   % endif
 
-  % if is_admin(user) and cluster != ANALYTIC_DB:
+  % if is_admin(user):
   window.SHOW_ADD_MORE_EDITORS = true;
   % endif
 
@@ -581,7 +469,7 @@ ${ smart_unicode(login_modal(request).content) | n,unicode }
       }
     };
 
-    % if is_demo or (not user_preferences.get(PREFERENCE_IS_WELCOME_TOUR_SEEN) and not IS_EMBEDDED.get()):
+    % if is_demo or not user_preferences.get(PREFERENCE_IS_WELCOME_TOUR_SEEN):
       $(document).on('keyup', closeTourOnEsc);
       $(document).on('click', '.shepherd-backdrop', tour.cancel);
       tour.start();
@@ -610,10 +498,6 @@ ${ smart_unicode(login_modal(request).content) | n,unicode }
 </script>
 
 ${ commonHeaderFooterComponents.footer(messages) }
-
-% if IS_EMBEDDED.get():
-</div>
-% endif
 
 <div class="monospace-preload" style="opacity: 0; height: 0; width: 0;">
   ${ _('Hue and the Hue logo are trademarks of Cloudera, Inc.') }

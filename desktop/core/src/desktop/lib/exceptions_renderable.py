@@ -23,7 +23,10 @@ import logging
 import sys
 import traceback
 
-from django.utils.encoding import force_unicode
+if sys.version_info[0] > 2:
+  from django.utils.encoding import force_text as force_unicode
+else:
+  from django.utils.encoding import force_unicode
 
 import desktop.lib.django_util
 
@@ -31,11 +34,15 @@ import desktop.lib.django_util
 LOG = logging.getLogger(__name__)
 
 
+def raise_popup_exception(message, title="Error", detail=None, error_code=500):
+  tb = sys.exc_info()
+  raise PopupException(message, title=title, detail=detail, error_code=error_code, tb=traceback.extract_tb(tb[2]))
+
 class PopupException(Exception):
   """
   Middleware will render this exception; and the template renders it as a pop-up.
   """
-  def __init__(self, message, title="Error", detail=None, error_code=500):
+  def __init__(self, message, title="Error", detail=None, error_code=500, tb=None):
     Exception.__init__(self, message)
     self.message = message
     self.title = title
@@ -45,9 +52,13 @@ class PopupException(Exception):
     if self.detail:
       LOG.error('Potential detail: %s' % self.detail)
 
-    # Traceback is only relevant if an exception was thrown, caught, and we reraise with this exception.
-    (type, value, tb) = sys.exc_info()
-    self.traceback = traceback.extract_tb(tb)
+    if tb:
+      self.traceback = tb
+    else: # At this point the previous trace is already lost
+      # Traceback is only relevant if an exception was thrown, caught, and we reraise with this exception.
+      tb = sys.exc_info()
+      self.traceback = traceback.extract_tb(tb[2])
+
     if self.traceback:
       LOG.error('Potential trace: %s' % self.traceback)
 
@@ -62,6 +73,9 @@ class PopupException(Exception):
 
     if not request.ajax:
       data['request'] = request
+    else:
+      data['traceback'] = traceback.format_list(data['traceback'])
+
     response = desktop.lib.django_util.render("popup_error.mako", request, data)
     if self.error_code == 500 and data['is_embeddable']: # Hue 4
       response.status_code = 200

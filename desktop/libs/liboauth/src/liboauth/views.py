@@ -15,24 +15,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-try:
-  import oauth2 as oauth
-except:
-  oauth = None
- 
+from future import standard_library
+standard_library.install_aliases()
+
 import logging
-import urllib
-import httplib2
+
+LOG = logging.getLogger(__name__)
+
+import urllib.request, urllib.parse, urllib.error
+try:
+  import httplib2
+except ImportError:
+  LOG.warn('httplib2 module not found')
 
 import django.contrib.auth.views
 from django.core import urlresolvers
 from django.core.exceptions import SuspiciousOperation
 from django.contrib.auth import login, get_backends, authenticate
-from django.contrib.auth.models import User
 from django.contrib.sessions.models import Session
 from django.http import HttpResponseRedirect
 from django.utils.translation import ugettext as _
 from hadoop.fs.exceptions import WebHdfsException
+from useradmin.models import User
 from useradmin.views import ensure_home_directory
 
 from desktop.auth.backend import AllowFirstUserDjangoBackend
@@ -67,21 +71,21 @@ def show_login_page(request, login_errors=False):
 
 @login_notrequired
 def oauth_login(request):
-
   if 'social' not in request.GET:
-      raise Exception(_("Invalid request: %s") % resp)
+    raise Exception(_("Invalid request: %s") % resp)
   else:
-      url = OAuthBackend.handleLoginRequest(request)
+    url = OAuthBackend.handleLoginRequest(request)
 
   return HttpResponseRedirect(url)
 
-  
+
 @login_notrequired
 def oauth_authenticated(request):
-   
   access_token, next = OAuthBackend.handleAuthenticationRequest(request)
   if access_token == "":
-      return show_login_page(request, True)
+    return show_login_page(request, True)
+
   user = authenticate(access_token = access_token)
   login(request, user)
+
   return HttpResponseRedirect(next)

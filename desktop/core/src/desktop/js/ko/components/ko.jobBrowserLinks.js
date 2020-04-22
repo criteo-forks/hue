@@ -15,11 +15,13 @@
 // limitations under the License.
 
 import $ from 'jquery';
-import ko from 'knockout';
+import * as ko from 'knockout';
 
 import componentUtils from './componentUtils';
 import huePubSub from 'utils/huePubSub';
 import I18n from 'utils/i18n';
+
+export const NAME = 'hue-job-browser-links';
 
 const TEMPLATE = `
   <div class="btn-group pull-right">
@@ -30,11 +32,12 @@ const TEMPLATE = `
         <span>${I18n('Queries')}</span>
       </a>
     <!-- /ko -->
+    <!-- ko if: window.HAS_JOB_BROWSER -->
     <!-- ko ifnot: window.IS_K8S_ONLY -->
       <a class="btn btn-flat" style="padding-right: 4px" title="${I18n(
         'Job browser'
       )}" data-bind="hueLink: '/jobbrowser#!jobs', click: function() { huePubSub.publish('hide.jobs.panel'); }">
-        <span>${I18n(window.IS_EMBEDDED || window.IS_MULTICLUSTER_ONLY ? 'Queries' : 'Jobs')}</span>
+        <span>${I18n(window.IS_MULTICLUSTER_ONLY ? 'Queries' : 'Jobs')}</span>
       </a>
     <!-- /ko -->
     <button class="btn btn-flat btn-toggle-jobs-panel" title="${I18n(
@@ -43,6 +46,7 @@ const TEMPLATE = `
       <span class="jobs-badge" data-bind="visible: jobCount() > 0, text: jobCount"></span>
       <i class="fa fa-tasks"></i>
     </button>
+    <!-- /ko -->
   </div>
 `;
 
@@ -52,7 +56,7 @@ class JobBrowserPanel {
   constructor(params) {
     const self = this;
 
-    const $container = $(window.HUE_CONTAINER);
+    const $container = $('body');
     const $jobsPanel = $('#jobsPanel');
     const $toggle = $('.btn-toggle-jobs-panel');
 
@@ -123,7 +127,7 @@ class JobBrowserPanel {
     let lastScheduleBrowserRequest = undefined;
     const checkScheduleBrowserStatus = function() {
       return $.post(
-        '/jobbrowser/api/jobs',
+        '/desktop/api/schedule/list',
         {
           interface: ko.mapping.toJSON('schedules'),
           filters: ko.mapping.toJSON([
@@ -179,7 +183,7 @@ class JobBrowserPanel {
       }
     });
 
-    if (!window.IS_EMBEDDED && !window.IS_K8S_ONLY) {
+    if (!window.IS_K8S_ONLY) {
       checkJobBrowserStatusIdx = window.setTimeout(checkJobBrowserStatus, 10);
 
       huePubSub.subscribe('check.job.browser', checkYarnBrowserStatus);
@@ -188,4 +192,4 @@ class JobBrowserPanel {
   }
 }
 
-componentUtils.registerComponent('hue-job-browser-links', JobBrowserPanel, TEMPLATE);
+componentUtils.registerComponent(NAME, JobBrowserPanel, TEMPLATE);

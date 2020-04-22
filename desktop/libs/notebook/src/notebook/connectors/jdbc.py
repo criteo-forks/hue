@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import object
 import logging
 import sys
 
@@ -38,9 +39,9 @@ def query_error_handler(func):
   def decorator(*args, **kwargs):
     try:
       return func(*args, **kwargs)
-    except AuthenticationRequired, e:
+    except AuthenticationRequired as e:
       raise e
-    except Exception, e:
+    except Exception as e:
       message = force_unicode(smart_str(e))
       if 'error occurred while trying to connect to the Java server' in message:
         raise QueryError, _('%s: is the DB Proxy server running?') % message, sys.exc_info()[2]
@@ -165,7 +166,7 @@ class JdbcApi(Api):
     return response
 
   @query_error_handler
-  def get_sample_data(self, snippet, database=None, table=None, column=None, async=False, operation=None):
+  def get_sample_data(self, snippet, database=None, table=None, column=None, is_async=False, operation=None):
     if self.db is None:
       raise AuthenticationRequired()
 
@@ -196,7 +197,7 @@ class JdbcApi(Api):
     return Assist(db)
 
 
-class Assist():
+class Assist(object):
 
   def __init__(self, db):
     self.db = db
@@ -228,7 +229,7 @@ class Assist():
     #response['columns'] = []
     return query_and_fetch(self.db, 'SELECT %s FROM %s.%s limit 100' % (column, database, table))
 
-class FixedResultSet():
+class FixedResultSet(object):
 
   def __init__(self, data, metadata):
     self.data = data
@@ -241,7 +242,7 @@ class FixedResultSet():
   def rows(self):
     return self.data if self.data is not None else []
 
-class FixedResult():
+class FixedResult(object):
 
   def __init__(self, data, metadata):
     self.data = data

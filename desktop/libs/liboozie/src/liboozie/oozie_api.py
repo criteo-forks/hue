@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import object
 import logging
 import posixpath
 
@@ -89,7 +90,7 @@ class OozieApi(object):
 
     return defaults
 
-  VALID_JOB_FILTERS = ('name', 'user', 'group', 'status', 'startcreatedtime', 'text')
+  VALID_JOB_FILTERS = ('name', 'user', 'group', 'status', 'startcreatedtime', 'text', 'id')
   VALID_LOG_FILTERS = set(('recent', 'limit', 'loglevel', 'text'))
 
   def get_jobs(self, jobtype, offset=None, cnt=None, filters=None):
@@ -345,6 +346,6 @@ class OozieApi(object):
       nominal_end=2013-06-23T00:01Z
     """
     params = self._get_params()
-    params['filter'] = ';'.join(['%s=%s' % (key, val) for key, val in kwargs.iteritems()])
+    params['filter'] = ';'.join(['%s=%s' % (key, val) for key, val in kwargs.items()])
     resp = self._root.get('sla', params)
     return resp['slaSummaryList']

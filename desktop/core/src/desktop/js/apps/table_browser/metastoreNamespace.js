@@ -15,7 +15,7 @@
 // limitations under the License.
 
 import $ from 'jquery';
-import ko from 'knockout';
+import * as ko from 'knockout';
 
 import apiHelper from 'api/apiHelper';
 import dataCatalog from 'catalog/dataCatalog';
@@ -61,10 +61,16 @@ class MetastoreNamespace {
         this.loading(false);
       });
 
+    // TODO: Use connectors in the table browser
+    const connector = {};
+    if (this.sourceType === 'hive' || this.sourceType === 'impala') {
+      connector.optimizer = 'api';
+    }
     dataCatalog
       .getEntry({
         namespace: this.namespace,
         compute: this.compute,
+        connector: connector,
         sourceType: this.sourceType,
         path: [],
         definition: { type: 'source' }

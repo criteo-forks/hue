@@ -5,15 +5,15 @@ const hueGlobals = [
   // global_js_constants.mako
   'AUTOCOMPLETE_TIMEOUT', 'CACHEABLE_TTL', 'CSRF_TOKEN', 'DOCUMENT_TYPES', 'DROPZONE_HOME_DIR',
   'ENABLE_SQL_SYNTAX_CHECK', 'HAS_MULTI_CLUSTER', 'HAS_CATALOG', 'HAS_OPTIMIZER', 'HAS_WORKLOAD_ANALYTICS',
-  'HUE_CONTAINER', 'HUE_I18n', 'HUE_VERSION', 'IS_EMBEDDED', 'IS_K8S_ONLY', 'IS_NEW_INDEXER_ENABLED', 'IS_S3_ENABLED',
+  'HUE_I18n', 'HUE_VERSION', 'IS_K8S_ONLY', 'IS_NEW_INDEXER_ENABLED', 'IS_S3_ENABLED',
   'isIE11', 'KO_DATERANGEPICKER_LABELS', 'LOGGED_USERGROUPS', 'LOGGED_USERNAME', 'METASTORE_PARTITION_LIMIT',
   'USER_HOME_DIR', 'WorkerGlobalScope',
 
   // other misc
   'ace', 'CodeMirror', 'impalaDagre', 'less', 'MediumEditor', 'moment', 'Role', 'trackOnGA', '__webpack_public_path__',
 
-  // jasmine
-  'afterAll', 'afterEach', 'beforeAll', 'beforeEach', 'describe', 'expect', 'fail', 'fdescribe', 'fit', 'it', 'jasmine',
+  // jest
+  'afterAll', 'afterEach', 'beforeAll', 'beforeEach', 'describe', 'expect', 'fail', 'fdescribe', 'fit', 'it', 'jest',
   'spyOn', 'xdescribe', 'xit'
 ];
 
@@ -42,18 +42,11 @@ module.exports = {
     }
   },
   plugins: [
-    'jasmine'
+    'jest'
   ],
   rules: {
-    'jasmine/expect-matcher': 1,
-    'jasmine/expect-single-argument': 1,
-    'jasmine/new-line-before-expect': 1,
-    'jasmine/new-line-between-declarations': 1,
-    'jasmine/no-focused-tests': 2,
-    'jasmine/no-global-setup': 2,
-    'jasmine/no-promise-without-done-fail': 1,
-    'jasmine/no-suite-callback-args': 2,
-    'jasmine/no-suite-dupes': 1,
+    'jest/no-focused-tests': 'error',
+    'jest/valid-expect': 'error',
     'new-cap': 0,
     'no-console': 0,
     'no-restricted-syntax': [

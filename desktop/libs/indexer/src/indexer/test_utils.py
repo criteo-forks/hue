@@ -16,24 +16,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import StringIO
+from future import standard_library
+standard_library.install_aliases()
+import sys
 
+from desktop.lib.i18n import force_unicode
 from nose.tools import assert_equal
 
 from indexer.utils import field_values_from_separated_file
 
 
+if sys.version_info[0] > 2:
+  from io import StringIO as string_io
+else:
+  from StringIO import StringIO as string_io
+
+
 def test_get_ensemble():
   # Non ascii
-  data = StringIO.StringIO('fieldA\nrel=""nofollow"">Twitter for Péché')
+  data = string_io('fieldA\nrel=""nofollow"">Twitter for Péché')
   result = list(field_values_from_separated_file(data, delimiter='\t', quote_character='"'))
   assert_equal(u'rel=""nofollow"">Twitter for Péché', result[0]['fieldA'])
 
-  data = StringIO.StringIO('fieldA\nrel=""nofollow"">Twitter for BlackBerry®')
+  data = string_io('fieldA\nrel=""nofollow"">Twitter for BlackBerry®')
   result = list(field_values_from_separated_file(data, delimiter='\t', quote_character='"'))
   assert_equal(u'rel=""nofollow"">Twitter for BlackBerry®', result[0]['fieldA'])
 
   # Bad binary
-  data = StringIO.StringIO('fieldA\naaa\x80\x02\x03')
+  test_str = b'fieldA\naaa\x80\x02\x03'
+  if sys.version_info[0] > 2:
+    data = string_io(force_unicode(test_str, errors='ignore'))
+  else:
+    data = string_io(test_str)
   result = list(field_values_from_separated_file(data, delimiter='\t', quote_character='"'))
   assert_equal(u'aaa\x02\x03', result[0]['fieldA'])

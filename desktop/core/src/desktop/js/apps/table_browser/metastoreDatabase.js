@@ -15,7 +15,7 @@
 // limitations under the License.
 
 import $ from 'jquery';
-import ko from 'knockout';
+import * as ko from 'knockout';
 
 import apiHelper from 'api/apiHelper';
 import huePubSub from 'utils/huePubSub';
@@ -92,10 +92,21 @@ class MetastoreDatabase {
   }
 
   reload() {
+    if (this.loading()) {
+      return;
+    }
     // Clear will publish when done
-    this.catalogEntry.clearCache({
-      invalidate: this.catalogEntry.getSourceType() === 'impala' ? 'invalidate' : 'cache'
-    });
+    this.catalogEntry
+      .clearCache({
+        invalidate: this.catalogEntry.getSourceType() === 'impala' ? 'invalidate' : 'cache'
+      })
+      .then(() => {
+        this.load(
+          () => {},
+          this.metastoreViewModel.optimizerEnabled,
+          this.metastoreViewModel.navigatorEnabled
+        );
+      });
   }
 
   load(callback, optimizerEnabled, navigatorEnabled) {
@@ -142,10 +153,10 @@ class MetastoreDatabase {
         if (optimizerEnabled) {
           this.loadingTablePopularity(true);
           this.catalogEntry
-            .loadNavOptPopularityForChildren()
+            .loadOptimizerPopularityForChildren()
             .done(() => {
               this.tables().forEach(table => {
-                table.optimizerStats(table.catalogEntry.navOptPopularity);
+                table.optimizerStats(table.catalogEntry.optimizerPopularity);
               });
             })
             .always(() => {

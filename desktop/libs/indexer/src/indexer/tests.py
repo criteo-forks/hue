@@ -15,27 +15,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import object
 import json
+import sys
 
 from nose.plugins.skip import SkipTest
 from nose.tools import assert_equal, assert_true, assert_false
 
-from django.contrib.auth.models import User
 from django.urls import reverse
 
-from desktop.lib.django_test_util import make_logged_in_client
-from desktop.lib.test_utils import add_to_group, grant_access
 from hadoop.pseudo_hdfs4 import is_live_cluster, get_db_prefix
 from libsolr import conf as libsolr_conf
 from libzookeeper import conf as libzookeeper_conf
-
 from indexer.conf import get_solr_ensemble
 from indexer.controller import CollectionManagerController
+from useradmin.models import User
+
+from desktop.lib.django_test_util import make_logged_in_client
+from desktop.lib.test_utils import add_to_group, grant_access
+
+if sys.version_info[0] > 2:
+  from unittest.mock import patch, Mock
+else:
+  from mock import patch, Mock
 
 
 def test_get_ensemble():
-
   clears = []
+
   clears.append(libzookeeper_conf.ENSEMBLE.set_for_testing('zoo:2181'))
   clears.append(libsolr_conf.SOLR_ZK_PATH.set_for_testing('/solr'))
   try:
@@ -54,7 +61,25 @@ def test_get_ensemble():
       clear()
 
 
-class TestIndexerWithSolr:
+class TestImporter(object):
+
+  def setUp(self):
+    self.client = make_logged_in_client()
+
+  def test_input_formats_no_fs(self):
+    with patch('desktop.middleware.fsmanager.get_filesystem') as get_filesystem:
+      get_filesystem.return_value = Mock()
+
+      resp = self.client.get(reverse('indexer:importer'))
+      assert_true(b"{'value': 'file', 'name': 'File'}" in resp.content)
+
+      get_filesystem.return_value = None
+
+      resp = self.client.get(reverse('indexer:importer'))
+      assert_false(b"{'value': 'file', 'name': 'File'}" in resp.content)
+
+
+class TestIndexerWithSolr(object):
 
   @classmethod
   def setup_class(cls):

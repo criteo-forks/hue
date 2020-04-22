@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import object
 import json
 import logging
 import re
@@ -23,11 +24,13 @@ import uuid
 
 from django.utils.translation import ugettext as _
 
+from desktop.auth.backend import is_admin
 from desktop.conf import TASK_SERVER, has_connectors
 from desktop.lib import export_csvxls
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.i18n import smart_unicode
 from desktop.models import get_cluster_config
+from metadata.optimizer.base import get_api as get_optimizer_api
 
 from notebook.conf import get_ordered_interpreters
 from notebook.sql_utils import get_current_statement
@@ -105,8 +108,14 @@ class Notebook(object):
     return _data
 
   def get_str(self, from_oozie_action=False):
-    return '\n\n\n'.join(['USE %s;\n\n%s' % (snippet['database'], snippet['statement_raw'] if from_oozie_action else Notebook.statement_with_variables(snippet))
-                          for snippet in self.get_data()['snippets']])
+    return '\n\n\n'.join([
+        'USE %s;\n\n%s' % (
+          snippet['database'],
+          snippet['statement_raw'] if from_oozie_action else Notebook.statement_with_variables(snippet)
+        )
+        for snippet in self.get_data()['snippets']
+      ]
+    )
 
   @staticmethod
   def statement_with_variables(snippet):
@@ -129,7 +138,14 @@ class Notebook(object):
         value = str(variable['value'])
         return p1 + (value if value is not None else variable['meta'].get('placeholder',''))
 
-      return re.sub("([^\\\\])\\$" + ("{(" if hasCurlyBracketParameters else "(") + variablesString + ")(=[^}]*)?" + ("}" if hasCurlyBracketParameters else ""), replace, statement_raw)
+      return re.sub(
+          "([^\\\\])\\$" + (
+            "{(" if hasCurlyBracketParameters else "(") + variablesString + ")(=[^}]*)?" + ("}"
+            if hasCurlyBracketParameters else ""
+          ),
+          replace,
+          statement_raw
+      )
 
     return statement_raw
 
@@ -264,7 +280,7 @@ class Notebook(object):
     )
 
   def execute(self, request, batch=False):
-    from notebook.api import _execute_notebook # Cyclic dependency
+    from notebook.api import _execute_notebook  # Cyclic dependency
 
     notebook_data = self.get_data()
     snippet = notebook_data['snippets'][0]
@@ -272,11 +288,58 @@ class Notebook(object):
 
     return _execute_notebook(request, notebook_data, snippet)
 
-def get_interpreters(connector_type=None, user=None):
-  interpreters = [
-    interpreter for interpreter in get_ordered_interpreters(user) if connector_type is None or connector_type == interpreter['type']
+
+  def execute_and_wait(self, request, timeout_sec=30.0, sleep_interval=0.5):
+      """
+      Run query and check status until it finishes or timeouts.
+
+      Check status until it finishes or timeouts.
+      """
+      handle = self.execute(request, batch=False)
+
+      if handle['status'] != 0:
+        raise QueryError(e, message='SQL statement failed.', handle=handle)
+
+      operation_id = handle['history_uuid']
+      curr = time.time()
+      end = curr + timeout_sec
+
+      status = self.check_status(request, operation_id=operation_id)
+
+      while curr <= end:
+        if status['status'] not in ('waiting', 'running'):
+          return handle
+
+        status = self.check_status(request, operation_id=operation_id)
+        time.sleep(sleep_interval)
+        curr = time.time()
+
+      # TODO
+      # msg = "The query timed out after %(timeout)d seconds, canceled query." % {'timeout': timeout_sec}
+      # LOG.warning(msg)
+      # try:
+      #   self.cancel_operation(handle)
+      #   # get_api(request, snippet).cancel(notebook, snippet)
+      # except Exception as e:
+      #   msg = "Failed to cancel query."
+      #   LOG.warning(msg)
+      #   self.close_operation(handle)
+      #   raise QueryServerException(e, message=msg)
+
+      raise OperationTimeout()
+
+  def check_status(self, request, operation_id):
+    from notebook.api import _check_status  # Cyclic dependency
+
+    return _check_status(request, operation_id=operation_id)
+
+
+def get_interpreter(connector_type, user=None):
+  interpreter = [
+    interpreter for interpreter in get_ordered_interpreters(user) if connector_type == interpreter['type']
   ]
-  if not interpreters:
+
+  if not interpreter:
     if connector_type == 'hbase': # TODO move to connectors
       interpreters = [{
         'name': 'hbase',
@@ -315,80 +378,76 @@ def get_interpreter(connector_type, user=None):
   return interpreters[0]
 
 
+def patch_snippet_for_connector(snippet):
+  """
+  Connector backward compatibility switcher.
+  # TODO Connector unification
+  """
+  if snippet.get('connector') and snippet['connector'].get('type'):
+    snippet['type'] = snippet['connector']['type']  # To rename to 'id'
+    snippet['dialect'] = snippet['connector']['dialect']
+  else:
+    snippet['dialect'] = snippet['type']
+
+
 def get_api(request, snippet):
   from notebook.connectors.oozie_batch import OozieApi
 
   if snippet.get('wasBatchExecuted') and not TASK_SERVER.ENABLED.get():
     return OozieApi(user=request.user, request=request)
 
-  if snippet['type'] == 'report':
+  if snippet.get('type') == 'report':
     snippet['type'] = 'impala'
 
-  if snippet['type'] == 'all':
-    interpreters = get_interpreters(user=request.user)
+  patch_snippet_for_connector(snippet)
+
+  connector_name = snippet['type']
+
+  if has_connectors() and snippet.get('type') == 'hello' and is_admin(request.user):
+    interpreter = snippet.get('interpreter')
   else:
-    interpreters = [get_interpreter(connector_type=snippet['type'], user=request.user)]
-  result = []
+    interpreter = get_interpreter(connector_type=connector_name, user=request.user)
 
-  for interpreter in interpreters:
-    interface = interpreter['interface']
+  interface = interpreter['interface']
 
-    if get_cluster_config(request.user)['has_computes']:
-      compute = json.loads(request.POST.get('cluster', '""')) # Via Catalog autocomplete API or Notebook create sessions.
-      if compute == '""' or compute == 'undefined':
-        compute = None
-      if not compute and snippet.get('compute'): # Via notebook.ko.js
-        interpreter['compute'] = snippet['compute']
+  if get_cluster_config(request.user)['has_computes']:
+    compute = json.loads(request.POST.get('cluster', '""'))  # Via Catalog autocomplete API or Notebook create sessions.
+    if compute == '""' or compute == 'undefined':
+      compute = None
+    if not compute and snippet.get('compute'):  # Via notebook.ko.js
+      interpreter['compute'] = snippet['compute']
 
-    LOG.debug('Selected interpreter %s interface=%s compute=%s' % (
-      interpreter['type'],
-      interface,
-      interpreter.get('compute') and interpreter['compute']['name'])
-    )
+  LOG.debug('Selected interpreter %s interface=%s compute=%s' % (
+    interpreter['type'],
+    interface,
+    interpreter.get('compute') and interpreter['compute']['name'])
+  )
 
-    if interface == 'hiveserver2':
-      from notebook.connectors.hiveserver2 import HS2Api
-      result.append(HS2Api(user=request.user, request=request, interpreter=interpreter))
-    elif interface == 'oozie':
-      result.append(OozieApi(user=request.user, request=request))
-    elif interface == 'livy':
-      from notebook.connectors.spark_shell import SparkApi
-      result.append(SparkApi(request.user))
-    elif interface == 'livy-batch':
-      from notebook.connectors.spark_batch import SparkBatchApi
-      result.append(SparkBatchApi(request.user))
-    elif interface == 'text' or interface == 'markdown':
-      from notebook.connectors.text import TextApi
-      result.append(TextApi(request.user))
-    elif interface == 'rdbms':
-      from notebook.connectors.rdbms import RdbmsApi
-      result.append(RdbmsApi(request.user, interpreter=snippet['type'], query_server=snippet.get('query_server')))
-    elif interface == 'jdbc':
-      if interpreter['options'] and interpreter['options'].get('url', '').find('teradata') >= 0:
-        from notebook.connectors.jdbc_teradata import JdbcApiTeradata
-        result.append(JdbcApiTeradata(request.user, interpreter=interpreter))
-      if interpreter['options'] and interpreter['options'].get('url', '').find('awsathena') >= 0:
-        from notebook.connectors.jdbc_athena import JdbcApiAthena
-        result.append(JdbcApiAthena(request.user, interpreter=interpreter))
-      elif interpreter['options'] and interpreter['options'].get('url', '').find('presto') >= 0:
-        from notebook.connectors.jdbc_presto import JdbcApiPresto
-        result.append(JdbcApiPresto(request.user, interpreter=interpreter))
-      elif interpreter['options'] and interpreter['options'].get('url', '').find('clickhouse') >= 0:
-        from notebook.connectors.jdbc_clickhouse import JdbcApiClickhouse
-        result.append(JdbcApiClickhouse(request.user, interpreter=interpreter))
-      elif interpreter['options'] and interpreter['options'].get('url', '').find('vertica') >= 0:
-        from notebook.connectors.jdbc_vertica import JdbcApiVertica
-        result.append(JdbcApiVertica(request.user, interpreter=interpreter, request=request))
-      else:
-        from notebook.connectors.jdbc import JdbcApi
-        result.append(JdbcApi(request.user, interpreter=interpreter, request=request))
-    elif interface == 'teradata':
-      from notebook.connectors.jdbc import JdbcApiTeradata
-      result.append(JdbcApiTeradata(request.user, interpreter=interpreter))
-    elif interface == 'athena':
-      from notebook.connectors.jdbc import JdbcApiAthena
-      result.append(JdbcApiAthena(request.user, interpreter=interpreter))
-    elif interface == 'presto':
+  if interface == 'hiveserver2' or interface == 'hms':
+    from notebook.connectors.hiveserver2 import HS2Api
+    return HS2Api(user=request.user, request=request, interpreter=interpreter)
+  elif interface == 'oozie':
+    return OozieApi(user=request.user, request=request)
+  elif interface == 'livy':
+    from notebook.connectors.spark_shell import SparkApi
+    return SparkApi(request.user)
+  elif interface == 'livy-batch':
+    from notebook.connectors.spark_batch import SparkBatchApi
+    return SparkBatchApi(request.user)
+  elif interface == 'text' or interface == 'markdown':
+    from notebook.connectors.text import TextApi
+    return TextApi(request.user)
+  elif interface == 'rdbms':
+    from notebook.connectors.rdbms import RdbmsApi
+    return RdbmsApi(request.user, interpreter=snippet['type'], query_server=snippet.get('query_server'))
+  elif interface == 'jdbc':
+    if interpreter['options'] and interpreter['options'].get('url', '').find('teradata') >= 0:
+      from notebook.connectors.jdbc_teradata import JdbcApiTeradata
+      return JdbcApiTeradata(request.user, interpreter=interpreter)
+    if interpreter['options'] and interpreter['options'].get('url', '').find('awsathena') >= 0:
+      from notebook.connectors.jdbc_athena import JdbcApiAthena
+      return JdbcApiAthena(request.user, interpreter=interpreter)
+    elif interpreter['options'] and interpreter['options'].get('url', '').find('presto') >= 0:
       from notebook.connectors.jdbc_presto import JdbcApiPresto
       result.append(JdbcApiPresto(request.user, interpreter=interpreter, request=request))
     elif interface == 'sqlalchemy':
@@ -406,10 +465,39 @@ def get_api(request, snippet):
     elif interface == 'pig':
       result.append(OozieApi(user=request.user, request=request)) # Backward compatibility until Hue 4
     else:
-      raise PopupException(_('Notebook connector interface not recognized: %s') % interface)
-
-  if snippet['type'] == 'all':
-    return result
+      from notebook.connectors.jdbc import JdbcApi
+      return JdbcApi(request.user, interpreter=interpreter)
+  elif interface == 'teradata':
+    from notebook.connectors.jdbc import JdbcApiTeradata
+    return JdbcApiTeradata(request.user, interpreter=interpreter)
+  elif interface == 'athena':
+    from notebook.connectors.jdbc import JdbcApiAthena
+    return JdbcApiAthena(request.user, interpreter=interpreter)
+  elif interface == 'presto':
+    from notebook.connectors.jdbc_presto import JdbcApiPresto
+    return JdbcApiPresto(request.user, interpreter=interpreter)
+  elif interface == 'sqlalchemy':
+    from notebook.connectors.sql_alchemy import SqlAlchemyApi
+    return SqlAlchemyApi(request.user, interpreter=interpreter)
+  elif interface == 'solr':
+    from notebook.connectors.solr import SolrApi
+    return SolrApi(request.user, interpreter=interpreter)
+  elif interface == 'hbase':
+    from notebook.connectors.hbase import HBaseApi
+    return HBaseApi(request.user)
+  elif interface == 'ksql':
+    from notebook.connectors.ksql import KSqlApi
+    return KSqlApi(request.user, interpreter=interpreter)
+  elif interface == 'flink':
+    from notebook.connectors.flink import FlinkSqlApi
+    return FlinkSqlApi(request.user, interpreter=interpreter)
+  elif interface == 'kafka':
+    from notebook.connectors.kafka import KafkaApi
+    return KafkaApi(request.user)
+  elif interface == 'pig':
+    return OozieApi(user=request.user, request=request) # Backward compatibility until Hue 4
+  else:
+    raise PopupException(_('Notebook connector interface not recognized: %s') % interface)
 
   return result[0]
 
@@ -474,7 +562,7 @@ class Api(object):
   def get_jobs(self, notebook, snippet, logs):
     return []
 
-  def get_sample_data(self, snippet, database=None, table=None, column=None, async=False, operation=None): raise NotImplementedError()
+  def get_sample_data(self, snippet, database=None, table=None, column=None, is_async=False, operation=None): raise NotImplementedError()
 
   def export_data_as_hdfs_file(self, snippet, target_file, overwrite): raise NotImplementedError()
 
@@ -482,11 +570,30 @@ class Api(object):
 
   def export_large_data_to_hdfs(self, notebook, snippet, destination): raise NotImplementedError()
 
-  def statement_risk(self, notebook, snippet): raise NotImplementedError()
+  def statement_risk(self, interface, notebook, snippet):
+    response = self._get_current_statement(notebook, snippet)
+    query = response['statement']
 
-  def statement_compatibility(self, notebook, snippet, source_platform, target_platform): raise NotImplementedError()
+    client = get_optimizer_api(self.user, interface)
+    patch_snippet_for_connector(snippet)
 
-  def statement_similarity(self, notebook, snippet, source_platform, target_platform): raise NotImplementedError()
+    return client.query_risk(query=query, source_platform=snippet['dialect'], db_name=snippet.get('database') or 'default')
+
+  def statement_compatibility(self, interface, notebook, snippet, source_platform, target_platform):
+    response = self._get_current_statement(notebook, snippet)
+    query = response['statement']
+
+    client = get_optimizer_api(self.user, interface)
+
+    return client.query_compatibility(source_platform, target_platform, query)
+
+  def statement_similarity(self, interface, notebook, snippet, source_platform):
+    response = self._get_current_statement(notebook, snippet)
+    query = response['statement']
+
+    client = get_optimizer_api(self.user, interface)
+
+    return client.similar_queries(source_platform, query)
 
   def describe(self, notebook, snippet, database=None, table=None, column=None):
     if column:
@@ -532,6 +639,8 @@ class Api(object):
   def describe_database(self, notebook, snippet, database=None):
     return {}
 
+  def close_statement(self, notebook, snippet): pass
+
   def _get_current_statement(self, notebook, snippet):
     should_close, resp = get_current_statement(snippet)
     if should_close:
@@ -553,7 +662,7 @@ def _get_snippet_name(notebook, unique=False, table_format=False):
   return name
 
 
-class ExecutionWrapper():
+class ExecutionWrapper(object):
   def __init__(self, api, notebook, snippet, callback=None):
     self.api = api
     self.notebook = notebook
@@ -563,12 +672,16 @@ class ExecutionWrapper():
 
   def fetch(self, handle, start_over=None, rows=None):
     if start_over:
-      if not self.snippet['result'].get('handle') or not self.snippet['result']['handle'].get('guid') or not self.api.can_start_over(self.notebook, self.snippet):
+      if not self.snippet['result'].get('handle') \
+          or not self.snippet['result']['handle'].get('guid') \
+          or not self.api.can_start_over(self.notebook, self.snippet):
         start_over = False
         handle = self.api.execute(self.notebook, self.snippet)
         self.snippet['result']['handle'] = handle
+
         if self.callback and hasattr(self.callback, 'on_execute'):
           self.callback.on_execute(handle)
+
         self.should_close = True
         self._until_available()
 
@@ -615,7 +728,7 @@ class ExecutionWrapper():
       self.api.close_statement(self.notebook, self.snippet)
 
 
-class ResultWrapper():
+class ResultWrapper(object):
   def __init__(self, cols, rows, has_more):
     self._cols = cols
     self._rows = rows

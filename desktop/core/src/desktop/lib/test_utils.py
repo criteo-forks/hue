@@ -16,12 +16,13 @@
 # limitations under the License.
 
 import json
+
+from past.builtins import basestring
 from lxml import objectify, etree
 
-from django.contrib.auth.models import Group, User
-from useradmin.models import HuePermission, GroupPermission, get_default_user_group
-
 from hadoop import cluster
+from useradmin.models import Group, User, HuePermission, GroupPermission, get_default_user_group
+
 from desktop.lib import fsmanager
 
 
@@ -82,6 +83,8 @@ def reformat_json(json_obj):
 
 def reformat_xml(xml_obj):
     if isinstance(xml_obj, basestring):
+        if not isinstance(xml_obj, bytes):
+            xml_obj = xml_obj.encode()
         return etree.tostring(objectify.fromstring(xml_obj, etree.XMLParser(strip_cdata=False, remove_blank_text=True)))
     else:
         return etree.tostring(xml_obj)

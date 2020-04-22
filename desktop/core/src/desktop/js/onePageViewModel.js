@@ -16,12 +16,13 @@
 
 import $ from 'jquery';
 import _ from 'lodash';
-import ko from 'knockout';
+import * as ko from 'knockout';
 import page from 'page';
 
 import hueUtils from 'utils/hueUtils';
 import huePubSub from 'utils/huePubSub';
 import I18n from 'utils/i18n';
+import { CONFIG_REFRESHED_EVENT, GET_KNOWN_CONFIG_EVENT } from 'utils/hueConfig';
 
 class OnePageViewModel {
   constructor() {
@@ -54,7 +55,9 @@ class OnePageViewModel {
           hueUtils.waitForObservable(viewModel.selectedNotebook, () => {
             if (viewModel.editorType() !== type) {
               viewModel.selectedNotebook().selectedSnippet(type);
-              viewModel.editorType(type);
+              if (!window.ENABLE_NOTEBOOK_2) {
+                viewModel.editorType(type);
+              }
               viewModel.newNotebook(type);
             }
           });
@@ -75,14 +78,23 @@ class OnePageViewModel {
       });
     });
 
-    huePubSub.subscribe('get.current.app.name', () => {
-      huePubSub.publish('set.current.app.name', self.currentApp());
+    huePubSub.subscribe('get.current.app.name', callback => {
+      callback(self.currentApp());
     });
 
-    huePubSub.subscribe('open.editor.query', uuid => {
+    huePubSub.subscribe('open.editor.query', resp => {
       self.loadApp('editor');
+      const data = { uuid: resp.history_uuid };
+      if (resp.handle && resp.handle.session_id) {
+        data['session'] = {
+          type: resp.handle.session_type,
+          id: resp.handle.session_id,
+          session_id: resp.handle.session_guid,
+          properties: []
+        };
+      }
       self.getActiveAppViewModel(viewModel => {
-        viewModel.openNotebook(uuid);
+        viewModel.openNotebook(data.uuid, null, null, null, data.session);
       });
     });
 
@@ -183,10 +195,7 @@ class OnePageViewModel {
     const loadScripts = function(scriptUrls) {
       const promises = [];
       while (scriptUrls.length) {
-        const scriptUrl =
-          typeof window.adaptHueEmbeddedUrls !== 'undefined'
-            ? window.adaptHueEmbeddedUrls(scriptUrls.shift())
-            : scriptUrls.shift();
+        const scriptUrl = scriptUrls.shift();
         if (loadedJs.indexOf(scriptUrl) !== -1) {
           continue;
         }
@@ -200,9 +209,6 @@ class OnePageViewModel {
       if (loadedCss.indexOf(cssFile) === -1) {
         loadedCss.push(cssFile);
         $.ajaxSetup({ cache: true });
-        if (typeof window.adaptHueEmbeddedUrls !== 'undefined') {
-          $el.attr('href', window.adaptHueEmbeddedUrls($el.attr('href')));
-        }
         if (window.DEV) {
           $el.attr('href', $el.attr('href') + '?dev=' + Math.random());
         }
@@ -237,13 +243,6 @@ class OnePageViewModel {
         $(this).attr('href', link);
       });
 
-      if (typeof adaptHueEmbeddedUrls !== 'undefined') {
-        $rawHtml.find('img[src]').each(function() {
-          const $img = $(this);
-          $img.attr('src', window.adaptHueEmbeddedUrls($img.attr('src')));
-        });
-      }
-
       $rawHtml.unwrap('span');
 
       const scriptPromises = loadScripts(scriptsToLoad);
@@ -274,7 +273,16 @@ class OnePageViewModel {
       });
     });
 
-    self.loadApp = function(app, loadDeep) {
+    let loadAppTimeout = -1;
+    self.loadApp = (app, loadDeep) => {
+      // This prevents loading an app twice when the URL is changed multiple times in one operation
+      window.clearTimeout(loadAppTimeout);
+      loadAppTimeout = window.setTimeout(() => {
+        self.loadAppThrottled(app, loadDeep);
+      }, 0);
+    };
+
+    self.loadAppThrottled = (app, loadDeep) => {
       if (self.currentApp() === 'editor' && $('#editorComponents').length) {
         const vm = ko.dataFor($('#editorComponents')[0]);
         if (vm.isPresentationMode()) {
@@ -307,7 +315,6 @@ class OnePageViewModel {
       huePubSub.publish('hue.datatable.search.hide');
       huePubSub.publish('hue.scrollleft.hide');
       huePubSub.publish('context.panel.visible', false);
-      huePubSub.publish('context.panel.visible.editor', false);
       if (app === 'filebrowser') {
         $(window).unbind('hashchange.fblist');
       }
@@ -455,7 +462,7 @@ class OnePageViewModel {
     huePubSub.subscribe('assist.dropzone.complete', self.dropzoneComplete);
 
     // prepend /hue to all the link on this page
-    $(window.IS_EMBEDDED ? '.hue-embedded-container a[href]' : 'a[href]').each(function() {
+    $('a[href]').each(function() {
       let link = $(this).attr('href');
       if (link.startsWith('/') && !link.startsWith('/hue')) {
         link = window.HUE_BASE_URL + '/hue' + link;
@@ -463,37 +470,13 @@ class OnePageViewModel {
       $(this).attr('href', link);
     });
 
-    if (window.IS_EMBEDDED) {
-      page.base(window.location.pathname + window.location.search);
-      page.baseSearch = window.location.search.replace('?', '');
-      if (!window.location.hash) {
-        window.location.hash = '#!/editor?type=impala';
-      }
-      page({ hashbang: true });
-    } else {
-      page.base(window.HUE_BASE_URL + '/hue');
-    }
+    page.base(window.HUE_BASE_URL + '/hue');
 
-    const getUrlParameter = function(name) {
-      if (window.IS_EMBEDDED) {
-        if (~window.location.hash.indexOf('?')) {
-          const paramString = window.location.hash.substring(window.location.hash.indexOf('?'));
-          const params = paramString.split('&');
-          for (let i = 0; i < params.length; i++) {
-            if (~params[i].indexOf(name + '=')) {
-              return params[i].substring(name.length + 2);
-            }
-          }
-        }
-        return '';
-      } else {
-        return window.location.getParameter(name) || '';
-      }
-    };
+    const getUrlParameter = name => window.location.getParameter(name) || '';
 
     self.lastContext = null;
 
-    let pageMapping = [
+    const pageMapping = [
       { url: '/403', app: '403' },
       { url: '/500', app: '500' },
       { url: '/about/', app: 'admin_wizard' },
@@ -529,6 +512,13 @@ class OnePageViewModel {
         }
       },
       {
+        url: '/gist',
+        app: function() {
+          const uuid = getUrlParameter('uuid');
+          location.href = '/desktop/api2/gist/open?uuid=' + uuid;
+        }
+      },
+      {
         url: '/desktop/metrics',
         app: function() {
           self.loadApp('metrics');
@@ -541,9 +531,6 @@ class OnePageViewModel {
         url: '/desktop/connectors',
         app: function() {
           self.loadApp('connectors');
-          self.getActiveAppViewModel(viewModel => {
-            viewModel.fetchConnectors();
-          });
         }
       },
       {
@@ -578,9 +565,11 @@ class OnePageViewModel {
               if (getUrlParameter('editor') !== '') {
                 self.getActiveAppViewModel(viewModel => {
                   self.isLoadingEmbeddable(true);
-                  viewModel.openNotebook(getUrlParameter('editor')).always(() => {
-                    self.isLoadingEmbeddable(false);
-                  });
+                  viewModel
+                    .openNotebook(getUrlParameter('editor'))
+                    [window.ENABLE_NOTEBOOK_2 ? 'finally' : 'always'](() => {
+                      self.isLoadingEmbeddable(false);
+                    });
                 });
               } else if (getUrlParameter('type') !== '') {
                 self.changeEditorType(getUrlParameter('type'));
@@ -678,9 +667,11 @@ class OnePageViewModel {
           if (notebookId !== '') {
             self.getActiveAppViewModel(viewModel => {
               self.isLoadingEmbeddable(true);
-              viewModel.openNotebook(notebookId).always(() => {
-                self.isLoadingEmbeddable(false);
-              });
+              viewModel
+                .openNotebook(notebookId)
+                [window.ENABLE_NOTEBOOK_2 ? 'finally' : 'always'](() => {
+                  self.isLoadingEmbeddable(false);
+                });
             });
           } else {
             self.getActiveAppViewModel(viewModel => {
@@ -782,6 +773,7 @@ class OnePageViewModel {
       { url: '/sqoop', app: 'sqoop' },
       { url: '/jobsub', app: 'jobsub' },
       { url: '/useradmin/configurations/', app: 'useradmin_configurations' },
+      { url: '/useradmin/organizations/', app: 'useradmin_organizations' },
       { url: '/useradmin/groups/', app: 'useradmin_groups' },
       { url: '/useradmin/groups/new', app: 'useradmin_newgroup' },
       { url: '/useradmin/groups/edit/:group', app: 'useradmin_editgroup' },
@@ -806,10 +798,6 @@ class OnePageViewModel {
       });
     });
 
-    if (typeof window.HUE_EMBEDDED_PAGE_MAPPINGS !== 'undefined') {
-      pageMapping = pageMapping.concat(window.HUE_EMBEDDED_PAGE_MAPPINGS);
-    }
-
     pageMapping.forEach(mapping => {
       page(
         mapping.url,
@@ -823,7 +811,7 @@ class OnePageViewModel {
       );
     });
 
-    huePubSub.subscribe('cluster.config.set.config', clusterConfig => {
+    const configUpdated = clusterConfig => {
       page('/', () => {
         page(clusterConfig['main_button_action'].page);
       });
@@ -832,13 +820,22 @@ class OnePageViewModel {
         self.loadApp('404');
       });
       page();
-    });
+    };
+
+    huePubSub.publish(GET_KNOWN_CONFIG_EVENT, configUpdated);
+    huePubSub.subscribe(CONFIG_REFRESHED_EVENT, configUpdated);
 
     huePubSub.subscribe('open.link', href => {
       if (href) {
-        const prefix = window.IS_EMBEDDED ? '' : '/hue';
-        if (href.startsWith('/') && !href.startsWith(prefix)) {
-          page(window.HUE_BASE_URL + prefix + href);
+        const prefix = '/hue';
+        if (href.startsWith('/')) {
+          if (window.HUE_BASE_URL.length && href.startsWith(window.HUE_BASE_URL)) {
+            page(href);
+          } else if (href.startsWith(prefix)) {
+            page(window.HUE_BASE_URL + href);
+          } else {
+            page(window.HUE_BASE_URL + prefix + href);
+          }
         } else if (href.indexOf('#') == 0) {
           // Only place that seem to use this is hbase onclick row
           window.location.hash = href;

@@ -15,9 +15,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import object
 import logging
 
-from django.contrib.auth.models import User
 from nose.plugins.attrib import attr
 from nose.tools import assert_equal, assert_true, assert_not_equal
 
@@ -27,6 +27,7 @@ from hadoop.conf import HDFS_CLUSTERS, MR_CLUSTERS, YARN_CLUSTERS
 from desktop.lib.test_utils import clear_sys_caches
 from desktop.lib.django_test_util import make_logged_in_client
 from oozie.tests import OozieMockBase
+from useradmin.models import User
 from useradmin.views import ensure_home_directory
 
 from liboozie.submittion import Submission
@@ -64,11 +65,11 @@ def test_copy_files():
     cluster.fs.create(jar_3)
     cluster.fs.create(jar_4)
 
-    class MockNode():
+    class MockNode(object):
       def __init__(self, jar_path):
         self.jar_path = jar_path
 
-    class MockJob():
+    class MockJob(object):
       def __init__(self):
         self.node_list = [
             MockNode(jar_1),
@@ -127,14 +128,14 @@ def test_copy_files():
       LOG.exception('failed to remove %s' % prefix)
 
 
-class MockFs():
+class MockFs(object):
   def __init__(self, logical_name=None):
 
     self.fs_defaultfs = 'hdfs://curacao:8020'
     self.logical_name = logical_name if logical_name else ''
 
 
-class MockJt():
+class MockJt(object):
   def __init__(self, logical_name=None):
 
     self.logical_name = logical_name if logical_name else ''

@@ -15,6 +15,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import object
+
 
 def get_api(request, interface):
   if interface == 'beat':
@@ -27,15 +29,16 @@ def get_api(request, interface):
     raise PopupException(_('Scheduler connector interface not recognized: %s') % interface)
 
 
-class Api():
+class Api(object):
 
-  def __init__(self, interface, user):
-    self.interface = interface
+  def __init__(self, user):
     self.user = user
 
-  def get_schedule():
-    return JsonResponse({
-    })
+  def get_schedule(self):
+    return JsonResponse({})
 
-  def submit_schedule(request, coordinator, mapping):
+  def submit_schedule(self, request, coordinator, mapping):
+    pass
+
+  def list_schedules(self):
     pass

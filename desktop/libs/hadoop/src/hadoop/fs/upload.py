@@ -25,6 +25,7 @@ which is triggered by a magic prefix ("HDFS") in the field name.
 See http://docs.djangoproject.com/en/1.2/topics/http/file-uploads/
 """
 
+from builtins import object
 import errno
 import logging
 import time
@@ -74,7 +75,7 @@ class HDFStemporaryUploadedFile(object):
     # Check access permissions before attempting upload
     try:
       self._fs.check_access(destination, 'rw-')
-    except WebHdfsException, e:
+    except WebHdfsException as e:
       LOG.exception(e)
       raise HDFSerror(_('User %s does not have permissions to write to path "%s".') % (request.user.username, destination))
 
@@ -97,7 +98,7 @@ class HDFStemporaryUploadedFile(object):
     try:
       self.size = size
       self.close()
-    except Exception, ex:
+    except Exception as ex:
       LOG.exception('Error uploading file to %s' % (self._path,))
       raise
 
@@ -105,10 +106,9 @@ class HDFStemporaryUploadedFile(object):
     try:
       self._fs.remove(self._path, True)
       self._do_cleanup = False
-    except IOError, ex:
+    except IOError as ex:
       if ex.errno != errno.ENOENT:
-        LOG.exception('Failed to remove temporary upload file "%s". '
-                      'Please cleanup manually: %s' % (self._path, ex))
+        LOG.exception('Failed to remove temporary upload file "%s". Please cleanup manually: %s' % (self._path, ex))
 
   def write(self, data):
     self._file.write(data)
@@ -142,10 +142,12 @@ class HDFSfileUploadHandler(FileUploadHandler):
     self._destination = request.GET.get('dest', None) # GET param avoids infinite looping
     self.request = request
     fs = fsmanager.get_filesystem('default')
-    fs.setuser(request.user.username)
-    FileUploadHandler.chunk_size = fs.get_upload_chuck_size(self._destination) if self._destination else UPLOAD_CHUNK_SIZE.get()
-
-    LOG.debug("Chunk size = %d" % FileUploadHandler.chunk_size)
+    if not fs:
+      LOG.warn('No HDFS set for HDFS upload')
+    else:
+      fs.setuser(request.user.username)
+      FileUploadHandler.chunk_size = fs.get_upload_chuck_size(self._destination) if self._destination else UPLOAD_CHUNK_SIZE.get()
+      LOG.debug("Chunk size = %d" % FileUploadHandler.chunk_size)
 
   def new_file(self, field_name, file_name, *args, **kwargs):
     # Detect "HDFS" in the field name.
@@ -159,7 +161,7 @@ class HDFSfileUploadHandler(FileUploadHandler):
         LOG.debug('Upload attempt to %s' % (self._file.get_temp_path(),))
         self._activated = True
         self._starttime = time.time()
-      except Exception, ex:
+      except Exception as ex:
         LOG.error("Not using HDFS upload handler: %s" % (ex,))
         self.request.META['upload_failed'] = ex
 
@@ -178,8 +180,7 @@ class HDFSfileUploadHandler(FileUploadHandler):
       self._file.flush()
       return None
     except IOError:
-      LOG.exception('Error storing upload data in temporary file "%s"' %
-                    (self._file.get_temp_path(),))
+      LOG.exception('Error storing upload data in temporary file "%s"' % (self._file.get_temp_path(),))
       raise StopUpload()
 
   def file_complete(self, file_size):
@@ -189,8 +190,7 @@ class HDFSfileUploadHandler(FileUploadHandler):
     try:
       self._file.finish_upload(file_size)
     except IOError:
-      LOG.exception('Error closing uploaded temporary file "%s"' %
-                    (self._file.get_temp_path(),))
+      LOG.exception('Error closing uploaded temporary file "%s"' % (self._file.get_temp_path(),))
       raise
 
     elapsed = time.time() - self._starttime

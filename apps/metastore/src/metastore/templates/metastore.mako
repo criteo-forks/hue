@@ -18,14 +18,13 @@ from django.utils.html import escape
 from django.utils.translation import ugettext as _
 
 from desktop import conf
-from desktop.conf import USE_NEW_EDITOR, IS_EMBEDDED
+from desktop.conf import USE_NEW_EDITOR
 from desktop.lib.i18n import smart_unicode
 from desktop.views import commonheader, commonfooter, _ko
 from beeswax.conf import LIST_PARTITIONS_LIMIT
+from webpack_loader.templatetags.webpack_loader import render_bundle
 
 from metastore.conf import ENABLE_NEW_CREATE_TABLE
-
-from webpack_loader.templatetags.webpack_loader import render_bundle
 %>
 
 <%namespace name="actionbar" file="actionbar.mako" />
@@ -57,16 +56,11 @@ ${ commonheader(_("Metastore"), app_name, user, request) | n,unicode }
 </style>
 % endif
 
-<script src="${ static('desktop/ext/js/wysihtml5-0.3.0.min.js') }"></script>
-<script src="${ static('desktop/js/bootstrap-wysihtml5-0.0.2.js') }"></script>
-<script src="${ static('desktop/ext/js/bootstrap-editable.wysihtml5.js') }"></script>
 <script src="${ static('beeswax/js/stats.utils.js') }"></script>
 
 <link rel="stylesheet" href="${ static('desktop/ext/css/bootstrap-editable.css') }">
-<link rel="stylesheet" href="${ static('desktop/ext/css/bootstrap-wysihtml5-0.0.2.css') }">
 <link rel="stylesheet" href="${ static('notebook/css/notebook.css') }">
 
-## ${ render_bundle('vendors~tableBrowser') | n,unicode }
 ${ render_bundle('tableBrowser') | n,unicode }
 
 <span class="notebook">
@@ -77,14 +71,20 @@ ${ components.menubar(is_embeddable) }
 
 <script type="text/html" id="metastore-breadcrumbs">
   <div style="font-size: 14px; margin: 0 12px; line-height: 27px;">
-    <div data-bind="component: { name: 'hue-drop-down', params: { value: source, entries: sources, onSelect: sourceChanged, labelAttribute: 'name', searchable: true, linkTitle: '${ _ko('Source') }' } }" style="display: inline-block"></div>
+    <!-- ko if: sources().length >= 2 -->
+    <div data-bind="component: { name: 'hue-drop-down', params: { value: source, entries: sources, onSelect: sourceChanged, labelAttribute: 'name', searchable: true, linkTitle: '${ _ko('Source') }' } }"
+      style="display: inline-block">
+    </div>
+    <!-- /ko -->
     <!-- ko with: source -->
     <!-- ko if: window.HAS_MULTI_CLUSTER -->
     <!-- ko if: namespaces().length === 0 -->
     <i class="margin-left-10 fa fa-warning"></i> ${ _('No namespaces found') }
     <!-- /ko -->
     <!-- ko if: namespaces().length > 0 -->
-    <div class="margin-left-10" data-bind="component: { name: 'hue-drop-down', params: { value: namespace, entries: namespaces, onSelect: namespaceChanged, labelAttribute: 'name', searchable: true, linkTitle: '${ _ko('Namespace') }' } }" style="display: inline-block"></div>
+    <div class="margin-left-10" data-bind="component: { name: 'hue-drop-down', params: { value: namespace, entries: namespaces, onSelect: namespaceChanged, labelAttribute: 'name', searchable: true, linkTitle: '${ _ko('Namespace') }' } }"
+      style="display: inline-block">
+    </div>
     <!-- /ko -->
     <!-- /ko -->
     <!-- /ko -->
@@ -258,11 +258,7 @@ ${ components.menubar(is_embeddable) }
         <!-- /ko -->
         <!-- ko if: details.properties.format !== 'kudu' -->
         <div>
-          % if IS_EMBEDDED.get():
-            <span data-bind="attr: {'title': path_location}">${_('location')}</span>
-          % else:
-            <a href="javascript: void(0);" data-bind="storageContextPopover: { path: hdfs_link.replace('/filebrowser/view=', ''), offset: { left: 5 } }"> ${_('location')}</a>
-          % endif
+          <a href="javascript: void(0);" data-bind="storageContextPopover: { path: hdfs_link.replace('/filebrowser/view=', ''), offset: { left: 5 } }"> ${_('location')}</a>
         </div>
       <!-- /ko -->
     </div>
@@ -346,7 +342,7 @@ ${ components.menubar(is_embeddable) }
             <input type="hidden" name="start_time" value=""/>
             <input type="hidden" name="source_type" data-bind="value: $root.source().type"/>
             <!-- ko with: catalogEntry -->
-            <input type="hidden" name="namespace" data-bind="value: namespace.id"/>
+            <input type="hidden" name="namespace" data-bind="value: JSON.stringify(namespace)"/>
             <input type="hidden" name="cluster" data-bind="value: JSON.stringify(compute)"/>
             <!-- /ko -->
         % else:
@@ -479,11 +475,7 @@ ${ components.menubar(is_embeddable) }
           <div class="metastore-property">
             <div>${ _('Location') }</div>
             <div>
-              % if IS_EMBEDDED.get():
-                <span data-bind="attr: { 'title': location }"> ${_('Location')}</span>
-              % else:
-                <a href="javascript: void(0);" data-bind="storageContextPopover: { path: hdfs_link.replace('/filebrowser/view=', ''), offset: { left: 5 } }"> ${_('Location')}</a>
-              % endif
+              <a href="javascript: void(0);" data-bind="storageContextPopover: { path: hdfs_link.replace('/filebrowser/view=', ''), offset: { left: 5 } }"> ${_('Location')}</a>
             </div>
           </div>
         </div>
@@ -533,7 +525,7 @@ ${ components.menubar(is_embeddable) }
         <input type="hidden" name="is_embeddable" value="true"/>
         <input type="hidden" name="start_time" value=""/>
         <input type="hidden" name="source_type" data-bind="value: $root.source().type"/>
-        <input type="hidden" name="namespace" data-bind="value: catalogEntry.namespace.id"/>
+        <input type="hidden" name="namespace" data-bind="value: JSON.stringify(catalogEntry.namespace)"/>
         <input type="hidden" name="cluster" data-bind="value: JSON.stringify(catalogEntry.compute)"/>
     % else:
       <form data-bind="attr: { 'action': '/metastore/tables/drop/' + catalogEntry.name }" method="POST">
@@ -994,7 +986,7 @@ ${ components.menubar(is_embeddable) }
       dataType: 'json',
       success: function(resp) {
         if (resp.history_uuid) {
-          huePubSub.publish('notebook.task.submitted', resp.history_uuid);
+          huePubSub.publish('notebook.task.submitted', resp);
           huePubSub.publish('metastore.clear.selection');
         } else if (resp && resp.message) {
           $(document).trigger("error", resp.message);
@@ -1032,7 +1024,7 @@ ${ components.menubar(is_embeddable) }
       cluster: compute
     },function(resp) {
       if (resp.history_uuid) {
-        huePubSub.publish('open.editor.query', resp.history_uuid);
+        huePubSub.publish('open.editor.query', resp);
       } else if (resp.message) {
         $(document).trigger("error", resp.message);
       }

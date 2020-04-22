@@ -14,11 +14,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from builtins import object
 import desktop.appmanager
 
 from desktop.lib.conf import BoundContainer, UnspecifiedConfigSection, is_anonymous
 
-class ConfigSpec():
+class ConfigSpec(object):
   def __init__(self, configspec):
     self.indent = 0
     self.level = 0
@@ -29,7 +30,10 @@ class ConfigSpec():
     self.file.close()
 
   def p(self, s):
-    self.file.write("\n" + " " * self.indent + s + "\n")
+    bytes_obj = "\n" + " " * self.indent + s + "\n"
+    if not isinstance(bytes_obj, bytes):
+      bytes_obj = bytes_obj.encode()
+    self.file.write(bytes_obj)
 
   def recurse(self, config_obj):
     if isinstance(config_obj, BoundContainer):
@@ -42,7 +46,7 @@ class ConfigSpec():
       self.indent += 2
       self.level += 1
       sections = []
-      for v in config_obj.get().values():
+      for v in list(config_obj.get().values()):
         if isinstance(v, BoundContainer):
           sections.append(v)
         else:

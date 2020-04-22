@@ -14,38 +14,40 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
-  from desktop.views import commonheader, commonfooter, commonshare
-  from desktop import conf
   from django.utils.translation import ugettext as _
+
+  from desktop.views import commonfooter, commonshare
+  from desktop import conf
+
+  from notebook.conf import ENABLE_NOTEBOOK_2
 %>
 
 <%namespace name="configKoComponents" file="/config_ko_components.mako" />
 <%namespace name="editorComponents" file="editor_components.mako" />
+<%namespace name="editorComponents2" file="editor_components2.mako" />
 <%namespace name="notebookKoComponents" file="/common_notebook_ko_components.mako" />
 <%namespace name="hueAceAutocompleter" file="/hue_ace_autocompleter.mako" />
 
-%if not is_embeddable:
-${ commonheader(_('Editor'), editor_type, user, request, "68px") | n,unicode }
-${ commonshare() | n,unicode }
-%endif
+<div id="editorComponents" class="editorComponents notebook">
+% if ENABLE_NOTEBOOK_2.get():
+<div style="display: flex; flex-direction:column; height: 100%; width: 100%">
+  <div style="flex: 0 0 auto;">
+  ${ editorComponents2.includes(is_embeddable=is_embeddable, suffix='editor') }
+  ${ editorComponents2.topBar(suffix='editor') }
+  </div>
+  <div style="flex: 1;">
+  ${ editorComponents2.commonHTML(is_embeddable=is_embeddable, suffix='editor') }
+  </div>
+  ${ editorComponents2.commonJS(is_embeddable=is_embeddable, suffix='editor') }
+</div>
+% else:
+  ${ editorComponents.includes(is_embeddable=is_embeddable, suffix='editor') }
+  ${ editorComponents.topBar(suffix='editor') }
+  ${ editorComponents.commonHTML(is_embeddable=is_embeddable, suffix='editor') }
+  ${ editorComponents.commonJS(is_embeddable=is_embeddable, suffix='editor') }
+% endif
+</div>
 
-<span id="editorComponents" class="editorComponents notebook">
-${ editorComponents.includes(is_embeddable=is_embeddable, suffix='editor') }
-
-${ editorComponents.topBar(suffix='editor') }
-${ editorComponents.commonHTML(is_embeddable=is_embeddable, suffix='editor') }
-
-%if not is_embeddable:
-${ configKoComponents.config() }
-${ notebookKoComponents.aceKeyboardShortcuts() }
-${ notebookKoComponents.downloadSnippetResults() }
-${ hueAceAutocompleter.hueAceAutocompleter() }
-%endif
-
-
-${ editorComponents.commonJS(is_embeddable=is_embeddable, suffix='editor') }
-</span>
-
-%if not is_embeddable:
-${ commonfooter(request, messages) | n,unicode }
-%endif
+% if not is_embeddable:
+  ${ commonfooter(request, messages) | n,unicode }
+% endif

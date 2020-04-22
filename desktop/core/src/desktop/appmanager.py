@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import object
 import os
 import logging
 import re
@@ -22,15 +23,19 @@ import sys
 import traceback
 import pkg_resources
 
-import desktop
-from desktop.lib.paths import get_desktop_root
-
 from django.utils.translation import ugettext as _
 
+import desktop
+
+from desktop.lib.paths import get_desktop_root
+
+
 # Directories where apps and libraries are to be found
-APP_DIRS = [get_desktop_root('core-apps'),
-            get_desktop_root('apps'),
-            get_desktop_root('libs')]
+APP_DIRS = [
+    get_desktop_root('core-apps'),
+    get_desktop_root('apps'),
+    get_desktop_root('libs')
+]
 
 LOG = logging.getLogger(__name__)
 
@@ -41,7 +46,7 @@ LOG = logging.getLogger(__name__)
 # List of DesktopModuleInfo that have been loaded
 DESKTOP_LIBS = None
 DESKTOP_APPS = None
-DESKTOP_MODULES = [ ]           # Sum of APPS and LIBS
+DESKTOP_MODULES = []  # Sum of APPS and LIBS
 
 def _import_module_or_none(module):
   """Like import_module, but returns None if the module does not exist.
@@ -52,7 +57,7 @@ def _import_module_or_none(module):
   try:
     __import__(module)
     return sys.modules[module]
-  except ImportError, ie:
+  except ImportError as ie:
     # If the exception came from us importing, we want to just
     # return None. We need to inspect the stack, though, so we properly
     # reraise in the case that the module we're importing triggered
@@ -132,10 +137,12 @@ class DesktopModuleInfo(object):
       self.display_name = self.config_key
 
     # Look for static directory in two places:
-    new_style, old_style = [ os.path.abspath(p) for p in [
-      os.path.join(module_root, "static", self.name),
-      os.path.join(self.root_dir, "static")
-    ]]
+    new_style, old_style = [
+      os.path.abspath(p) for p in [
+        os.path.join(module_root, "static", self.name),
+        os.path.join(self.root_dir, "static")
+      ]
+    ]
 
     self.static_dir = None
     if os.path.isdir(new_style):
@@ -204,7 +211,11 @@ class DesktopModuleInfo(object):
     return "DesktopModule(%s: %s)" % (self.nice_name, self.module.__name__)
 
 def get_apps(user):
-  return filter(lambda app: user.has_hue_permission(action="access", app=app.display_name), DESKTOP_APPS)
+  return [
+    app
+      for app in DESKTOP_APPS
+      if user.has_hue_permission(action="access", app=app.display_name)
+  ]
 
 def get_apps_dict(user=None):
   if user is not None:
@@ -220,12 +231,11 @@ def load_libs():
 
   if DESKTOP_LIBS is not None:
     raise Exception("load_apps already has been called.")
-  DESKTOP_LIBS = [ ]
+  DESKTOP_LIBS = []
 
   for lib in pkg_resources.iter_entry_points("desktop.sdk.lib"):
     m = lib.load()
     DESKTOP_LIBS.append(DesktopModuleInfo(m))
-
 
   LOG.debug("Loaded Desktop Libraries: " + ", ".join(a.name for a in DESKTOP_LIBS))
   DESKTOP_MODULES += DESKTOP_LIBS
@@ -236,10 +246,9 @@ def load_libs():
 
 
 def load_apps(app_blacklist):
-  """Loads the applications from the directories in APP_DIRS.
+  """
+  Loads the applications from the directories in APP_DIRS.
   Sets DESKTOP_MODULES and DJANGO_APPS globals in this module.
-
-  TODO(todd) make this a singleton perhaps if people are anti-global?
   """
   global DESKTOP_MODULES
   global DESKTOP_APPS

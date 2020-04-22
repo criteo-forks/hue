@@ -21,8 +21,8 @@ import os
 
 from django.utils.translation import ugettext_lazy as _t
 
+from desktop.conf import default_ssl_validate, has_connectors
 from desktop.lib.conf import Config, UnspecifiedConfigSection, ConfigSection, coerce_bool
-from desktop.conf import default_ssl_validate
 
 
 LOG = logging.getLogger(__name__)
@@ -35,8 +35,7 @@ def find_file_recursive(desired_glob, root):
       matches = fnmatch.filter(filenames, desired_glob)
       if matches:
         if len(matches) != 1:
-          logging.warning("Found multiple jars matching %s: %s" %
-                          (desired_glob, matches))
+          logging.warning("Found multiple jars matching %s: %s" % (desired_glob, matches))
         return os.path.join(dirpath, matches[0])
 
     logging.error("Trouble finding jars matching %s" % (desired_glob,))
@@ -44,7 +43,6 @@ def find_file_recursive(desired_glob, root):
 
   f.__doc__ = "Finds %s/%s" % (root, desired_glob)
   return f
-
 
 
 UPLOAD_CHUNK_SIZE = Config(
@@ -55,7 +53,12 @@ UPLOAD_CHUNK_SIZE = Config(
 
 
 def has_hdfs_enabled():
-  return HDFS_CLUSTERS.keys()
+  if has_connectors():
+    from desktop.lib.connectors.api import _get_installed_connectors
+    return any([connector for connector in _get_installed_connectors() if connector['dialect'] == 'hdfs'])
+  else:
+    return list(HDFS_CLUSTERS.keys())
+
 
 def get_hadoop_conf_dir_default():
   """ get from environment variable HADOOP_CONF_DIR or "/etc/hadoop/conf" """
@@ -68,31 +71,56 @@ HDFS_CLUSTERS = UnspecifiedConfigSection(
   each=ConfigSection(
     help="Information about a single HDFS cluster",
     members=dict(
-      FS_DEFAULTFS=Config("fs_defaultfs", help="The equivalent of fs.defaultFS (aka fs.default.name)",
-                          default="hdfs://localhost:8020"),
-      LOGICAL_NAME = Config("logical_name", default="",
-                            type=str, help=_t('NameNode logical name.')),
-      WEBHDFS_URL=Config("webhdfs_url",
-                         help="The URL to WebHDFS/HttpFS service. Defaults to " +
-                         "the WebHDFS URL on the NameNode.",
-                         type=str, default="http://localhost:50070/webhdfs/v1"),
-      NN_KERBEROS_PRINCIPAL=Config("nn_kerberos_principal", help="Kerberos principal for NameNode", # Unused
-                                   default="hdfs", type=str),
-      DN_KERBEROS_PRINCIPAL=Config("dn_kerberos_principal", help="Kerberos principal for DataNode", # Unused
-                                   default="hdfs", type=str),
-      SECURITY_ENABLED=Config("security_enabled", help="Is running with Kerberos authentication",
-                              default=False, type=coerce_bool),
-      SSL_CERT_CA_VERIFY=Config("ssl_cert_ca_verify",
-                  help="In secure mode (HTTPS), if SSL certificates from YARN Rest APIs have to be verified against certificate authority",
-                  dynamic_default=default_ssl_validate,
-                  type=coerce_bool),
-      TEMP_DIR=Config("temp_dir", help="HDFS directory for temporary files",
-                      default='/tmp', type=str),
+      FS_DEFAULTFS=Config(
+          "fs_defaultfs",
+          help="The equivalent of fs.defaultFS (aka fs.default.name)",
+          default="hdfs://localhost:8020"
+      ),
+      LOGICAL_NAME = Config(
+          "logical_name",
+          default="",
+          type=str,
+          help=_t('NameNode logical name.')
+      ),
+      WEBHDFS_URL=Config(
+          "webhdfs_url",
+          help="The URL to WebHDFS/HttpFS service. Defaults to the WebHDFS URL on the NameNode.",
+          type=str,
+          default="http://localhost:50070/webhdfs/v1"
+      ),
+      NN_KERBEROS_PRINCIPAL=Config(
+          "nn_kerberos_principal",
+          help="Kerberos principal for NameNode", # Unused
+          default="hdfs",
+          type=str
+      ),
+      DN_KERBEROS_PRINCIPAL=Config(
+          "dn_kerberos_principal",
+          help="Kerberos principal for DataNode", # Unused
+          default="hdfs",
+          type=str
+      ),
+      SECURITY_ENABLED=Config(
+          "security_enabled",
+          help="Is running with Kerberos authentication",
+          default=False, type=coerce_bool
+      ),
+      SSL_CERT_CA_VERIFY=Config(
+          "ssl_cert_ca_verify",
+          help="In secure mode (HTTPS), if SSL certificates from YARN Rest APIs have to be verified against certificate authority",
+          dynamic_default=default_ssl_validate,
+          type=coerce_bool
+      ),
+      TEMP_DIR=Config(
+          "temp_dir",
+          help="HDFS directory for temporary files",
+          default='/tmp',
+          type=str
+      ),
       HADOOP_CONF_DIR = Config(
         key="hadoop_conf_dir",
         dynamic_default=get_hadoop_conf_dir_default,
-        help=("Directory of the Hadoop configuration) Defaults to the environment variable " +
-              "HADOOP_CONF_DIR when set, or '/etc/hadoop/conf'.")
+        help=_t("Directory of the Hadoop configuration) Defaults to the environment variable HADOOP_CONF_DIR when set, or '/etc/hadoop/conf'.")
       )
     )
   )
@@ -106,22 +134,42 @@ MR_CLUSTERS = UnspecifiedConfigSection(
     help="Information about a single MapReduce cluster",
     members=dict(
       HOST=Config("jobtracker_host", help="Host/IP for JobTracker"),
-      PORT=Config("jobtracker_port",
-                  default=8021,
-                  help="Service port for the JobTracker",
-                  type=int),
-      LOGICAL_NAME=Config('logical_name',
-                          default="",
-                          type=str,
-                          help=_t('JobTracker logical name.')),
-      JT_THRIFT_PORT=Config("thrift_port", help="Thrift port for JobTracker", default=9290,
-                            type=int),
-      JT_KERBEROS_PRINCIPAL=Config("jt_kerberos_principal", help="Kerberos principal for JobTracker",
-                                   default="mapred", type=str),
-      SECURITY_ENABLED=Config("security_enabled", help="Is running with Kerberos authentication",
-                              default=False, type=coerce_bool),
-      SUBMIT_TO=Config('submit_to', help="Whether Hue should use this cluster to run jobs",
-                       default=True, type=coerce_bool), # True here for backward compatibility
+      PORT=Config(
+          "jobtracker_port",
+          default=8021,
+          help="Service port for the JobTracker",
+          type=int
+      ),
+      LOGICAL_NAME=Config(
+          'logical_name',
+          default="",
+          type=str,
+          help=_t('JobTracker logical name.')
+      ),
+      JT_THRIFT_PORT=Config(
+          "thrift_port",
+          help="Thrift port for JobTracker",
+          default=9290,
+          type=int
+      ),
+      JT_KERBEROS_PRINCIPAL=Config(
+          "jt_kerberos_principal",
+          help="Kerberos principal for JobTracker",
+          default="mapred",
+          type=str
+      ),
+      SECURITY_ENABLED=Config(
+          "security_enabled",
+          help="Is running with Kerberos authentication",
+          default=False,
+          type=coerce_bool
+      ),
+      SUBMIT_TO=Config(
+          'submit_to',
+          help="Whether Hue should use this cluster to run jobs",
+          default=True,
+          type=coerce_bool
+      ), # True here for backward compatibility
     )
   )
 )
@@ -149,7 +197,7 @@ def get_spark_history_server_security_enabled():
   from metadata.conf import MANAGER
   from metadata.manager_client import ManagerApi
   if MANAGER.API_URL.get():
-      return ManagerApi().get_spark_history_server_security_enabled()
+    return ManagerApi().get_spark_history_server_security_enabled()
   return False
 
 
@@ -213,7 +261,7 @@ def config_validator(user):
 
   # HDFS_CLUSTERS
   has_default = False
-  for name in HDFS_CLUSTERS.keys():
+  for name in list(HDFS_CLUSTERS.keys()):
     cluster = HDFS_CLUSTERS[name]
     res.extend(webhdfs.test_fs_configuration(cluster))
     if name == 'default':
@@ -222,7 +270,7 @@ def config_validator(user):
     res.append(("hadoop.hdfs_clusters", "You should have an HDFS called 'default'."))
 
   # YARN_CLUSTERS
-  for name in YARN_CLUSTERS.keys():
+  for name in list(YARN_CLUSTERS.keys()):
     cluster = YARN_CLUSTERS[name]
     if cluster.SUBMIT_TO.get():
       submit_to.append('yarn_clusters.' + name)
@@ -259,13 +307,13 @@ def test_yarn_configurations(user):
 
   try:
     from jobbrowser.api import get_api # Required for cluster HA testing
-  except Exception, e:
+  except Exception as e:
     LOG.warn('Jobbrowser is disabled, skipping test_yarn_configurations')
     return result
 
   try:
     get_api(user, None).get_jobs(user, username=user.username, state='all', text='')
-  except Exception, e:
+  except Exception as e:
     msg = 'Failed to contact an active Resource Manager: %s' % e
     LOG.exception(msg)
     result.append(('Resource Manager', msg))

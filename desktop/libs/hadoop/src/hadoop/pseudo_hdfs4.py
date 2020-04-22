@@ -15,6 +15,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import print_function
+from builtins import object
 import atexit
 import getpass
 import logging
@@ -23,6 +25,7 @@ import shutil
 import signal
 import subprocess
 import socket
+import sys
 import tempfile
 import textwrap
 import time
@@ -35,6 +38,10 @@ import hadoop
 from hadoop import cluster
 from hadoop.mini_cluster import write_config
 
+if sys.version_info[0] > 2:
+  open_file = open
+else:
+  open_file = file
 
 _shared_cluster = None
 
@@ -51,7 +58,7 @@ def is_live_cluster():
 
 def get_fs_prefix(fs):
   prefix = '/tmp/hue_tests_%s' % str(time.time())
-  fs.mkdir(prefix, 0777)
+  fs.mkdir(prefix, 0o777)
   return prefix
 
 def get_db_prefix(name='hive'):
@@ -61,7 +68,7 @@ def get_db_prefix(name='hive'):
     return 'default'
 
 
-class LiveHdfs():
+class LiveHdfs(object):
   def __init__(self):
     self.fs = cluster.get_hdfs('default')
     # Assumes /tmp exists and is 1777
@@ -84,7 +91,7 @@ class PseudoHdfs4(object):
 
   def __init__(self):
     self._tmpdir = tempfile.mkdtemp(prefix='tmp_hue_', dir=TEST_HDFS_TMP_DIR)
-    os.chmod(self._tmpdir, 0755)
+    os.chmod(self._tmpdir, 0o755)
     self._superuser = getpass.getuser()
     self.fs_prefix = None
 
@@ -179,7 +186,7 @@ class PseudoHdfs4(object):
           os.kill(proc.pid, signal.SIGKILL)
           LOG.info('Stopping %s pid %s' % (name, proc.pid,))
           time.sleep(0.5)
-      except Exception, ex:
+      except Exception as ex:
         LOG.exception('Failed to stop pid %s. You may want to do it manually: %s' % (proc.pid, ex))
 
     _kill_proc('NameNode', self._nn_proc)
@@ -272,26 +279,26 @@ class PseudoHdfs4(object):
 
     # Create HDFS directories
     if not self.fs.exists('/tmp'):
-      self.fs.do_as_superuser(self.mkdir, '/tmp', 01777)
-    self.fs.do_as_superuser(self.fs.chmod, '/tmp', 01777)
+      self.fs.do_as_superuser(self.mkdir, '/tmp', 0o1777)
+    self.fs.do_as_superuser(self.fs.chmod, '/tmp', 0o1777)
 
-    self.fs.do_as_superuser(self.fs.mkdir, '/tmp/hadoop-yarn', 01777)
-    self.fs.do_as_superuser(self.fs.chmod, '/tmp/hadoop-yarn', 01777)
+    self.fs.do_as_superuser(self.fs.mkdir, '/tmp/hadoop-yarn', 0o1777)
+    self.fs.do_as_superuser(self.fs.chmod, '/tmp/hadoop-yarn', 0o1777)
 
-    self.fs.do_as_superuser(self.fs.mkdir, '/tmp/hadoop-yarn/staging', 01777)
-    self.fs.do_as_superuser(self.fs.chmod, '/tmp/hadoop-yarn/staging', 01777)
+    self.fs.do_as_superuser(self.fs.mkdir, '/tmp/hadoop-yarn/staging', 0o1777)
+    self.fs.do_as_superuser(self.fs.chmod, '/tmp/hadoop-yarn/staging', 0o1777)
 
-    self.fs.do_as_superuser(self.fs.mkdir, '/tmp/hadoop-yarn/staging/history', 01777)
-    self.fs.do_as_superuser(self.fs.chmod, '/tmp/hadoop-yarn/staging/history', 01777)
+    self.fs.do_as_superuser(self.fs.mkdir, '/tmp/hadoop-yarn/staging/history', 0o1777)
+    self.fs.do_as_superuser(self.fs.chmod, '/tmp/hadoop-yarn/staging/history', 0o1777)
 
-    self.fs.do_as_superuser(self.fs.mkdir, '/tmp/hadoop-yarn/staging/history/done', 01777)
-    self.fs.do_as_superuser(self.fs.chmod, '/tmp/hadoop-yarn/staging/history/done', 01777)
+    self.fs.do_as_superuser(self.fs.mkdir, '/tmp/hadoop-yarn/staging/history/done', 0o1777)
+    self.fs.do_as_superuser(self.fs.chmod, '/tmp/hadoop-yarn/staging/history/done', 0o1777)
 
-    self.fs.do_as_superuser(self.fs.mkdir, '/tmp/hadoop-yarn/staging/history/done/2015', 01777)
-    self.fs.do_as_superuser(self.fs.chmod, '/tmp/hadoop-yarn/staging/history/done/2015', 01777)
+    self.fs.do_as_superuser(self.fs.mkdir, '/tmp/hadoop-yarn/staging/history/done/2015', 0o1777)
+    self.fs.do_as_superuser(self.fs.chmod, '/tmp/hadoop-yarn/staging/history/done/2015', 0o1777)
 
-    self.fs.do_as_superuser(self.fs.mkdir, '/var/log/hadoop-yarn/apps', 01777)
-    self.fs.do_as_superuser(self.fs.chmod, '/var/log/hadoop-yarn/apps', 01777)
+    self.fs.do_as_superuser(self.fs.mkdir, '/var/log/hadoop-yarn/apps', 0o1777)
+    self.fs.do_as_superuser(self.fs.chmod, '/var/log/hadoop-yarn/apps', 0o1777)
 
     self.fs.do_as_user('test', self.fs.create_home_dir, '/user/test')
     self.fs.do_as_user('hue', self.fs.create_home_dir, '/user/hue')
@@ -340,8 +347,8 @@ class PseudoHdfs4(object):
 
   def _log_exit(self, proc_name, exit_code):
     LOG.info('%s exited with %s' % (proc_name, exit_code))
-    LOG.debug('--------------------- STDOUT:\n' + file(self._logpath(proc_name + '.stdout')).read())
-    LOG.debug('--------------------- STDERR:\n' + file(self._logpath(proc_name + '.stderr')).read())
+    LOG.debug('--------------------- STDOUT:\n' + open_file(self._logpath(proc_name + '.stdout')).read())
+    LOG.debug('--------------------- STDERR:\n' + open_file(self._logpath(proc_name + '.stderr')).read())
 
   def _is_hdfs_ready(self, env):
     if self._nn_proc.poll() is not None:
@@ -404,8 +411,8 @@ class PseudoHdfs4(object):
     args = (hadoop_bin, '--config', conf_dir, proc_name)
 
     LOG.info('Starting Hadoop cluster daemon: %s' % (args,))
-    stdout = file(self._logpath(proc_name + ".stdout"), 'w')
-    stderr = file(self._logpath(proc_name + ".stderr"), 'w')
+    stdout = open_file(self._logpath(proc_name + ".stdout"), 'w')
+    stderr = open_file(self._logpath(proc_name + ".stderr"), 'w')
 
     return subprocess.Popen(args=args, stdout=stdout, stderr=stderr, env=env)
 
@@ -531,7 +538,7 @@ class PseudoHdfs4(object):
     write_config(mapred_configs, self._tmppath('conf/mapred-site.xml'))
 
   def _write_hadoop_metrics_conf(self, conf_dir):
-    f = file(os.path.join(conf_dir, "hadoop-metrics.properties"), "w")
+    f = open_file(os.path.join(conf_dir, "hadoop-metrics.properties"), "w")
     try:
       f.write(textwrap.dedent("""
           dfs.class=org.apache.hadoop.metrics.spi.NoEmitMetricsContext
@@ -603,11 +610,11 @@ def main():
   cluster = PseudoHdfs4()
   cluster.start()
 
-  print "%s running" % (cluster,)
-  print "fs.default.name=%s" % (cluster.fs_default_name,)
-  print "dfs.http.address=%s" % (cluster.dfs_http_address,)
-  print "jobtracker.thrift.port=%s" % (cluster.jt_thrift_port,)
-  print "mapred.job.tracker=%s" % (cluster.mapred_job_tracker,)
+  print("%s running" % (cluster,))
+  print("fs.default.name=%s" % (cluster.fs_default_name,))
+  print("dfs.http.address=%s" % (cluster.dfs_http_address,))
+  print("jobtracker.thrift.port=%s" % (cluster.jt_thrift_port,))
+  print("mapred.job.tracker=%s" % (cluster.mapred_job_tracker,))
 
   from IPython.Shell import IPShellEmbed
   IPShellEmbed()()

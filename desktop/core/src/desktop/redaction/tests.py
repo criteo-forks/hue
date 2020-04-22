@@ -15,6 +15,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from future import standard_library
+standard_library.install_aliases()
+from builtins import zip, range, object
+
 import json
 import logging
 import os
@@ -23,15 +27,15 @@ import re
 import tempfile
 import threading
 
-from desktop.redaction.engine import RedactionEngine, \
-                                     RedactionPolicy, \
-                                     RedactionRule, \
-                                     parse_redaction_policy_from_file, \
-                                     _convert_java_pattern_to_python
-from desktop.redaction.logfilter import add_log_redaction_filter_to_logger
 from nose.tools import assert_true, assert_equal, assert_not_equal, raises
 
+from desktop.redaction.engine import RedactionEngine, RedactionPolicy, RedactionRule, parse_redaction_policy_from_file, \
+    _convert_java_pattern_to_python
+from desktop.redaction.logfilter import add_log_redaction_filter_to_logger
+
+
 MESSAGE = "This string is not redacted"
+
 
 def get_path(filename):
   return os.path.join(os.path.dirname(__file__), 'test_data', filename)
@@ -79,7 +83,7 @@ class TestRedactionRule(object):
 
 
   def test_parse_redaction_policy_from_file(self):
-    with tempfile.NamedTemporaryFile() as f:
+    with tempfile.NamedTemporaryFile(mode='w') as f:
       json.dump({
           'version': 1,
           'rules': [
@@ -395,8 +399,8 @@ class TestRedactionLogFilter(object):
 
     class TestThread(threading.Thread):
       def run(self):
-        for i in xrange(500):
-          message = u''.join(random_utf8_char() for _ in xrange(128))
+        for i in range(500):
+          message = u''.join(random_utf8_char() for _ in range(128))
           redacted_message = policy.redact(message)
 
           if regex.search(redacted_message):
@@ -405,7 +409,7 @@ class TestRedactionLogFilter(object):
               break
 
     threads = []
-    for i in xrange(10):
+    for i in range(10):
       threads.append(TestThread())
 
     for thread in threads:

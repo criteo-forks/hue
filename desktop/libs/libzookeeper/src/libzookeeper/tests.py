@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import object
 import os
 import shutil
 import tempfile
@@ -22,17 +23,16 @@ import tempfile
 from nose.plugins.skip import SkipTest
 from nose.tools import assert_equal, assert_true, assert_false
 
-from django.contrib.auth.models import User
-
 from desktop.lib.django_test_util import make_logged_in_client
 from desktop.lib.test_utils import add_to_group, grant_access
 from hadoop.pseudo_hdfs4 import is_live_cluster
+from useradmin.models import User
 
 from libzookeeper.models import ZookeeperClient
 from libzookeeper.conf import zkensemble, ENSEMBLE
 
 
-class UnitTests():
+class UnitTests(object):
 
   def test_get_ensemble(self):
     clear = ENSEMBLE.set_for_testing('zoo:2181')
@@ -54,7 +54,7 @@ class UnitTests():
       clear()
 
 
-class TestWithZooKeeper:
+class TestWithZooKeeper(object):
   requires_hadoop = True
   integration = True
 
@@ -77,7 +77,7 @@ class TestWithZooKeeper:
     # Create subdirectory
     cls.subdir_name = 'subdir'
     subdir_path = '%s/%s' % (cls.local_directory, cls.subdir_name)
-    os.mkdir(subdir_path, 0755)
+    os.mkdir(subdir_path, 0o755)
     # Create file
     cls.filename = 'test.txt'
     file_path = '%s/%s' % (subdir_path, cls.filename)

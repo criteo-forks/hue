@@ -14,7 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import ko from 'knockout';
+import * as ko from 'knockout';
 
 import AssistDbEntry from 'ko/components/assist/assistDbEntry';
 import AssistDbSource from 'ko/components/assist/assistDbSource';
@@ -90,6 +90,7 @@ class AssistDashboardPanel {
             sourceType: sourceType,
             namespace: collection.activeNamespace,
             compute: collection.activeCompute,
+            connector: {}, // TODO: Use connectors in assist dashboard panel
             path: [fakeParentName],
             definition: { type: 'database' }
           })
@@ -107,6 +108,7 @@ class AssistDashboardPanel {
                 sourceType: sourceType,
                 namespace: collection.activeNamespace,
                 compute: collection.activeCompute,
+                connector: {}, // TODO: Use connectors in assist dashboard panel
                 path: [
                   fakeParentName,
                   collectionName.indexOf('.') > -1 ? collectionName.split('.')[1] : collectionName

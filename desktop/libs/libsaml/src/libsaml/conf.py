@@ -16,6 +16,7 @@
 # limitations under the License.
 
 import json
+import logging
 import os
 import subprocess
 
@@ -23,6 +24,7 @@ from django.utils.translation import ugettext_lazy as _t, ugettext as _
 
 from desktop.lib.conf import Config, coerce_bool, coerce_csv, coerce_password_from_script
 
+LOG = logging.getLogger(__name__)
 
 BASEDIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -36,14 +38,15 @@ def xmlsec():
   try:
     proc = subprocess.Popen(['which', 'xmlsec1'], stdout=subprocess.PIPE)
     return proc.stdout.read().strip()
-  except (subprocess.CalledProcessError, OSError):
+  except Exception as e:
+    LOG.debug("xmlsec: %s" % e)
     return '/usr/local/bin/xmlsec1'
 
 
 def dict_list_map(value):
   if isinstance(value, str):
     d = {}
-    for k, v in json.loads(value).iteritems():
+    for k, v in json.loads(value).items():
       d[k] = (v,)
     return d
   elif isinstance(value, dict):
@@ -144,13 +147,13 @@ AUTHN_REQUESTS_SIGNED = Config(
 
 WANT_RESPONSE_SIGNED = Config(
   key="want_response_signed",
-  default=True,
+  default=False,
   type=coerce_bool,
   help=_t("Have Hue initiated authn response be signed."))
 
 WANT_ASSERTIONS_SIGNED = Config(
   key="want_assertions_signed",
-  default=True,
+  default=False,
   type=coerce_bool,
   help=_t("Have Hue initiated authn assertions response be signed."))
 

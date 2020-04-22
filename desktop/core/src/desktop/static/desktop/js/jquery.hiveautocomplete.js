@@ -84,7 +84,7 @@
       $("<div>").attr("id", "jHueGenericAutocomplete").addClass("jHueAutocomplete popover")
         .attr("style", "position:absolute;display:none;max-width:1000px;z-index:33000")
         .html('<div class="arrow"></div><div class="popover-inner"><h3 class="popover-title"></h3><div class="popover-content"><ul class="unstyled"></ul></div></div>')
-        .appendTo(HUE_CONTAINER);
+        .appendTo('body');
     }
 
     $el.wrap('<div class="inline">');
@@ -279,10 +279,13 @@
       })
     };
 
+    // TODO: Use connector for hive autocomplete
+    const connector = {};
+
     self.getTables = function (database, callback) {
       var self = this;
       $.when(self.namespaceDeferred, self.computeDeferred).done(function (namespace, compute) {
-        dataCatalog.getEntry({ sourceType: self.options.apiHelperType, namespace: namespace, compute: compute, path: [ database ] }).done(function (entry) {
+        dataCatalog.getEntry({ sourceType: self.options.apiHelperType, connector: connector, namespace: namespace, compute: compute, path: [ database ] }).done(function (entry) {
           entry.getSourceMeta().done(callback)
         });
       });
@@ -291,7 +294,7 @@
     self.getColumns = function (database, table, callback) {
       var self = this;
       $.when(self.namespaceDeferred, self.computeDeferred).done(function (namespace, compute) {
-        dataCatalog.getEntry({ sourceType: self.options.apiHelperType, namespace: namespace, compute: compute, path: [ database, table ] }).done(function (entry) {
+        dataCatalog.getEntry({ sourceType: self.options.apiHelperType, connector: connector, namespace: namespace, compute: compute, path: [ database, table ] }).done(function (entry) {
           entry.getSourceMeta().done(callback)
         });
       });

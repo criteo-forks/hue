@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import object
 import logging
 import json
 
@@ -23,18 +24,19 @@ from datetime import datetime, timedelta
 from django.urls import reverse
 from django.utils.translation import ugettext as _
 
-from metadata.conf import ALTUS, K8S
-from navoptapi.api_lib import ApiLib
-
-
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.rest.http_client import HttpClient
 from desktop.lib.rest.resource import Resource
-
+from metadata.conf import ALTUS, K8S
 
 LOG = logging.getLogger(__name__)
 
 DATE_FORMAT = "%Y-%m-%d"
+
+try:
+  from navoptapi.api_lib import ApiLib
+except Exception as e:
+  LOG.warn('NavOpt module is not installed: %s' % e)
 
 
 def _exec(service, command, parameters=None):
@@ -61,15 +63,15 @@ def _exec(service, command, parameters=None):
     json_resp = resp.json()
     LOG.debug(json_resp)
     return json_resp
-  except Exception, e:
+  except Exception as e:
     raise PopupException(e, title=_('Error accessing'))
 
 
-class IAMApi(): pass
+class IAMApi(object): pass
 # altus iam list-user-assigned-roles --user=crn:altus:ia
 
 
-class SdxApi():
+class SdxApi(object):
 
   def __init__(self, user): pass
 
@@ -94,7 +96,7 @@ class SdxApi():
     return namespaces
 
 
-class DataEngApi():
+class DataEngApi(object):
 
   def __init__(self, user): pass
 
@@ -234,7 +236,7 @@ class DataEngApi():
     return _exec('dataeng', 'describeCluster')
 
 
-class AnalyticDbApi():
+class AnalyticDbApi(object):
 
   def __init__(self, user): pass
 
@@ -277,7 +279,7 @@ class AnalyticDbApi():
     return _exec('dataware', 'describeCluster', {'clusterName': cluster_id})
 
 
-class DataWarehouse2Api():
+class DataWarehouse2Api(object):
 
   def __init__(self, user=None):
     self._api_url = '%s/dw' % K8S.API_URL.get().rstrip('/')

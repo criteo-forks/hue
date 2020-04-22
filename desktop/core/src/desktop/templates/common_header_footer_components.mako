@@ -18,7 +18,6 @@ from django.utils.translation import ugettext as _
 from django.template.defaultfilters import escape, escapejs
 
 from desktop import conf
-from desktop.conf import IS_EMBEDDED
 from desktop.lib.i18n import smart_unicode
 from desktop.views import _ko
 
@@ -87,20 +86,22 @@ from metadata.conf import has_optimizer, OPTIMIZER
       }
     }
 
-
-    var xhrOpen = XMLHttpRequest.prototype.open;
-    XMLHttpRequest.prototype.open = function () {
-      if (arguments[1].indexOf(window.HUE_BASE_URL) < 0) {
-        var index = arguments[1].indexOf(window.location.host);
-        if (index >= 0 && window.HUE_BASE_URL.length) { //Host is present in the url when using an html form.
-          index += window.location.host.length;
-            arguments[1] = arguments[1].substring(0, index) + window.HUE_BASE_URL + arguments[1].substring(index);
-        } else {
-          arguments[1] = window.HUE_BASE_URL + arguments[1];
+    // Enable XHR URL rewrite if Knox is there
+    if (window.HUE_BASE_URL && window.HUE_BASE_URL.length) {
+      var xhrOpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function () {
+        if (arguments[1].indexOf(window.HUE_BASE_URL) < 0) {
+          var index = arguments[1].indexOf(window.location.host);
+          if (index >= 0 && window.HUE_BASE_URL.length) { // Host is present in the URL when using an HTML form
+            index += window.location.host.length;
+              arguments[1] = arguments[1].substring(0, index) + window.HUE_BASE_URL + arguments[1].substring(index);
+          } else {
+            arguments[1] = window.HUE_BASE_URL + arguments[1];
+          }
         }
-      }
-      return xhrOpen.apply(this, arguments);
-    };
+        return xhrOpen.apply(this, arguments);
+      };
+    }
     var xhrSend = XMLHttpRequest.prototype.send;
     XMLHttpRequest.prototype.send = function (data) {
       // Add CSRF Token to all XHR Requests
@@ -281,10 +282,11 @@ from metadata.conf import has_optimizer, OPTIMIZER
   </div>
   <div class="modal-body">
     <table class="table table-condensed">
-
     </table>
   </div>
 </div>
+
+<div class="clipboard-content"></div>
 
 <script type="text/javascript">
 
@@ -404,7 +406,7 @@ from metadata.conf import has_optimizer, OPTIMIZER
         if ($('#login-modal').length > 0 && $('#login-modal').is(':hidden')) {
           $('#login-modal .link-message').hide();
           if (isAutoLogout) {
-            $(HUE_CONTAINER).children(':not(#login-modal)').addClass('blurred');
+            $('body').children(':not(#login-modal)').addClass('blurred');
             $('#login-modal .auto-logged-out').show();
             $('#login-modal').modal({
               backdrop: 'static',
@@ -564,9 +566,7 @@ from metadata.conf import has_optimizer, OPTIMIZER
     };
   }
 
-
-  %if collect_usage and not IS_EMBEDDED.get():
-
+  % if collect_usage:
     (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
     (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
     m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
@@ -592,8 +592,7 @@ from metadata.conf import has_optimizer, OPTIMIZER
         });
       }
     }
-
-  %endif
+  % endif
 
 </script>
 </%def>

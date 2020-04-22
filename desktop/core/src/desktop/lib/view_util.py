@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Utilities for views (text and number formatting, etc)"""
+from __future__ import division
 
 import datetime
 import logging
@@ -42,7 +43,7 @@ def big_filesizeformat(bytes):
   index = int(math.floor(math.log(bytes, 1024)))
   index = min(len(units) - 1, index)
 
-  return( "%.1f %s" % (bytes / math.pow(1024, index), units[index]) )
+  return( "%.1f %s" % ((bytes / math.pow(1024, index)), units[index]) )
 
 def format_time_diff(start=None, end=None):
   """

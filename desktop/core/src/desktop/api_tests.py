@@ -16,12 +16,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from builtins import object
 import json
 
 from nose.tools import assert_true, assert_false, assert_equal, assert_not_equal, assert_raises
 from nose.plugins.skip import SkipTest
-
-from django.contrib.auth.models import User
 
 from desktop.api import massaged_documents_for_json, _get_docs
 from desktop.conf import USE_NEW_EDITOR
@@ -30,10 +29,10 @@ from desktop.lib.test_utils import grant_access
 from desktop.models import DocumentTag , Document
 
 from pig.models import PigScript
-from useradmin.models import get_default_user_group
+from useradmin.models import get_default_user_group, User
 
 
-class TestDocModelTags():
+class TestDocModelTags(object):
 
   def setUp(self):
     self.client = make_logged_in_client(username="tag_user", recreate=True, is_superuser=False)
@@ -60,7 +59,7 @@ class TestDocModelTags():
   def share_doc(self, doc, permissions):
     response = self.client.post("/desktop/api/doc/update_permissions", {
         'doc_id': doc.id,
-        'data': json.dumps(*permissions)
+        'data': json.dumps(permissions)
     })
 
   def share_doc_read_only(self, doc):
@@ -195,7 +194,7 @@ class TestDocModelTags():
     # todo no default tag on test user?
 
 
-class TestDocModelPermissions():
+class TestDocModelPermissions(object):
 
   def setUp(self):
     self.client = make_logged_in_client(username="perm_user", groupname="default", recreate=True, is_superuser=False)

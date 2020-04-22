@@ -38,7 +38,7 @@ try:
   from oozie.views.dashboard import check_job_access_permission, check_job_edition_permission
   from oozie.views.editor2 import _submit_workflow
 except Exception as e:
-  LOG.exception('Oozie application is not enabled: %s' % e)
+  LOG.warn('Oozie application is not enabled: %s' % e)
 
 
 class OozieApi(Api):
@@ -186,7 +186,7 @@ class OozieApi(Api):
                                                                  log_start_pattern=self.LOG_START_PATTERN,
                                                                  log_end_pattern=self.LOG_END_PATTERN)
       if logs:
-        log_output = logs.values()[0]
+        log_output = list(logs.values())[0]
         if log_output.startswith('Unable to locate'):
           LOG.debug('Failed to get job attempt logs, possibly due to YARN archiving job to JHS. Will sleep and try again.')
           time.sleep(2.0)

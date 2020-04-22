@@ -19,8 +19,10 @@
 Decorators and methods related to access log.
 This assumes a single-threaded server.
 """
+from __future__ import division
 
 import logging
+import math
 import re
 import resource
 import sys
@@ -73,7 +75,7 @@ class AccessInfo(dict):
   """
   def __init__(self, request):
     self['username'] = request.user.username or '-anon-'
-    if request.META.has_key('HTTP_X_FORWARDED_FOR'):
+    if 'HTTP_X_FORWARDED_FOR' in request.META:
       self['remote_ip'] = request.META.get('HTTP_X_FORWARDED_FOR', '-')
     else:
       self['remote_ip'] = request.META.get('REMOTE_ADDR', '-')
@@ -94,18 +96,17 @@ class AccessInfo(dict):
     if sys.platform == 'darwin':
       rusage_denom = rusage_denom * 1024
     # get peak memory usage, bytes on OSX, Kilobytes on Linux
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / rusage_denom
+    return math.floor(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / rusage_denom)
 
-  def log(self, level, msg=None, start_time=None):
+  def log(self, level, msg=None, start_time=None, response=None):
     is_instrumentation = desktop.conf.INSTRUMENTATION.get()
     self['duration'] = ' returned in %dms' % ((time.time() - start_time) * 1000) if start_time is not None else ''
     self['memory'] = ' (mem: %dmb)' % self.memory_usage_resource() if is_instrumentation else ''
+    self['http_code'] = ' %s' % response.status_code if response is not None else ''
+    self['size'] = ' %s' % len(response.content) if response is not None and hasattr(response, 'content') else ' -'
+    self['msg'] = ('-- %s' % msg) if msg else ''
 
-    if msg is not None:
-      self['msg'] = msg
-      ACCESS_LOG.log(level, '%(remote_ip)s %(username)s - "%(method)s %(path)s %(proto)s"%(duration)s%(memory)s-- %(msg)s' % self)
-    else:
-      ACCESS_LOG.log(level, '%(remote_ip)s %(username)s - "%(method)s %(path)s %(proto)s"%(duration)s%(memory)s' % self)
+    ACCESS_LOG.log(level, '%(remote_ip)s %(username)s - "%(method)s %(path)s %(proto)s"%(duration)s%(http_code)s%(size)s%(memory)s%(msg)s' % self)
 
   def add_to_access_history(self, app):
     """Record this user access to the recent access map"""
@@ -154,12 +155,12 @@ class AccessInfo(dict):
 
 _MODULE_RE = re.compile('[^.]*')
 
-def log_page_hit(request, view_func, level=None, start_time=None):
+def log_page_hit(request, view_func, level=None, start_time=None, response=None):
   """Log the request to the access log"""
   if level is None:
     level = logging.INFO
   ai = AccessInfo(request)
-  ai.log(level, start_time=start_time)
+  ai.log(level, start_time=start_time, response=response)
 
   # Disabled for now as not used
   # Find the app

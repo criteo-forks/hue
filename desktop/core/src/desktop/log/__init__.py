@@ -15,6 +15,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import print_function
+from __future__ import absolute_import
+from future import standard_library
+standard_library.install_aliases()
 import logging
 import logging.config
 import os
@@ -22,7 +26,6 @@ import os.path
 import re
 import sys
 
-from cStringIO import StringIO
 from logging import FileHandler
 from logging.handlers import RotatingFileHandler
 
@@ -30,6 +33,12 @@ from desktop.lib.paths import get_desktop_root
 from desktop.log import formatter
 from desktop.log.formatter import MessageOnlyFormatter
 
+if sys.version_info[0] > 2:
+  from io import StringIO as string_io
+  open_file = open
+else:
+  from cStringIO import StringIO as string_io
+  open_file = file
 
 DEFAULT_LOG_DIR = 'logs'
 LOG_FORMAT = '[%(asctime)s] %(module)-12s %(levelname)-8s %(message)s'
@@ -58,11 +67,11 @@ def _read_log_conf(proc_name, log_dir):
     return None
 
   try:
-    raw = file(log_conf).read()
-    sio = StringIO(CONF_RE.sub(_repl, raw))
+    raw = open_file(log_conf).read()
+    sio = string_io(CONF_RE.sub(_repl, raw))
     return sio
-  except IOError, ex:
-    print >> sys.stderr, "ERROR: Failed to open %s: %s" % (log_conf, ex)
+  except IOError as ex:
+    print("ERROR: Failed to open %s: %s" % (log_conf, ex), file=sys.stderr)
     return None
 
 
@@ -82,7 +91,7 @@ def get_audit_logger():
   from desktop.conf import AUDIT_EVENT_LOG_DIR, AUDIT_LOG_MAX_FILE_SIZE
 
   audit_logger = logging.getLogger('audit')
-  if not filter(lambda hclass: isinstance(hclass, AuditHandler), audit_logger.handlers): # Don't add handler twice
+  if not [hclass for hclass in audit_logger.handlers if isinstance(hclass, AuditHandler)]: # Don't add handler twice
     size, unit = int(AUDIT_LOG_MAX_FILE_SIZE.get()[:-2]), AUDIT_LOG_MAX_FILE_SIZE.get()[-2:]
     maxBytes = size * 1024 ** (1 if unit == 'KB' else 2 if unit == 'MB' else 3)
 
@@ -107,8 +116,8 @@ def chown_log_dir(uid, gid):
     for entry in os.listdir(_log_dir):
       os.chown(os.path.join(_log_dir, entry), uid, gid)
     return True
-  except OSError, ex:
-    print >> sys.stderr, 'Failed to chown log directory %s: ex' % (_log_dir, ex)
+  except OSError as ex:
+    print('Failed to chown log directory %s: ex' % (_log_dir, ex), file=sys.stderr)
     return False
 
 
@@ -135,8 +144,8 @@ def basic_logging(proc_name, log_dir=None):
   if not os.path.exists(log_dir):
     try:
       os.makedirs(log_dir)
-    except OSError, err:
-      print >> sys.stderr, 'Failed to create log directory "%s": %s' % (log_dir, err)
+    except OSError as err:
+      print('Failed to create log directory "%s": %s' % (log_dir, err), file=sys.stderr)
       raise err
 
   # Remember where our log directory is
@@ -180,15 +189,15 @@ def basic_logging(proc_name, log_dir=None):
     handler.setLevel(lvl)
 
     # Set all loggers but error.log to the same logging level
-    error_handler = logging.getLogger('handler_errorlog')
-    for h in root_logger.handlers:
-      if isinstance(h, (FileHandler, RotatingFileHandler)) and h != error_handler:
-        h.setLevel(lvl)
+    for h in root_logger.__dict__['handlers']:
+      if isinstance(h, (FileHandler, RotatingFileHandler)):
+        if os.path.basename(h.baseFilename) != 'error.log':
+          h.setLevel(lvl)
 
 
 def fancy_logging():
   """Configure logging into a buffer for /logs endpoint."""
-  from log_buffer import FixedBufferHandler
+  from .log_buffer import FixedBufferHandler
 
   BUFFER_SIZE = 1500 * 200 # This is the size in characters, not bytes. Targets about 1500 rows.
   buffer_handler = FixedBufferHandler(BUFFER_SIZE)

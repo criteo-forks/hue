@@ -17,13 +17,24 @@
 # under the License.
 #
 """ SASL transports for Thrift. """
+from __future__ import absolute_import
 
-from cStringIO import StringIO
+from future import standard_library
+standard_library.install_aliases()
 from thrift.transport import TTransport
 from thrift.transport.TTransport import *
 from thrift.protocol import TBinaryProtocol
 import sasl
 import struct
+import sys
+
+# TODO: Check whether the following distinction is necessary. Does not appear to
+# break anything when `io.BytesIO` is used everywhere, but there may be some edge
+# cases where things break down.
+if sys.version_info[0] > 2:
+  from io import BytesIO as string_io
+else:
+  from cStringIO import StringIO as string_io
 
 class TSaslClientTransport(TTransportBase, CReadableTransport):
   START = 1
@@ -42,13 +53,16 @@ class TSaslClientTransport(TTransportBase, CReadableTransport):
     self.sasl_client_factory = sasl_client_factory
     self.sasl = None
     self.mechanism = mechanism
-    self.__wbuf = StringIO()
-    self.__rbuf = StringIO()
+    self.__wbuf = string_io()
+    self.__rbuf = string_io()
     self.opened = False
     self.encode = None
 
   def isOpen(self):
     return self._trans.isOpen()
+
+  def is_open(self):
+    return self.isOpen()
 
   def open(self):
     if not self._trans.isOpen():
@@ -123,7 +137,7 @@ class TSaslClientTransport(TTransportBase, CReadableTransport):
       self._flushPlain(buffer)
 
     self._trans.flush()
-    self.__wbuf = StringIO()
+    self.__wbuf = string_io()
 
   def _flushEncoded(self, buffer):
     # sasl.ecnode() does the encoding and adds the length header, so nothing
@@ -147,11 +161,11 @@ class TSaslClientTransport(TTransportBase, CReadableTransport):
 
   def read(self, sz):
     ret = self.__rbuf.read(sz)
-    if len(ret) != 0:
+    if len(ret) == sz:
       return ret
 
     self._read_frame()
-    return self.__rbuf.read(sz)
+    return ret + self.__rbuf.read(sz - len(ret))
 
   def _read_frame(self):
     header = self._trans.readAll(4)
@@ -168,7 +182,7 @@ class TSaslClientTransport(TTransportBase, CReadableTransport):
     else:
       # If the frames are not encoded, just pass it through
       decoded = self._trans.readAll(length)
-    self.__rbuf = StringIO(decoded)
+    self.__rbuf = string_io(decoded)
 
   def close(self):
     self._trans.close()
@@ -187,5 +201,5 @@ class TSaslClientTransport(TTransportBase, CReadableTransport):
     while len(prefix) < reqlen:
       self._read_frame()
       prefix += self.__rbuf.getvalue()
-    self.__rbuf = StringIO(prefix)
+    self.__rbuf = string_io(prefix)
     return self.__rbuf

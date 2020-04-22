@@ -15,17 +15,15 @@
 ## limitations under the License.
 <%!
 from django.utils.translation import ugettext as _
-
-from desktop import conf
-from desktop.conf import USE_NEW_EDITOR
-from desktop.models import hue_version
-from desktop.lib.i18n import smart_unicode
+from webpack_loader.templatetags.webpack_loader import render_bundle
 
 from metadata.conf import has_optimizer, OPTIMIZER
 
+from desktop import conf
 from desktop.auth.backend import is_admin
-
-from webpack_loader.templatetags.webpack_loader import render_bundle
+from desktop.conf import USE_NEW_EDITOR
+from desktop.models import hue_version
+from desktop.lib.i18n import smart_unicode
 
 home_url = url('desktop_views_home')
 if USE_NEW_EDITOR.get():
@@ -42,25 +40,39 @@ if USE_NEW_EDITOR.get():
     class="active"
   %endif
 </%def>
+
 <%def name="get_nice_name(app, section)">
   % if app and section == app.display_name:
     - ${app.nice_name}
   % endif
 </%def>
+
 <%def name="get_title(title)">
   % if title:
     - ${smart_unicode(title)}
   % endif
 </%def>
+
 <html lang="en">
 <head>
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta charset="utf-8">
-  <title>Hue ${get_nice_name(current_app, section)} ${get_title(title)}</title>
+  <title>Hue ${ get_nice_name(current_app, section) } ${ get_title(title) }</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="icon" type="image/x-icon" href="${ static('desktop/art/favicon.ico') }" />
-  <meta name="description" content="">
-  <meta name="author" content="">
+  % if conf.CUSTOM.LOGO_SVG.get():
+  <link rel="icon" type="image/x-icon" href="${ static('desktop/art/custom-branding/favicon.ico') }"/>
+  % else:
+  <link rel="icon" type="image/x-icon" href="${ static('desktop/art/favicon.ico') }"/>
+  % endif
+
+  <meta name="twitter:image" content="${ static('desktop/art/hue-login-logo-ellie.png') }">
+  <meta name="twitter:card" content="summary">
+  <meta property="og:site_name" content="${ _('Hue - SQL Editor') }" />
+  <meta property="og:title" content="${ _('Hue - SQL Editor') }" />
+  <meta property="og:description" content="${ _('Let anybody query, write SQL, explore data and share results.') }">
+  <meta property="og:image" content="${ static('desktop/art/hue-login-logo-ellie.png') }" />
+  <meta name="description" content="${ _('Let anybody query, write SQL, explore data and share results.') }">
+  <meta name="keywords" content="${ _('query, sql, data warehouse, database, sharing, catalog, scheduler, optimize, dashboard') }" />
 
   <link href="${ static('desktop/css/roboto.css') }" rel="stylesheet">
   <link href="${ static('desktop/ext/css/cui/cui.css') }" rel="stylesheet">
@@ -137,7 +149,7 @@ if USE_NEW_EDITOR.get():
     ${ render_bundle('login', config='LOGIN') | n,unicode }
   %else:
     ${ render_bundle('vendors~hue~notebook~tableBrowser') | n,unicode }
-    ${ render_bundle('vendors~hue~tableBrowser') | n,unicode }
+    ${ render_bundle('vendors~hue~notebook') | n,unicode }
     ${ render_bundle('vendors~hue') | n,unicode }
     ${ render_bundle('hue~notebook') | n,unicode }
     ${ render_bundle('hue~notebook~tableBrowser') | n,unicode }
@@ -172,7 +184,6 @@ if USE_NEW_EDITOR.get():
 
 % if user.is_authenticated():
   <script src="${ static('desktop/ext/js/localforage.min.js') }"></script>
-  <script src="${ static('desktop/js/clusterConfig.js') }"></script>
 
   <script type="text/javascript">
     $(document).ready(function () {
@@ -203,7 +214,7 @@ if USE_NEW_EDITOR.get():
 ${ hueIcons.symbols() }
 
 
-% if request.environ.get("PATH_INFO").find("/hue/") < 0:
+% if hasattr(request, 'environ') and request.environ.get("PATH_INFO").find("/hue/") < 0:
   <script>
     window.location.replace("/");
   </script>
@@ -225,6 +236,7 @@ ${ hueIcons.symbols() }
         count += 1
     return found_app, count
 %>
+
 % if not skip_topbar:
 <div class="navigator">
   <div class="pull-right">

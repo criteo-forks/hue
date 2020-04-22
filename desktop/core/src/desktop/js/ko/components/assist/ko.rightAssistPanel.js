@@ -14,7 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import ko from 'knockout';
+import * as ko from 'knockout';
 
 import apiHelper from 'api/apiHelper';
 import componentUtils from 'ko/components/componentUtils';
@@ -146,9 +146,7 @@ class RightAssistPanel {
       // TODO: Get these dynamically from langref and functions modules when moved to webpack
       this.functionsTabAvailable(type === 'hive' || type === 'impala' || type === 'pig');
       this.langRefTabAvailable(type === 'hive' || type === 'impala');
-      this.editorAssistantTabAvailable(
-        (!window.IS_EMBEDDED || window.EMBEDDED_ASSISTANT_ENABLED) && isSqlDialect
-      );
+      this.editorAssistantTabAvailable(isSqlDialect);
       this.dashboardAssistantTabAvailable(type === 'dashboard');
       this.schedulesTabAvailable(false);
       if (type !== 'dashboard') {
@@ -171,12 +169,13 @@ class RightAssistPanel {
     });
     this.disposals.push(snippetTypeSub.remove.bind(snippetTypeSub));
 
-    huePubSub.subscribe('set.current.app.name', appName => {
+    const onAppChange = appName => {
       if (appName === 'dashboard') {
         updateContentsForType(appName, false);
       }
-    });
-    huePubSub.publish('get.current.app.name');
+    };
+    huePubSub.publish('get.current.app.name', onAppChange);
+    huePubSub.subscribe('set.current.app.name', onAppChange);
     updateTabs();
   }
 

@@ -15,7 +15,7 @@
 // limitations under the License.
 
 import $ from 'jquery';
-import ko from 'knockout';
+import * as ko from 'knockout';
 
 import hueUtils from 'utils/hueUtils';
 
@@ -24,7 +24,7 @@ ko.bindingHandlers.tooltip = {
   update: function(element, valueAccessor) {
     const local = ko.utils.unwrapObservable(valueAccessor());
     const options = {
-      container: window.HUE_CONTAINER
+      container: 'body'
     };
 
     $(element).tooltip('destroy');

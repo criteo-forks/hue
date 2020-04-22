@@ -16,7 +16,7 @@
 
 import $ from 'jquery';
 
-const bootstrapRatios = {
+export const bootstrapRatios = {
   span3() {
     const windowWidth = $(window).width();
     if (windowWidth >= 1200) {
@@ -49,7 +49,7 @@ const bootstrapRatios = {
  * @param selectors
  * @return {default}
  */
-const text2Url = selectors => {
+export const text2Url = selectors => {
   let i = 0;
   const len = selectors.length;
 
@@ -83,20 +83,20 @@ const text2Url = selectors => {
  * @param value
  * @return {*|jQuery}
  */
-const htmlEncode = value => {
+export const htmlEncode = value => {
   return $('<div/>')
     .text(value)
     .html();
 };
 
-const html2text = value => {
+export const html2text = value => {
   return $('<div/>')
     .html(value)
     .text()
     .replace(/\u00A0/g, ' ');
 };
 
-const goFullScreen = () => {
+export const goFullScreen = () => {
   if (
     !document.fullscreenElement &&
     !document.mozFullScreenElement &&
@@ -115,7 +115,7 @@ const goFullScreen = () => {
   }
 };
 
-const exitFullScreen = () => {
+export const exitFullScreen = () => {
   if (
     document.fullscreenElement ||
     document.mozFullScreenElement ||
@@ -134,7 +134,7 @@ const exitFullScreen = () => {
   }
 };
 
-const changeURL = (newURL, params) => {
+export const changeURL = (newURL, params) => {
   let extraSearch = '';
   if (params) {
     const newSearchKeys = Object.keys(params);
@@ -147,16 +147,6 @@ const changeURL = (newURL, params) => {
         }
       }
     }
-  }
-
-  if (typeof IS_EMBEDDED !== 'undefined' && IS_EMBEDDED) {
-    let search = window.location.search;
-    if (extraSearch) {
-      search += (search ? '&' : '?') + extraSearch;
-    }
-    newURL = window.location.pathname + search + '#!' + newURL.replace('/hue', '');
-    window.history.pushState(null, null, newURL);
-    return;
   }
 
   const hashSplit = newURL.split('#');
@@ -176,69 +166,43 @@ const changeURL = (newURL, params) => {
   window.history.pushState(null, null, url);
 };
 
-const replaceURL = newURL => {
+export const replaceURL = newURL => {
   window.history.replaceState(null, null, newURL);
 };
 
-const changeURLParameter = (param, value) => {
-  if (typeof IS_EMBEDDED !== 'undefined' && IS_EMBEDDED) {
-    const currentUrl = window.location.hash.replace('#!', '');
-    const parts = currentUrl.split('?');
-    const path = parts[0];
-    let search = parts.length > 1 ? parts[1] : '';
-    if (~search.indexOf(param + '=' + value)) {
-      return;
+export const changeURLParameter = (param, value) => {
+  let newSearch = '';
+  if (window.location.getParameter(param, true) !== null) {
+    newSearch += '?';
+    window.location.search
+      .replace(/\?/gi, '')
+      .split('&')
+      .forEach(p => {
+        if (p.split('=')[0] !== param) {
+          newSearch += p;
+        }
+      });
+    if (value) {
+      newSearch += (newSearch !== '?' ? '&' : '') + param + '=' + value;
     }
-    if (~search.indexOf(param + '=')) {
-      if (!value) {
-        search = search.replace(new RegExp(param + '=[^&]*&?'), '');
-      } else {
-        search = search.replace(new RegExp(param + '=[^&]*'), param + '=' + value);
-      }
-    } else if (value) {
-      if (search) {
-        search += '&';
-      }
-      search += param + '=' + value;
-    } else {
-      return;
-    }
-
-    changeURL(search ? path + '?' + search : path);
   } else {
-    let newSearch = '';
-    if (window.location.getParameter(param, true) !== null) {
-      newSearch += '?';
-      window.location.search
-        .replace(/\?/gi, '')
-        .split('&')
-        .forEach(p => {
-          if (p.split('=')[0] !== param) {
-            newSearch += p;
-          }
-        });
-      if (value) {
-        newSearch += (newSearch !== '?' ? '&' : '') + param + '=' + value;
-      }
-    } else {
-      newSearch =
-        window.location.search +
-        (value ? (window.location.search.indexOf('?') > -1 ? '&' : '?') + param + '=' + value : '');
-    }
-
-    if (newSearch === '?') {
-      newSearch = '';
-    }
-
-    changeURL(window.location.pathname + newSearch);
+    newSearch =
+      window.location.search +
+      (value ? (window.location.search.indexOf('?') > -1 ? '&' : '?') + param + '=' + value : '');
   }
+
+  if (newSearch === '?') {
+    newSearch = '';
+  }
+
+  changeURL(window.location.pathname + newSearch);
 };
 
-const removeURLParameter = param => {
+export const removeURLParameter = param => {
   changeURLParameter(param, null);
 };
 
-const parseHivePseudoJson = pseudoJson => {
+export const parseHivePseudoJson = pseudoJson => {
   // Hive returns a pseudo-json with parameters, like
   // "{Lead Developer=John Foo, Lead Developer Email=jfoo@somewhere.com, date=2013-07-11 }"
   const parsedParams = {};
@@ -253,14 +217,14 @@ const parseHivePseudoJson = pseudoJson => {
   return parsedParams;
 };
 
-const isOverflowing = element => {
+export const isOverflowing = element => {
   if (element instanceof $) {
     element = element[0];
   }
   return element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth;
 };
 
-const waitForRendered = (selector, condition, callback, timeout) => {
+export const waitForRendered = (selector, condition, callback, timeout) => {
   const $el = selector instanceof $ ? selector : $(selector);
   if (condition($el)) {
     callback($el);
@@ -273,7 +237,7 @@ const waitForRendered = (selector, condition, callback, timeout) => {
   }
 };
 
-const waitForObservable = (observable, callback) => {
+export const waitForObservable = (observable, callback) => {
   if (observable()) {
     callback(observable);
   } else {
@@ -286,7 +250,7 @@ const waitForObservable = (observable, callback) => {
   }
 };
 
-const waitForVariable = (variable, callback, timeout) => {
+export const waitForVariable = (variable, callback, timeout) => {
   if (variable) {
     callback(variable);
   } else {
@@ -296,9 +260,9 @@ const waitForVariable = (variable, callback, timeout) => {
   }
 };
 
-const scrollbarWidth = () => {
+export const scrollbarWidth = () => {
   const $parent = $('<div style="width:50px;height:50px;overflow:auto"><div/></div>').appendTo(
-    HUE_CONTAINER
+    'body'
   );
   const $children = $parent.children();
   const width = $children.innerWidth() - $children.height(99).innerWidth();
@@ -306,7 +270,7 @@ const scrollbarWidth = () => {
   return width;
 };
 
-const getSearchParameter = (search, name, returnNull) => {
+export const getSearchParameter = (search, name, returnNull) => {
   name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
   const regex = new RegExp('[\\?&]' + name + '=([^&#]*)'),
     results = regex.exec(search);
@@ -322,7 +286,7 @@ if (!window.location.getParameter) {
   };
 }
 
-const logError = error => {
+export const logError = error => {
   if (typeof window.console !== 'undefined' && typeof window.console.error !== 'undefined') {
     if (typeof error !== 'undefined') {
       console.error(error);
@@ -331,7 +295,7 @@ const logError = error => {
   }
 };
 
-const equalIgnoreCase = (a, b) => a && b && a.toLowerCase() === b.toLowerCase();
+export const equalIgnoreCase = (a, b) => a && b && a.toLowerCase() === b.toLowerCase();
 
 const deXSS = str => {
   if (typeof str !== 'undefined' && str !== null && typeof str === 'string') {
@@ -340,7 +304,7 @@ const deXSS = str => {
   return str;
 };
 
-const getStyleFromCSSClass = cssClass => {
+export const getStyleFromCSSClass = cssClass => {
   for (let i = 0; i < document.styleSheets.length; i++) {
     const cssClasses = document.styleSheets[i].rules || document.styleSheets[i].cssRules;
     for (let x = 0; x < cssClasses.length; x++) {
@@ -351,7 +315,7 @@ const getStyleFromCSSClass = cssClass => {
   }
 };
 
-const highlight = (text, searchTerm) => {
+export const highlight = (text, searchTerm) => {
   if (searchTerm === '' || text === '') {
     return text;
   }
@@ -379,7 +343,7 @@ const highlight = (text, searchTerm) => {
   return highLightedText;
 };
 
-const dfs = (node, callback) => {
+export const dfs = (node, callback) => {
   if (!node || typeof node !== 'object') {
     return;
   }
@@ -389,7 +353,7 @@ const dfs = (node, callback) => {
   });
 };
 
-const deleteAllEmptyStringKey = node => {
+export const deleteAllEmptyStringKey = node => {
   const fDeleteEmptyStringKey = function(node, key) {
     if (node[key] || typeof node[key] !== 'string') {
       return;
@@ -404,15 +368,16 @@ const s4 = () =>
     .toString(16)
     .substring(1);
 
-const UUID = () => s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
+export const UUID = () =>
+  s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
 
-const escapeOutput = str =>
+export const escapeOutput = str =>
   $('<span>')
     .text(str)
     .html()
     .trim();
 
-const getFileBrowseButton = (
+export const getFileBrowseButton = (
   inputElement,
   selectFolder,
   valueAccessor,
@@ -441,7 +406,7 @@ const getFileBrowseButton = (
   _btn.click(e => {
     e.preventDefault();
     if (!isNestedModal) {
-      $(window.HUE_CONTAINER).addClass('modal-open');
+      $('body').addClass('modal-open');
     }
 
     function callFileChooser() {
@@ -532,7 +497,7 @@ const getFileBrowseButton = (
       }
       if (!isNestedModal) {
         $('#chooseFile').on('hidden', () => {
-          $(window.HUE_CONTAINER).removeClass('modal-open');
+          $('body').removeClass('modal-open');
           $('.modal-backdrop').remove();
         });
       }
@@ -598,7 +563,7 @@ const stripHtml = html => {
   return tmp.textContent || tmp.innerText;
 };
 
-const stripHtmlFromFunctions = template => {
+export const stripHtmlFromFunctions = template => {
   // strips HTML from inside the functions
   let _tmpl = template;
   const _mustacheFunctions = _tmpl.match(/{{#(.[\s\S]*?){{\//g);
@@ -613,6 +578,15 @@ const stripHtmlFromFunctions = template => {
     });
   }
   return _tmpl;
+};
+
+export const sleep = async timeout => new Promise(resolve => setTimeout(resolve, timeout));
+
+export const defer = async callback => {
+  await sleep(0);
+  if (callback) {
+    callback();
+  }
 };
 
 export default {

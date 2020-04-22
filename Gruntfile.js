@@ -35,8 +35,6 @@ module.exports = function(grunt) {
           javascriptEnabled: true
         },
         files: {
-          'desktop/core/src/desktop/static/desktop/css/hue-bootstrap-embedded.css': 'desktop/core/src/desktop/static/desktop/less/hue-bootstrap-embedded.less',
-          'desktop/core/src/desktop/static/desktop/css/hue-embedded.css': 'desktop/core/src/desktop/static/desktop/less/hue-embedded.less',
           'desktop/core/src/desktop/static/desktop/css/home.css': 'desktop/core/src/desktop/static/desktop/less/home.less',
           'desktop/core/src/desktop/static/desktop/css/hue.css': 'desktop/core/src/desktop/static/desktop/less/hue.less',
           'desktop/core/src/desktop/static/desktop/css/hue3-extra.css': 'desktop/core/src/desktop/static/desktop/less/hue3-extra.less',
@@ -45,6 +43,7 @@ module.exports = function(grunt) {
           'desktop/core/src/desktop/static/desktop/css/httperrors.css': 'desktop/core/src/desktop/static/desktop/less/httperrors.less',
           'apps/metastore/src/metastore/static/metastore/css/metastore.css': 'apps/metastore/src/metastore/static/metastore/less/metastore.less',
           'desktop/libs/notebook/src/notebook/static/notebook/css/notebook.css': 'desktop/libs/notebook/src/notebook/static/notebook/less/notebook.less',
+          'desktop/libs/notebook/src/notebook/static/notebook/css/notebook2.css': 'desktop/libs/notebook/src/notebook/static/notebook/less/notebook2.less',
           'desktop/libs/notebook/src/notebook/static/notebook/css/notebook-layout.css': 'desktop/libs/notebook/src/notebook/static/notebook/less/notebook-layout.less',
           'apps/oozie/src/oozie/static/oozie/css/workflow-editor.css': 'apps/oozie/src/oozie/static/oozie/less/workflow-editor.less',
           'apps/oozie/src/oozie/static/oozie/css/workflow.css': 'apps/oozie/src/oozie/static/oozie/less/workflow.less',
