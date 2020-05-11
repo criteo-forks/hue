@@ -45,6 +45,7 @@ from desktop.auth import forms as auth_forms
 from desktop.auth.backend import OIDCBackend
 from desktop.auth.forms import ImpersonationAuthenticationForm, OrganizationUserCreationForm, OrganizationAuthenticationForm
 from desktop.conf import OAUTH, ENABLE_ORGANIZATIONS
+from desktop.conf import SESSION
 from desktop.lib.django_util import render, login_notrequired, JsonResponse
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.log.access import access_log, access_warn, last_access_map
@@ -239,16 +240,6 @@ def dt_logout(request, next_page=None):
       LOG.warn("Error closing %s session: %s" % (session_app, e.message.encode('utf-8')))
     except Exception as e:
       LOG.warn("Error closing %s session: %s" % (session_app, e))
-
-  session = {"type":"all","sourceMethod":"dt_logout"}
-  apis = get_api(request, session)
-  for api in apis:
-    interpreter = api.interpreter if api.interpreter else {}
-    try:
-      LOG.debug("Close session: %s, interpreter %s" % (api, interpreter))
-      api.close_session(interpreter)
-    except Exception, e:
-      LOG.warn("Error closing %s session: %s" % (api, e))
 
   backends = get_backends()
   if backends:

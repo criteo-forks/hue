@@ -267,7 +267,7 @@ def get_query_server_config(name='beeswax', connector=None):
           'use_sasl': SPARK_USE_SASL.get()
       })
 
-  if not que  ry_server.get('dialect'):
+  if not query_server.get('dialect'):
     query_server['dialect'] = query_server['server_name']
 
   debug_query_server = query_server.copy()

@@ -341,7 +341,7 @@ def get_interpreter(connector_type, user=None):
 
   if not interpreter:
     if connector_type == 'hbase': # TODO move to connectors
-      interpreters = [{
+      interpreter = [{
         'name': 'hbase',
         'type': 'hbase',
         'interface': 'hbase',
@@ -349,7 +349,7 @@ def get_interpreter(connector_type, user=None):
         'is_sql': False
       }]
     elif connector_type == 'kafka':
-      interpreters = [{
+      interpreter = [{
         'name': 'kafka',
         'type': 'kafka',
         'interface': 'kafka',
@@ -357,7 +357,7 @@ def get_interpreter(connector_type, user=None):
         'is_sql': False
       }]
     elif connector_type == 'solr':
-      interpreters = [{
+      interpreter = [{
         'name': 'solr',
         'type': 'solr',
         'interface': 'solr',
@@ -366,16 +366,10 @@ def get_interpreter(connector_type, user=None):
       }]
     else:
       raise PopupException(_('Snippet type %s is not configured.') % connector_type)
+  elif len(interpreter) > 1:
+    raise PopupException(_('Snippet type %s matching more than one interpreter: %s') % (connector_type, len(interpreter)))
 
-  return interpreters
-
-
-def get_interpreter(connector_type, user=None):
-  interpreters = get_interpreters(connector_type, user)
-  if len(interpreters) > 1:
-    raise PopupException(_('Snippet type %s matching more than one interpreter: %s') % (connector_type, len(interpreters)))
-
-  return interpreters[0]
+  return interpreter[0]
 
 
 def patch_snippet_for_connector(snippet):
@@ -449,24 +443,16 @@ def get_api(request, snippet):
       return JdbcApiAthena(request.user, interpreter=interpreter)
     elif interpreter['options'] and interpreter['options'].get('url', '').find('presto') >= 0:
       from notebook.connectors.jdbc_presto import JdbcApiPresto
-      result.append(JdbcApiPresto(request.user, interpreter=interpreter, request=request))
-    elif interface == 'sqlalchemy':
-      from notebook.connectors.sql_alchemy import SqlAlchemyApi
-      result.append(SqlAlchemyApi(request.user, interpreter=interpreter))
-    elif interface == 'solr':
-      from notebook.connectors.solr import SolrApi
-      result.append(SolrApi(request.user, interpreter=interpreter))
-    elif interface == 'hbase':
-      from notebook.connectors.hbase import HBaseApi
-      result.append(HBaseApi(request.user))
-    elif interface == 'kafka':
-      from notebook.connectors.kafka import KafkaApi
-      result.append(KafkaApi(request.user))
-    elif interface == 'pig':
-      result.append(OozieApi(user=request.user, request=request)) # Backward compatibility until Hue 4
+      return JdbcApiPresto(request.user, interpreter=interpreter)
+    elif interpreter['options'] and interpreter['options'].get('url', '').find('clickhouse') >= 0:
+      from notebook.connectors.jdbc_clickhouse import JdbcApiClickhouse
+      return JdbcApiClickhouse(request.user, interpreter=interpreter)
+    elif interpreter['options'] and interpreter['options'].get('url', '').find('vertica') >= 0:
+      from notebook.connectors.jdbc_vertica import JdbcApiVertica
+      return JdbcApiVertica(request.user, interpreter=interpreter,  request=request)
     else:
       from notebook.connectors.jdbc import JdbcApi
-      return JdbcApi(request.user, interpreter=interpreter)
+      return JdbcApi(request.user, interpreter=interpreter, request=request)
   elif interface == 'teradata':
     from notebook.connectors.jdbc import JdbcApiTeradata
     return JdbcApiTeradata(request.user, interpreter=interpreter)
@@ -475,7 +461,7 @@ def get_api(request, snippet):
     return JdbcApiAthena(request.user, interpreter=interpreter)
   elif interface == 'presto':
     from notebook.connectors.jdbc_presto import JdbcApiPresto
-    return JdbcApiPresto(request.user, interpreter=interpreter)
+    return JdbcApiPresto(request.user, interpreter=interpreter, request=request)
   elif interface == 'sqlalchemy':
     from notebook.connectors.sql_alchemy import SqlAlchemyApi
     return SqlAlchemyApi(request.user, interpreter=interpreter)
@@ -499,7 +485,6 @@ def get_api(request, snippet):
   else:
     raise PopupException(_('Notebook connector interface not recognized: %s') % interface)
 
-  return result[0]
 
 def _get_snippet_session(notebook, snippet):
   session = [session for session in notebook['sessions'] if session['type'] == snippet['type']]
