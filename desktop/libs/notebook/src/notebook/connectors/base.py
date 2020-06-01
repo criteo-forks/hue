@@ -462,9 +462,12 @@ def get_api(request, snippet):
   elif interface == 'presto':
     from notebook.connectors.jdbc_presto import JdbcApiPresto
     return JdbcApiPresto(request.user, interpreter=interpreter, request=request)
+  elif interface == 'presto-sqlalchemy':  # Different interface to not show up in Sources
+    from notebook.connectors.sql_alchemy import SqlAlchemyApi
+    return SqlAlchemyApi(request.user, interpreter=interpreter, request=request)
   elif interface == 'sqlalchemy':
     from notebook.connectors.sql_alchemy import SqlAlchemyApi
-    return SqlAlchemyApi(request.user, interpreter=interpreter)
+    return SqlAlchemyApi(request.user, interpreter=interpreter, request=request)
   elif interface == 'solr':
     from notebook.connectors.solr import SolrApi
     return SolrApi(request.user, interpreter=interpreter)
