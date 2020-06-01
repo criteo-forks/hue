@@ -103,8 +103,8 @@ def query_error_handler(func):
 
 class SqlAlchemyApi(Api):
 
-  def __init__(self, user, interpreter):
-    self.user = user
+  def __init__(self, user, interpreter, request=None):
+    Api.__init__(self, user, interpreter=interpreter, request=request)
     self.options = interpreter['options']
 
     if interpreter.get('dialect_properties'):
@@ -124,6 +124,10 @@ class SqlAlchemyApi(Api):
           if _prop['name'] == 'password':
             vars['PASSWORD'] = _prop['value']
             auth_provided = True
+
+      if 'PASSWORD' not in vars and 'password' in self.request.session:
+        vars['PASSWORD'] = self.request.session['password']
+        auth_provided = True
 
       if not auth_provided:
         raise AuthenticationRequired(message='Missing username and/or password')

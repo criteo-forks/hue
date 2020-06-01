@@ -464,7 +464,7 @@ def get_api(request, snippet):
     return JdbcApiPresto(request.user, interpreter=interpreter, request=request)
   elif interface == 'sqlalchemy':
     from notebook.connectors.sql_alchemy import SqlAlchemyApi
-    return SqlAlchemyApi(request.user, interpreter=interpreter)
+    return SqlAlchemyApi(request.user, interpreter=interpreter, request=request)
   elif interface == 'solr':
     from notebook.connectors.solr import SolrApi
     return SolrApi(request.user, interpreter=interpreter)
