@@ -32,7 +32,7 @@ import sys
 import tablib
 
 from django.http import StreamingHttpResponse, HttpResponse
-from django.utils.encoding import smart_str
+from django.utils.encoding import smart_text
 from django.utils.http import urlquote
 from desktop.lib import i18n
 
@@ -68,7 +68,7 @@ def encode_row(row, encoding=None, make_excel_links=False):
         cell = re.compile('(https?://.+)', re.IGNORECASE).sub(r'=HYPERLINK("\1")', cell)
     cell = nullify(cell)
     if not isinstance(cell, numbers.Number):
-      cell = smart_str(cell, encoding or i18n.get_site_encoding(), strings_only=True, errors='replace')
+      cell = smart_text(cell, encoding or i18n.get_site_encoding(), strings_only=True, errors='replace')
     encoded_row.append(cell)
   return encoded_row
 
