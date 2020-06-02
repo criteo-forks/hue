@@ -51,6 +51,7 @@ import logging
 import uuid
 import re
 import sys
+import threading
 import textwrap
 
 from string import Template
@@ -168,31 +169,53 @@ class SqlAlchemyApi(Api):
     engine = self._create_engine()
     connection = engine.connect()
 
-    result = connection.execute(snippet['statement'])
-
-    cache = {
+    background_thread = threading.Thread(
+      target=self._execute_statement_background,
+      args=(guid, engine, connection, snippet['statement']),
+      name='sqlalchemy-{}'.format(guid),
+    )
+    background_thread.daemon = True
+    CONNECTION_CACHE[guid] = {
+      'engine': engine,
       'connection': connection,
-      'result': result,
-      'meta': [{
-          'name': col[0] if (type(col) is tuple or type(col) is dict) else col.name if hasattr(col, 'name') else col,
-          'type': 'STRING_TYPE',
-          'comment': ''
-        } for col in result.cursor.description] if result.cursor else []
+      'background_thread': background_thread,
     }
-    CONNECTION_CACHE[guid] = cache
+    background_thread.start()
 
     return {
       'sync': False,
-      'has_result_set': result.cursor != None,
-      'modified_row_count': 0,
       'guid': guid,
-      'result': {
-        'has_more': result.cursor != None,
-        'data': [],
-        'meta': cache['meta'],
-        'type': 'table'
-      }
+      'has_result_set': True,
     }
+
+  def _execute_statement_background(self, guid, engine, connection, statement):
+    try:
+      result = connection.execute(statement.rstrip(';'))
+      CONNECTION_CACHE[guid]['result'] = result
+      # Fetch the first rows to make sure the query is finished
+      # E.g. in Presto execute() returns when the query is still running
+      try:
+        first_rows = [result.fetchone()]
+      except:
+        first_rows = []
+      CONNECTION_CACHE[guid] = {
+        'engine': engine,
+        'connection': connection,
+        'result': result,
+        'first': True,
+        'first_rows': first_rows,
+        'meta': [{
+            'name': col[0] if (type(col) is tuple or type(col) is dict) else col.name if hasattr(col, 'name') else col,
+            'type': 'STRING_TYPE',
+            'comment': ''
+          } for col in result.cursor.description] if result.cursor else []
+      }
+    except Exception as e:
+      CONNECTION_CACHE[guid] = {
+        'engine': engine,
+        'connection': connection,
+        'exception': e,
+      }
 
   @query_error_handler
   def check_status(self, notebook, snippet):
@@ -202,7 +225,11 @@ class SqlAlchemyApi(Api):
     response = {'status': 'canceled'}
 
     if connection:
-      if snippet['result']['handle']['has_result_set']:
+      if 'background_thread' in connection:
+        response['status'] = 'running'
+      elif 'exception' in connection:
+        raise connection['exception']
+      elif connection.get('meta'):
         response['status'] = 'available'
       else:
         response['status'] = 'success'
@@ -214,8 +241,15 @@ class SqlAlchemyApi(Api):
     guid = snippet['result']['handle']['guid']
     cache = CONNECTION_CACHE.get(guid)
 
-    if cache:
-      data = cache['result'].fetchmany(rows)
+    if cache and 'result' in cache:
+      if cache['first']:
+        cache['first'] = False
+        first_rows = cache['first_rows']
+        to_fetch = rows - len(first_rows)
+      else:
+        first_rows = []
+        to_fetch = rows
+      data = first_rows + cache['result'].fetchmany(to_fetch)
       meta = cache['meta']
       self._assign_types(data, meta)
     else:
@@ -258,6 +292,16 @@ class SqlAlchemyApi(Api):
       guid = snippet['result']['handle']['guid']
       connection = CONNECTION_CACHE.get(guid)
       if connection:
+        try:  # Can fail if: no result, no cursor, cursor has no cancel, cancel fails
+          connection['result'].cursor.cancel()
+        except:
+          pass
+
+        try:  # Can fail if: connection has no cancel, cancel fails
+          connection['connection'].connection.connection.cancel()
+        except:
+          pass
+
         connection['connection'].close()
         del CONNECTION_CACHE[guid]
       result['status'] = 0
