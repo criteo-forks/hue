@@ -192,6 +192,9 @@ class SqlAlchemyApi(Api):
     try:
       result = connection.execute(statement.rstrip(';'))
       CONNECTION_CACHE[guid]['result'] = result
+      if result.cursor:
+        result.cursor.hue_guid = guid
+
       # Fetch the first rows to make sure the query is finished
       # E.g. in Presto execute() returns when the query is still running
       try:
