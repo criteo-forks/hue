@@ -303,6 +303,7 @@ class SqlAlchemyApi(Api):
           pass
 
         connection['connection'].close()
+        connection['engine'].dispose()
         del CONNECTION_CACHE[guid]
       result['status'] = 0
     finally:
@@ -323,6 +324,7 @@ class SqlAlchemyApi(Api):
       connection = CONNECTION_CACHE.get(guid)
       if connection:
         connection['connection'].close()
+        connection['engine'].dispose()
         del CONNECTION_CACHE[guid]
       result['status'] = 0
     finally:
