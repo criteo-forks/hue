@@ -333,6 +333,22 @@ class SqlAlchemyApi(Api):
     finally:
       return result
 
+  @query_error_handler
+  def explain(self, notebook, snippet):
+    engine = self._create_engine()
+    statement = snippet['statement'].rstrip(';')
+    try:
+      with engine.connect() as connection:
+        result = connection.execute('explain ' + statement)
+        rows = result.fetchall()
+      explanation = '\n'.join(row[0] for row in rows)
+      return {
+        'status': 0,
+        'explanation': explanation,
+        'statement': statement,
+      }
+    finally:
+      engine.dispose()
 
   @query_error_handler
   def autocomplete(self, snippet, database=None, table=None, column=None, nested=None):
