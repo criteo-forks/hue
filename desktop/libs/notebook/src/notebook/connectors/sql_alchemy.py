@@ -111,7 +111,7 @@ class SqlAlchemyApi(Api):
     if interpreter.get('dialect_properties'):
       self.backticks = interpreter['dialect_properties']['sql_identifier_quote']
     else:
-      self.backticks = '"' if re.match('^(postgresql://|awsathena|elasticsearch)', self.options.get('url', '')) else '`'
+      self.backticks = '"' if re.match('^((postgresql|presto|vertica)([+][^:]+)?://|awsathena|elasticsearch|)', self.options.get('url', '')) else '`'
 
   def _create_engine(self):
     if '${' in self.options['url']: # URL parameters substitution
@@ -195,23 +195,28 @@ class SqlAlchemyApi(Api):
       if result.cursor:
         result.cursor.hue_guid = guid
 
-      # Fetch the first rows to make sure the query is finished
+      # Fetch meta before fetching the first row, as empty results can autoclose the cursor
+      meta = [{
+        'name': col[0] if (type(col) is tuple or type(col) is dict) else col.name if hasattr(col, 'name') else col,
+        'type': 'STRING_TYPE',
+        'comment': '',
+      } for col in result.cursor.description] if result.cursor else []
+
+      # Fetch the first row to make sure the query is finished
       # E.g. in Presto execute() returns when the query is still running
-      try:
-        first_rows = [result.fetchone()]
-      except:
+      first_row = result.fetchone()
+      if first_row:
+        first_rows = [first_row]
+      else:
         first_rows = []
+
       CONNECTION_CACHE[guid] = {
         'engine': engine,
         'connection': connection,
         'result': result,
         'first': True,
         'first_rows': first_rows,
-        'meta': [{
-            'name': col[0] if (type(col) is tuple or type(col) is dict) else col.name if hasattr(col, 'name') else col,
-            'type': 'STRING_TYPE',
-            'comment': ''
-          } for col in result.cursor.description] if result.cursor else []
+        'meta': meta,
       }
     except Exception as e:
       CONNECTION_CACHE[guid] = {
@@ -333,6 +338,22 @@ class SqlAlchemyApi(Api):
     finally:
       return result
 
+  @query_error_handler
+  def explain(self, notebook, snippet):
+    engine = self._create_engine()
+    statement = snippet['statement'].rstrip(';')
+    try:
+      with engine.connect() as connection:
+        result = connection.execute('explain ' + statement)
+        rows = result.fetchall()
+      explanation = '\n'.join(row[0] for row in rows)
+      return {
+        'status': 0,
+        'explanation': explanation,
+        'statement': statement,
+      }
+    finally:
+      engine.dispose()
 
   @query_error_handler
   def autocomplete(self, snippet, database=None, table=None, column=None, nested=None):
