@@ -195,23 +195,28 @@ class SqlAlchemyApi(Api):
       if result.cursor:
         result.cursor.hue_guid = guid
 
-      # Fetch the first rows to make sure the query is finished
+      # Fetch meta before fetching the first row, as empty results can autoclose the cursor
+      meta = [{
+        'name': col[0] if (type(col) is tuple or type(col) is dict) else col.name if hasattr(col, 'name') else col,
+        'type': 'STRING_TYPE',
+        'comment': '',
+      } for col in result.cursor.description] if result.cursor else []
+
+      # Fetch the first row to make sure the query is finished
       # E.g. in Presto execute() returns when the query is still running
-      try:
-        first_rows = [result.fetchone()]
-      except:
+      first_row = result.fetchone()
+      if first_row:
+        first_rows = [first_row]
+      else:
         first_rows = []
+
       CONNECTION_CACHE[guid] = {
         'engine': engine,
         'connection': connection,
         'result': result,
         'first': True,
         'first_rows': first_rows,
-        'meta': [{
-            'name': col[0] if (type(col) is tuple or type(col) is dict) else col.name if hasattr(col, 'name') else col,
-            'type': 'STRING_TYPE',
-            'comment': ''
-          } for col in result.cursor.description] if result.cursor else []
+        'meta': meta,
       }
     except Exception as e:
       CONNECTION_CACHE[guid] = {
