@@ -366,38 +366,41 @@ class SqlAlchemyApi(Api):
     assist = Assist(inspector, engine, backticks=self.backticks)
     response = {'status': -1}
 
-    if database is None:
-      response['databases'] = [db or 'NULL' for db in assist.get_databases()]
-    elif table is None:
-      tables_meta = []
-      database = self._fix_phoenix_empty_database(database)
-      for t in assist.get_tables(database):
-        t = self._fix_bigquery_db_prefixes(t)
-        tables_meta.append({'name': t, 'type': 'Table', 'comment': ''})
-      response['tables_meta'] = tables_meta
-    elif column is None:
-      database = self._fix_phoenix_empty_database(database)
-      columns = assist.get_columns(database, table)
+    try:
+      if database is None:
+        response['databases'] = [db or 'NULL' for db in assist.get_databases()]
+      elif table is None:
+        tables_meta = []
+        database = self._fix_phoenix_empty_database(database)
+        for t in assist.get_tables(database):
+          t = self._fix_bigquery_db_prefixes(t)
+          tables_meta.append({'name': t, 'type': 'Table', 'comment': ''})
+        response['tables_meta'] = tables_meta
+      elif column is None:
+        database = self._fix_phoenix_empty_database(database)
+        columns = assist.get_columns(database, table)
 
-      response['columns'] = [col['name'] for col in columns]
-      response['extended_columns'] = [{
-          'autoincrement': col.get('autoincrement'),
-          'comment': col.get('comment'),
-          'default': col.get('default'),
-          'name': col.get('name'),
-          'nullable': col.get('nullable'),
-          'type': str(col.get('type')) if not isinstance(col.get('type'), NullType) else 'Null',
-        }
-        for col in columns
-      ]
-      response.update(assist.get_keys(database, table))
-    else:
-      columns = assist.get_columns(database, table)
-      response['name'] = next((col['name'] for col in columns if column == col['name']), '')
-      response['type'] = next((str(col['type']) for col in columns if column == col['name']), '')
+        response['columns'] = [col['name'] for col in columns]
+        response['extended_columns'] = [{
+            'autoincrement': col.get('autoincrement'),
+            'comment': col.get('comment'),
+            'default': col.get('default'),
+            'name': col.get('name'),
+            'nullable': col.get('nullable'),
+            'type': str(col.get('type')) if not isinstance(col.get('type'), NullType) else 'Null',
+          }
+          for col in columns
+        ]
+        response.update(assist.get_keys(database, table))
+      else:
+        columns = assist.get_columns(database, table)
+        response['name'] = next((col['name'] for col in columns if column == col['name']), '')
+        response['type'] = next((str(col['type']) for col in columns if column == col['name']), '')
 
-    response['status'] = 0
-    return response
+      response['status'] = 0
+      return response
+    finally:
+      engine.dispose()
 
 
   @query_error_handler
@@ -408,28 +411,31 @@ class SqlAlchemyApi(Api):
     assist = Assist(inspector, engine, backticks=self.backticks)
     response = {'status': -1, 'result': {}}
 
-    metadata, sample_data = assist.get_sample_data(database, table, column=column, operation=operation)
+    try:
+      metadata, sample_data = assist.get_sample_data(database, table, column=column, operation=operation)
 
-    response['status'] = 0
-    response['rows'] = escape_rows(sample_data)
+      response['status'] = 0
+      response['rows'] = escape_rows(sample_data)
 
-    if table and operation != 'hello':
-      columns = assist.get_columns(database, table)
-      response['full_headers'] = [{
-          'name': col.get('name'),
-          'type': str(col.get('type')) if not isinstance(col.get('type'), NullType) else 'Null',
+      if table and operation != 'hello':
+        columns = assist.get_columns(database, table)
+        response['full_headers'] = [{
+            'name': col.get('name'),
+            'type': str(col.get('type')) if not isinstance(col.get('type'), NullType) else 'Null',
+            'comment': ''
+          } for col in columns
+        ]
+      elif metadata:
+        response['full_headers'] = [{
+          'name': col[0] if type(col) is dict or type(col) is tuple else col.name if hasattr(col, 'name') else col,
+          'type': 'STRING_TYPE',
           'comment': ''
-        } for col in columns
+        } for col in metadata
       ]
-    elif metadata:
-      response['full_headers'] = [{
-        'name': col[0] if type(col) is dict or type(col) is tuple else col.name if hasattr(col, 'name') else col,
-        'type': 'STRING_TYPE',
-        'comment': ''
-      } for col in metadata
-    ]
 
-    return response
+      return response
+    finally:
+      engine.dispose()
 
   @query_error_handler
   def get_browse_query(self, snippet, database, table, partition_spec=None):
