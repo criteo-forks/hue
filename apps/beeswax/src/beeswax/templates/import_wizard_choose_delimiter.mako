@@ -186,11 +186,11 @@ ${ layout.metastore_menubar() }
 
 
       huePubSub.subscribe("assist.table.selected", function (tableDef) {
-        location.href = '/metastore/table/' + tableDef.database + '/' + tableDef.name + '?source=' + tableDef.sourceType + '&namespace=' + tableDef.namespace.id;
+        location.href = '/metastore/table/' + tableDef.database + '/' + tableDef.name + '?source_type=' + tableDef.sourceType + '&namespace=' + tableDef.namespace.id;
       });
 
       huePubSub.subscribe("assist.database.selected", function (databaseDef) {
-        location.href = '/metastore/tables/' + databaseDef.name + '?source=' + databaseDef.sourceType + '&namespace=' + databaseDef.namespace.id;
+        location.href = '/metastore/tables/' + databaseDef.name + '?source_type=' + databaseDef.sourceType + '&namespace=' + databaseDef.namespace.id;
       });
     }
 

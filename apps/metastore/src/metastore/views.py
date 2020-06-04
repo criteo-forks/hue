@@ -40,7 +40,7 @@ from beeswax.server import dbms
 from beeswax.server.dbms import get_query_server_config
 from desktop.lib.view_util import location_to_url
 from metadata.conf import has_optimizer, has_catalog, get_optimizer_url, get_catalog_url
-from notebook.connectors.base import Notebook, QueryError
+from notebook.connectors.base import get_api, Notebook, QueryError
 from notebook.models import make_notebook
 
 from metastore.conf import FORCE_HS2_METADATA
@@ -305,9 +305,16 @@ def describe_table(request, database, table):
 
   try:
     table = db.get_table(database, table)
+    source_type = _get_servername(db)
   except Exception as e:
-    LOG.exception("Describe table error")
-    raise PopupException(_("DB Error"), detail=e.message if hasattr(e, 'message') and e.message else e)
+    try:
+      snippet = {'type': source_type}
+      api = get_api(request, snippet)
+      api_response = api.describe_table({}, snippet, database, table)
+      table = NotebookApiTable(table, api_response)
+    except:
+      LOG.exception("Describe table error")
+      raise PopupException(_("DB Error"), detail=e.message if hasattr(e, 'message') and e.message else e)
 
   if request.POST.get("format", "html") == "json":
     return JsonResponse({
@@ -353,7 +360,7 @@ def describe_table(request, database, table):
       'optimizer_url': get_optimizer_url(),
       'navigator_url': get_catalog_url(),
       'is_embeddable': request.GET.get('is_embeddable', False),
-      'source_type': _get_servername(db),
+      'source_type': source_type,
     })
 
 
@@ -734,3 +741,21 @@ def _get_db(user, source_type=None, cluster=None):
 
 def _get_servername(db):
   return 'hive' if db.server_name == 'beeswax' else db.server_name
+
+
+class NotebookApiTable(object):
+  def __init__(self, name, api_response):
+    self.name = name
+    self.is_view = api_response.get('is_view', False)
+    self.partition_keys = api_response.get('partition_keys', [])
+    self.cols = api_response.get('cols', [])
+    self.path_location = api_response.get('path_location', None)
+    self.primary_keys = api_response.get('primary_keys', [])
+    self.foreign_keys = api_response.get('foreign_keys', [])
+    self.hdfs_link = api_response.get('hdfs_link', '')
+    self.comment = api_response.get('comment', '')
+    self.properties = api_response.get('properties', [])
+    self.stats = api_response.get('stats', [])
+    self.storage_details = api_response.get('storage_details', [])
+    self.has_complex = api_response.get('has_complex', False)
+    self.details = api_response.get('details', {})
