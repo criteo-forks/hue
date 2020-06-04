@@ -83,6 +83,11 @@ _hack_presto_cursor()
 
 
 class SqlAlchemyApiPresto(SqlAlchemyApi):
+  def _extract_statement(self, snippet):
+    # PyHive will try to '%' format the query even if there are no parameters
+    # so we need to escape percent signs by doubling them
+    return snippet['statement'].rstrip(';').replace('%', '%%')
+
   def close_statement(self, notebook, snippet):
     guid = snippet['result']['handle']['guid']
     if guid in LOG_JSON_CACHE:

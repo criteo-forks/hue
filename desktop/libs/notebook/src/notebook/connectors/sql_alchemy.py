@@ -171,7 +171,7 @@ class SqlAlchemyApi(Api):
 
     background_thread = threading.Thread(
       target=self._execute_statement_background,
-      args=(guid, engine, connection, snippet['statement']),
+      args=(guid, engine, connection, self._extract_statement(snippet)),
       name='sqlalchemy-{}'.format(guid),
     )
     background_thread.daemon = True
@@ -190,7 +190,7 @@ class SqlAlchemyApi(Api):
 
   def _execute_statement_background(self, guid, engine, connection, statement):
     try:
-      result = connection.execute(statement.rstrip(';'))
+      result = connection.execute(statement)
       CONNECTION_CACHE[guid]['result'] = result
       if result.cursor:
         result.cursor.hue_guid = guid
@@ -224,6 +224,9 @@ class SqlAlchemyApi(Api):
         'connection': connection,
         'exception': e,
       }
+
+  def _extract_statement(self, snippet):
+    return snippet['statement']
 
   @query_error_handler
   def check_status(self, notebook, snippet):
@@ -341,7 +344,7 @@ class SqlAlchemyApi(Api):
   @query_error_handler
   def explain(self, notebook, snippet):
     engine = self._create_engine()
-    statement = snippet['statement'].rstrip(';')
+    statement = self._extract_statement(snippet)
     try:
       with engine.connect() as connection:
         result = connection.execute('explain ' + statement)
