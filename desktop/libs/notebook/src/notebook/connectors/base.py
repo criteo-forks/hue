@@ -530,6 +530,11 @@ class Api(object):
     from beeswax import data_export #TODO: Move to notebook?
     from beeswax import conf
 
+    # The user wants to download data being displayed, not the one from the statement being selected
+    previous_statement = snippet.get('result', {}).get('handle', {}).get('statement')
+    if previous_statement:
+      snippet['statement'] = previous_statement
+
     result_wrapper = ExecutionWrapper(self, notebook, snippet)
 
     max_rows = conf.DOWNLOAD_ROW_LIMIT.get()
