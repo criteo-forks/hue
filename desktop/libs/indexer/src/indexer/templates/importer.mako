@@ -2273,6 +2273,11 @@ ${ commonheader(_("Importer"), "indexer", user, request, "60px") | n,unicode }
           self.outputFormat(newValue || 'table');
         },0);
         if (newValue === 'database') {
+          // Criteo default value: Hive db location is under the user space
+          if (vm.sourceType == 'hive') {
+            self.useDefaultLocation(false);
+            self.nonDefaultLocation('/user/${ user.username }/hive');
+          }
           vm.currentStep(2);
         } else {
           vm.currentStep(1);
@@ -2307,7 +2312,12 @@ ${ commonheader(_("Importer"), "indexer", user, request, "60px") | n,unicode }
             name = wizard.prefill.target_path();
           }
         } else if (wizard.source.inputFormat() === 'manual') {
-          name = wizard.prefill.target_path().length > 0 ? wizard.prefill.target_path() + '.' : '';
+          // Criteo default value: Hive db name is f_lastname
+          if (wizard.prefill.target_type() == 'database') {
+            name = '${ user.username }'.replace('.', '_');
+          } else {
+            name = wizard.prefill.target_path().length > 0 ? wizard.prefill.target_path() + '.' : '';
+          }
         }
 
         return name.replace(/ /g, '_').toLowerCase();
