@@ -3,12 +3,26 @@ from sqlalchemy import types as sqltypes
 from sqlalchemy.dialects.postgresql.base import PGDialect
 from sqlalchemy.dialects.postgresql import INTERVAL
 from sqlalchemy.engine import reflection
+from sqlalchemy.schema import CreateColumn
+from sqlalchemy.ext.compiler import compiles
+
+
+# From Postgresql 10 IDENTITY columns section in sqlalchemy/dialects/postgresql/base.py
+@compiles(CreateColumn, 'vertica')
+def use_identity(element, compiler, **kw):
+    text = compiler.visit_create_column(element, **kw)
+    text = text.replace("SERIAL", "IDENTITY(1,1)")
+    return text
+
 
 class VerticaDialect(PGDialect):
     """ Vertica Dialect using a vertica-python connection and PGDialect """
 
     name = 'vertica'
     driver = 'vertica_python'
+
+    # UPDATE functionality works with the following option set to False
+    supports_sane_rowcount = False
 
     supports_unicode_statements = True
     supports_unicode_binds = True
@@ -64,6 +78,13 @@ class VerticaDialect(PGDialect):
     def initialize(self, connection):
         super(PGDialect, self).initialize(connection)
         self.implicit_returning = False
+
+    def is_disconnect(self, e, connection, cursor):
+        return (
+            isinstance(e, self.dbapi.Error) and
+            connection is not None and
+            connection.closed()
+        )
 
     @classmethod
     def dbapi(cls):
@@ -197,7 +218,8 @@ class VerticaDialect(PGDialect):
           data_type,
           column_default,
           is_nullable,
-          is_identity
+          is_identity,
+          ordinal_position
         FROM v_catalog.columns
         where table_name = '{table_name}'
         {schema_conditional}
@@ -207,10 +229,12 @@ class VerticaDialect(PGDialect):
           data_type,
           '' as column_default,
           true as is_nullable,
-          false as is_identity
+          false as is_identity,
+          ordinal_position
         FROM v_catalog.view_columns
         where table_name = '{table_name}'
         {schema_conditional}
+        ORDER BY ordinal_position ASC
         """.format(table_name=table_name, schema_conditional=schema_conditional)
         colobjs = []
         column_select_results = list(connection.execute(column_select))
@@ -246,7 +270,7 @@ class VerticaDialect(PGDialect):
         return colobjs
 
     def _get_column_info(self, name, data_type, is_nullable, default, is_identity, is_primary_key, sequence):
-        m = re.match(r'(\w+)(?:\((\d+)(?:,(\d+))?\))?', data_type)
+        m = re.match(r'(\w[ \w]*\w)(?:\((\d+)(?:,(\d+))?\))?', data_type)
         if not m:
             raise ValueError("data type string not parseable for type name and optional parameters: %s" % data_type)
         typename = m.group(1).upper()
@@ -283,13 +307,11 @@ class VerticaDialect(PGDialect):
     @reflection.cache
     def get_unique_constraints(self, connection, table_name, schema=None, **kw):
 
-        query = None
+        query = "SELECT constraint_id, constraint_name, column_name FROM v_catalog.constraint_columns \n\
+                 WHERE table_name = '" + table_name + "'"
         if schema is not None:
-            query = "select constraint_id, constraint_name, column_name from v_catalog.constraint_columns \n\
-            WHERE table_name = '" + table_name + "' AND table_schema = '" + schema + "'"
-        else:
-            query = "select constraint_id, constraint_name, column_name from v_catalog.constraint_columns \n\
-            WHERE table_name = '" + table_name + "'"
+             query += " AND table_schema = '" + schema + "'"
+        query += " AND constraint_type = 'u'"
 
         rs = connection.execute(query)
 
@@ -341,8 +363,21 @@ class VerticaDialect(PGDialect):
     # constraints are enforced on selects, but returning nothing for these
     # methods allows table introspection to work
 
-    def get_pk_constraint(self, bind, table_name, schema, **kw):
-        return {'constrained_columns': [], 'name': 'undefined'}
+    @reflection.cache
+    def get_pk_constraint(self, connection, table_name, schema=None, **kw):
+        query = "SELECT constraint_id, constraint_name, column_name FROM v_catalog.constraint_columns \n\
+                 WHERE constraint_type = 'p' AND table_name = '" + table_name + "'"
+
+        if schema is not None:
+            query += " AND table_schema = '" + schema + "' \n"
+
+        cols = set()
+        name = None
+        for row in connection.execute(query):
+             name = row[1] if name is None else name
+             cols.add(row[2])
+
+        return {"constrained_columns": list(cols), "name": name}
 
 
     def get_foreign_keys(self, connection, table_name, schema, **kw):
