@@ -79,6 +79,9 @@ else:
 CONNECTION_CACHE = {}
 LOG = logging.getLogger(__name__)
 
+# How many rows to keep in memory to be able to start a query over without relaunching it (chosen arbitrarily)
+FIRST_ROWS_LIMIT = 2000
+
 
 def query_error_handler(func):
   def decorator(*args, **kwargs):
@@ -214,8 +217,9 @@ class SqlAlchemyApi(Api):
         'engine': engine,
         'connection': connection,
         'result': result,
-        'first': True,
         'first_rows': first_rows,
+        'current_row': 0,
+        'can_start_over': True,
         'meta': meta,
       }
     except Exception as e:
@@ -248,21 +252,52 @@ class SqlAlchemyApi(Api):
     return response
 
   @query_error_handler
+  def can_start_over(self, notebook, snippet):
+    guid = snippet['result']['handle']['guid']
+    return CONNECTION_CACHE.get(guid, {}).get('can_start_over', False)
+
+  @query_error_handler
   def fetch_result(self, notebook, snippet, rows, start_over):
     guid = snippet['result']['handle']['guid']
     cache = CONNECTION_CACHE.get(guid)
 
     if cache and 'result' in cache:
-      if cache['first']:
-        cache['first'] = False
-        first_rows = cache['first_rows']
-        to_fetch = rows - len(first_rows)
+      if start_over and cache['can_start_over']:
+        # start_over with current_row > 0 only happens when exporting results
+        if cache['current_row'] != 0:
+          # Break the connection <-> handle with the UI
+          # connection and engine will be moved to another guid, and should close themselves at the end
+          cache['current_row'] = 0
+          CONNECTION_CACHE[guid] = {
+            'broke_ui_fetching': True,
+          }
+          guid = uuid.uuid4().hex
+          snippet['result']['handle']['guid'] = guid
+          CONNECTION_CACHE[guid] = cache
+
+      current_row = cache.get('current_row')
+      first_rows = cache.get('first_rows')
+      if current_row is not None and current_row < len(first_rows):
+        data = first_rows[current_row : current_row + rows]
       else:
-        first_rows = []
-        to_fetch = rows
-      data = first_rows + cache['result'].fetchmany(to_fetch)
+        data = []
+
+      if len(data) < rows:
+        fetched_data = cache['result'].fetchmany(rows - len(data))
+        data.extend(fetched_data)
+        if first_rows is not None:
+          if len(first_rows) + len(fetched_data) > FIRST_ROWS_LIMIT:
+            cache['can_start_over'] = False
+            del cache['first_rows']
+            del cache['current_row']
+          else:
+            cache['first_rows'].extend(fetched_data)
+            cache['current_row'] += len(data)
+
       meta = cache['meta']
       self._assign_types(data, meta)
+    elif cache and 'broke_ui_fetching' in cache:
+      raise QueryError('Cannot fetch results any more after query results have been exported')
     else:
       data = []
       meta = []
@@ -295,7 +330,6 @@ class SqlAlchemyApi(Api):
   def fetch_result_metadata(self):
     pass
 
-
   @query_error_handler
   def cancel(self, notebook, snippet):
     result = {'status': -1}
@@ -313,9 +347,7 @@ class SqlAlchemyApi(Api):
         except:
           pass
 
-        connection['connection'].close()
-        connection['engine'].dispose()
-        del CONNECTION_CACHE[guid]
+        _close_connection(guid)
       result['status'] = 0
     finally:
       return result
@@ -325,21 +357,27 @@ class SqlAlchemyApi(Api):
   def get_log(self, notebook, snippet, startFrom=None, size=None):
     return ''
 
-
   @query_error_handler
   def close_statement(self, notebook, snippet):
     result = {'status': -1}
 
     try:
       guid = snippet['result']['handle']['guid']
-      connection = CONNECTION_CACHE.get(guid)
-      if connection:
-        connection['connection'].close()
-        connection['engine'].dispose()
-        del CONNECTION_CACHE[guid]
+      _close_connection(guid)
       result['status'] = 0
     finally:
       return result
+
+  def _close_connection(guid):
+    cache = CONNECTION_CACHE.get(guid)
+    if cache:
+      connection = cache.get('connection')
+      engine = cache.get('engine')
+      del CONNECTION_CACHE[guid]
+      if connection:
+        connection.close()
+      if engine:
+        engine.dispose()
 
   @query_error_handler
   def explain(self, notebook, snippet):
