@@ -79,8 +79,9 @@ else:
 CONNECTION_CACHE = {}
 LOG = logging.getLogger(__name__)
 
-# How many rows to keep in memory to be able to start a query over without relaunching it (chosen arbitrarily)
-FIRST_ROWS_LIMIT = 2000
+# How many rows to keep in memory to be able to start a query over without relaunching it
+# (Default chosen quite arbitrarily)
+DEFAULT_CACHE_ROW_LIMIT = 2000
 
 
 def query_error_handler(func):
@@ -110,6 +111,7 @@ class SqlAlchemyApi(Api):
   def __init__(self, user, interpreter, request=None):
     Api.__init__(self, user, interpreter=interpreter, request=request)
     self.options = interpreter['options']
+    self.cache_row_limit = self.options.get('cache_row_limit', DEFAULT_CACHE_ROW_LIMIT)
 
     if interpreter.get('dialect_properties'):
       self.backticks = interpreter['dialect_properties']['sql_identifier_quote']
@@ -152,6 +154,7 @@ class SqlAlchemyApi(Api):
     options.pop('url', None)
     options.pop('has_ssh', None)
     options.pop('ssh_server_host', None)
+    options.pop('cache_row_limit', None)
 
     return create_engine(url, **options)
 
@@ -286,7 +289,7 @@ class SqlAlchemyApi(Api):
         fetched_data = cache['result'].fetchmany(rows - len(data))
         data.extend(fetched_data)
         if first_rows is not None:
-          if len(first_rows) + len(fetched_data) > FIRST_ROWS_LIMIT:
+          if len(first_rows) + len(fetched_data) > self.cache_row_limit:
             cache['can_start_over'] = False
             del cache['first_rows']
             del cache['current_row']
