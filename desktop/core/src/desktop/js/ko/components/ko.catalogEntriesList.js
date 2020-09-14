@@ -21,8 +21,11 @@ import componentUtils from './componentUtils';
 import huePubSub from 'utils/huePubSub';
 import I18n from 'utils/i18n';
 
+import { ASSIST_KEY_COMPONENT } from './assist/ko.assistKey';
+
 export const NAME = 'catalog-entries-list';
 
+// prettier-ignore
 const TEMPLATE = `
   <script type="text/html" id="entries-table-td-description">
     <td data-bind="attr: { 'title': comment }">
@@ -134,7 +137,7 @@ const TEMPLATE = `
       <thead>
       <tr>
         <!-- ko template: 'entries-table-shared-headers' --><!-- /ko -->
-        <th data-bind="text: catalogEntry().getSourceType() !== 'solr' ? '${I18n(
+        <th data-bind="text: catalogEntry().getDialect() !== 'solr' ? '${I18n(
           'Table'
         )}' : '${I18n('Collection')}'"></th>
         <th>${I18n(
@@ -162,7 +165,7 @@ const TEMPLATE = `
       <thead>
       <tr>
         <!-- ko template: 'entries-table-shared-headers' --><!-- /ko -->
-        <th><span data-bind="text: catalogEntry().getSourceType() !== 'solr' ? '${I18n(
+        <th><span data-bind="text: catalogEntry().getDialect() !== 'solr' ? '${I18n(
           'Column'
         )}' : '${I18n(
   'Field'
@@ -186,7 +189,7 @@ const TEMPLATE = `
           <a href="javascript: void(0);" data-bind="click: onClick">
             <span data-bind="text: catalogEntry().name"></span>
             <!-- ko if: isKey -->
-            &nbsp;<i class="fa fa-key" data-bind="tooltip: { title: keyText, html: true }"></i>
+              <!-- ko component: { name: '${ ASSIST_KEY_COMPONENT }', params: { entry: catalogEntry } } --><!-- /ko -->
             <!-- /ko -->
             <!-- ko if: popularity && popularity() >= 5 -->
             &nbsp;<i data-bind="tooltip: { title: '${I18n(

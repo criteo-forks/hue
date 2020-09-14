@@ -30,9 +30,9 @@ import {
   SHOW_NORMAL_RESULT_EVENT
 } from 'apps/notebook2/events';
 import { trackResult } from 'apps/notebook2/components/executableStateHandler';
-import { EXECUTION_STATUS } from '../../execution/executable';
+import { EXECUTION_STATUS } from 'apps/notebook2/execution/executable';
 
-export const NAME = 'simple-result-grid';
+export const SIMPLE_RESULT_GRID_COMPONENT = 'simple-result-grid';
 
 // prettier-ignore
 const TEMPLATE = `
@@ -369,7 +369,7 @@ class SimpleResultGrid extends DisposableComponent {
 }
 
 componentUtils.registerComponent(
-  NAME,
+  SIMPLE_RESULT_GRID_COMPONENT,
   {
     createViewModel: (params, componentInfo) => new SimpleResultGrid(params, componentInfo.element)
   },

@@ -140,7 +140,10 @@ huePubSub.subscribe('app.dom.loaded', app => {
 
   if (location.getParameter('refresh') === 'true') {
     // TODO: Use connectors in the table browser
-    const connector = {};
+    const connector = {
+      id: viewModel.source().type,
+      dialect: viewModel.source().type
+    };
     if (viewModel.source().type === 'hive' || viewModel.source().type === 'impala') {
       connector.optimizer = 'api';
     }
@@ -148,14 +151,12 @@ huePubSub.subscribe('app.dom.loaded', app => {
       .getEntry({
         namespace: viewModel.source().namespace().namespace,
         compute: viewModel.source().namespace().compute,
-        sourceType: viewModel.source().type,
         connector: connector,
         path: [],
         definition: { type: 'source' }
       })
       .done(entry => {
         entry.clearCache({
-          invalidate: viewModel.source().type === 'impala' ? 'invalidate' : 'cache',
           silenceErrors: true
         });
         hueUtils.replaceURL('?');

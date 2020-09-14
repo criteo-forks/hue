@@ -57,22 +57,26 @@ LOG = logging.getLogger(__name__)
 def escape_rows(rows, nulls_only=False, encoding=None):
   data = []
 
-  for row in rows:
-    escaped_row = []
-    for field in row:
-      if isinstance(field, numbers.Number):
-        if math.isnan(field) or math.isinf(field):
-          escaped_field = json.dumps(field)
+  try:
+    for row in rows:
+      escaped_row = []
+
+      for field in row:
+        if isinstance(field, numbers.Number):
+          if math.isnan(field) or math.isinf(field):
+            escaped_field = json.dumps(field)
+          else:
+            escaped_field = field
+        elif field is None:
+          escaped_field = 'NULL'
         else:
-          escaped_field = field
-      elif field is None:
-        escaped_field = 'NULL'
-      else:
-        escaped_field = smart_unicode(field, errors='replace', encoding=encoding) # Prevent error when getting back non utf8 like charset=iso-8859-1
-        if not nulls_only:
-          escaped_field = escape(escaped_field).replace(' ', '&nbsp;')
-      escaped_row.append(escaped_field)
-    data.append(escaped_row)
+          escaped_field = smart_unicode(field, errors='replace', encoding=encoding) # Prevent error when getting back non utf8 like charset=iso-8859-1
+          if not nulls_only:
+            escaped_field = escape(escaped_field).replace(' ', '&nbsp;')
+        escaped_row.append(escaped_field)
+      data.append(escaped_row)
+  except RuntimeError:
+    pass  # pep-0479: expected Py3.8 generator raised StopIteration
 
   return data
 
@@ -492,20 +496,20 @@ def _get_editor_type(editor_id):
   return document.type.rsplit('-', 1)[-1]
 
 
-class ApiWrapper(object):
+class ApiWrapper():
   def __init__(self, request, snippet):
     self.request = request
     self.api = _get_api(request, snippet)
 
   def __getattr__(self, name):
-    from notebook import tasks as ntasks
-    if TASK_SERVER.ENABLED.get() and hasattr(ntasks, name):
-      attr = object.__getattribute__(ntasks, name)
-      def _method(*args, **kwargs):
-        return attr(*args, **dict(kwargs, postdict=self.request.POST, user_id=self.request.user.id))
-      return _method
-    else:
-      return object.__getattribute__(self.api, name)
+    if TASK_SERVER.ENABLED.get():
+      from notebook import tasks as ntasks
+      if hasattr(ntasks, name):
+        attr = getattr(ntasks, name)
+        def _method(*args, **kwargs):
+          return attr(*args, **dict(kwargs, postdict=self.request.POST, user_id=self.request.user.id))
+        return _method
+    return getattr(self.api, name)
 
 
 def get_api(request, snippet):
@@ -623,3 +627,9 @@ class Analytics(object):
     # Could count number of "forks" (but would need to start tracking parent of Saved As query cf. saveAsNotebook)
 
     return stats
+
+
+class MockRequest():
+  def __init__(self, user, ):
+    self.user = user
+    self.POST = {}

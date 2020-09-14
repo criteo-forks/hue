@@ -16,6 +16,7 @@
 # limitations under the License.
 
 import logging
+import sys
 
 from django.forms.formsets import formset_factory
 from django.urls import reverse
@@ -48,10 +49,11 @@ def new_schedule(request):
 def get_schedule(request):
   return edit_coordinator(request)
 
+
 # To move to lib in case oozie is blacklisted
 #@check_document_access_permission()
 def submit_schedule(request, doc_id):
-  interface = request.GET.get('interface', request.POST.get('interface', 'beat'))
+  interface = request.GET.get('interface', request.POST.get('interface', 'hive'))
 
   if doc_id.isdigit():
     coordinator = Coordinator(document=Document2.objects.get(id=doc_id))
@@ -73,7 +75,12 @@ def submit_schedule(request, doc_id):
         message = force_unicode(str(e))
         return JsonResponse({'status': -1, 'message': message}, safe=False)
       if jsonify:
-        schedule_type = 'celery-beat' if interface == 'beat' else 'schedule'
+        if interface == 'hive':
+          schedule_type = 'schedule-hive'  # Current Job Browser "types"
+        elif interface == 'beat':
+          schedule_type = 'celery-beat'
+        else:
+          schedule_type = 'schedule'
         return JsonResponse({'status': 0, 'job_id': job_id, 'type': schedule_type}, safe=False)
       else:
         request.info(_('Schedule submitted.'))
@@ -98,4 +105,4 @@ def submit_schedule(request, doc_id):
       force_template=True
   ).content
 
-  return JsonResponse(popup, safe=False)
+  return JsonResponse(popup.decode("utf-8") if sys.version_info[0] > 2 else popup, safe=False)

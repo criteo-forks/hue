@@ -13,6 +13,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+import $ from 'jquery';
 
 import apiHelper from 'api/apiHelper';
 import ExecutionResult from 'apps/notebook2/execution/executionResult';
@@ -35,12 +36,14 @@ export const EXECUTION_STATUS = {
   starting: 'starting',
   waiting: 'waiting',
   ready: 'ready',
+  streaming: 'streaming',
   canceled: 'canceled',
   canceling: 'canceling',
   closed: 'closed'
 };
 
 export const EXECUTABLE_UPDATED_EVENT = 'hue.executable.updated';
+export const EXECUTABLE_STATUS_TRANSITION_EVENT = 'hue.executable.status.transitioned';
 
 const ERROR_REGEX = /line ([0-9]+)(\:([0-9]+))?/i;
 
@@ -79,7 +82,15 @@ export default class Executable {
   }
 
   setStatus(status) {
+    const oldStatus = this.status;
     this.status = status;
+    if (oldStatus !== status) {
+      huePubSub.publish(EXECUTABLE_STATUS_TRANSITION_EVENT, {
+        executable: this,
+        oldStatus: oldStatus,
+        newStatus: status
+      });
+    }
     this.notify();
   }
 
@@ -92,11 +103,15 @@ export default class Executable {
     return (this.executeEnded || Date.now()) - this.executeStarted;
   }
 
-  notify() {
+  notify(sync) {
     window.clearTimeout(this.notifyThrottle);
-    this.notifyThrottle = window.setTimeout(() => {
+    if (sync) {
       huePubSub.publish(EXECUTABLE_UPDATED_EVENT, this);
-    }, 1);
+    } else {
+      this.notifyThrottle = window.setTimeout(() => {
+        huePubSub.publish(EXECUTABLE_UPDATED_EVENT, this);
+      }, 1);
+    }
   }
 
   isReady() {
@@ -108,7 +123,7 @@ export default class Executable {
   }
 
   isRunning() {
-    return this.status === EXECUTION_STATUS.running;
+    return this.status === EXECUTION_STATUS.running || this.status === EXECUTION_STATUS.streaming;
   }
 
   isSuccess() {
@@ -165,6 +180,7 @@ export default class Executable {
 
     this.setStatus(EXECUTION_STATUS.running);
     this.setProgress(0);
+    this.notify(true);
 
     try {
       hueAnalytics.log(
@@ -245,15 +261,15 @@ export default class Executable {
 
     this.cancellables.push(
       apiHelper.checkExecutionStatus({ executable: this }).done(async queryStatus => {
-        switch (queryStatus) {
+        switch (queryStatus.status) {
           case EXECUTION_STATUS.success:
             this.executeEnded = Date.now();
-            this.setStatus(queryStatus);
+            this.setStatus(queryStatus.status);
             this.setProgress(99); // TODO: why 99 here (from old code)?
             break;
           case EXECUTION_STATUS.available:
             this.executeEnded = Date.now();
-            this.setStatus(queryStatus);
+            this.setStatus(queryStatus.status);
             this.setProgress(100);
             if (!this.result && this.handle.has_result_set) {
               this.result = new ExecutionResult(this);
@@ -269,12 +285,21 @@ export default class Executable {
           case EXECUTION_STATUS.canceled:
           case EXECUTION_STATUS.expired:
             this.executeEnded = Date.now();
-            this.setStatus(queryStatus);
+            this.setStatus(queryStatus.status);
             break;
+          case EXECUTION_STATUS.streaming:
+            if (window.WEB_SOCKETS_ENABLED) {
+              huePubSub.publish('editor.ws.query.fetch_result', queryStatus.result);
+            } else {
+              if (!this.result) {
+                this.result = new ExecutionResult(this, true);
+              }
+              this.result.handleResultResponse(queryStatus.result);
+            }
           case EXECUTION_STATUS.running:
           case EXECUTION_STATUS.starting:
           case EXECUTION_STATUS.waiting:
-            this.setStatus(queryStatus);
+            this.setStatus(queryStatus.status);
             checkStatusTimeout = window.setTimeout(
               () => {
                 this.checkStatus(statusCheckCount);
@@ -284,11 +309,15 @@ export default class Executable {
             break;
           case EXECUTION_STATUS.failed:
             this.executeEnded = Date.now();
-            this.setStatus(queryStatus);
+            this.setStatus(queryStatus.status);
+            if (queryStatus.message) {
+              $.jHueNotify.error(queryStatus.message); // TODO: Inline instead of popup, e.g. ERROR_REGEX in Execute()
+            }
             break;
           default:
             this.executeEnded = Date.now();
-            console.warn('Got unknown status ' + queryStatus);
+            this.setStatus(EXECUTION_STATUS.failed);
+            console.warn('Got unknown status ' + queryStatus.status);
         }
       })
     );
@@ -311,7 +340,10 @@ export default class Executable {
   }
 
   async cancel() {
-    if (this.cancellables.length && this.status === EXECUTION_STATUS.running) {
+    if (
+      this.cancellables.length &&
+      (this.status === EXECUTION_STATUS.running || this.status === EXECUTION_STATUS.streaming)
+    ) {
       hueAnalytics.log(
         'notebook',
         'cancel/' + (this.executor.connector() ? this.executor.connector().dialect : '')
@@ -386,10 +418,10 @@ export default class Executable {
       };
     }
 
-    const session = await sessionManager.getSession({ type: this.executor.connector().type });
+    const session = await sessionManager.getSession({ type: this.executor.connector().id });
     const statement = this.getStatement();
     const snippet = {
-      type: this.executor.connector().type,
+      type: this.executor.connector().id,
       result: {
         handle: this.handle
       },
@@ -398,6 +430,7 @@ export default class Executable {
       id: id || UUID(),
       statement_raw: statement,
       statement: statement,
+      lastExecuted: this.executeStarted,
       variables: [],
       compute: this.executor.compute(),
       namespace: this.executor.namespace(),
@@ -406,7 +439,7 @@ export default class Executable {
     };
 
     const notebook = {
-      type: this.executor.connector().type,
+      type: this.executor.connector().id,
       snippets: [snippet],
       id: this.notebookId,
       uuid: hueUtils.UUID(),
@@ -417,7 +450,7 @@ export default class Executable {
     };
 
     return {
-      operationId: undefined,
+      operationId: this.operationId,
       snippet: JSON.stringify(snippet),
       notebook: JSON.stringify(notebook)
     };

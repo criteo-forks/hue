@@ -33,13 +33,21 @@ Supported parameters are:
 e.g.
 mysql://${USER}:${PASSWORD}@localhost:3306/hue
 
-Parameters are not saved at any time in the Hue database. The are currently not even cached in the Hue process. The clients serves these parameters
-each time a query is sent.
+Parameters are not saved at any time in the Hue database. The are currently not even cached in the Hue process.
+The clients serves these parameters each time a query is sent in case the previously created engine is not there.
 
-Note: the SQL Alchemy engine could leverage create_session() and cache the engine object (without its credentials) like in the jdbc.py interpreter.
-Note: this is currently supporting concurrent querying by one users as engine is a new object each time. Could use a thread global SQL Alchemy
-session at some point.
-Note: using the task server would not leverage any caching.
+Note: create_session() could create the engine object (without its credentials) like in the other interpreters.
+Note: its currently has one engine per user. This should be changed to one engine per URL but then it makes it complicated to close
+all the queries of a user. It could also have an engine per Editor session and an engine for the managed queries (where Hue guarantees
+to properly close queries).
+
+Engines and connections
+-----------------------
+SqlAlchemy documentation is pretty good: https://docs.sqlalchemy.org/en/13/core/connections.html
+
+Each URL is mapped to one engine and should be created once per process.
+Each query statement grabs a connection from the engine and will return it after its close().
+Disposing the engine closes all its connections.
 '''
 from future import standard_library
 standard_library.install_aliases()
@@ -56,6 +64,7 @@ import textwrap
 
 from string import Template
 
+from django.core.cache import caches
 from django.utils.translation import ugettext as _
 from sqlalchemy import create_engine, inspect, Table, MetaData
 from sqlalchemy.exc import OperationalError
@@ -76,7 +85,11 @@ else:
   from urllib import quote_plus as urllib_quote_plus
 
 
-CONNECTION_CACHE = {}
+ENGINES = {}
+CONNECTIONS = {}
+ENGINE_KEY = '%(username)s-%(connector_name)s'
+URL_PATTERN = '(?P<driver_name>.+?://)(?P<host>[^:/ ]+):(?P<port>[0-9]*).*'
+
 LOG = logging.getLogger(__name__)
 
 # How many rows to keep in memory to be able to start a query over without relaunching it
@@ -109,7 +122,7 @@ def query_error_handler(func):
 class SqlAlchemyApi(Api):
 
   def __init__(self, user, interpreter, request=None):
-    Api.__init__(self, user, interpreter=interpreter, request=request)
+    super(SqlAlchemyApi, self).__init__(user, interpreter=interpreter, request=request)
     self.options = interpreter['options']
     self.cache_row_limit = self.options.get('cache_row_limit', DEFAULT_CACHE_ROW_LIMIT)
 
@@ -118,25 +131,38 @@ class SqlAlchemyApi(Api):
     else:
       self.backticks = '"' if re.match('^((postgresql|presto|vertica)([+][^:]+)?://|awsathena|elasticsearch|)', self.options.get('url', '')) else '`'
 
+  def _get_engine(self):
+    engine_key = ENGINE_KEY % {
+      'username': self.user.username,
+      'connector_name': self.interpreter['name']
+    }
+
+    if engine_key not in ENGINES:
+      ENGINES[engine_key] = self._create_engine()
+
+    return ENGINES[engine_key]
+
   def _create_engine(self):
-    if '${' in self.options['url']: # URL parameters substitution
-      auth_provided=False
+    if '${' in self.options['url']:  # URL parameters substitution
       vars = {'USER': self.user.username}
-      if 'session' in self.options:
-        for _prop in self.options['session']['properties']:
-          if _prop['name'] == 'user':
-            vars['USER'] = _prop['value']
-            auth_provided = True
-          if _prop['name'] == 'password':
-            vars['PASSWORD'] = _prop['value']
-            auth_provided = True
 
-      if 'PASSWORD' not in vars and 'password' in self.request.session:
-        vars['PASSWORD'] = self.request.session['password']
-        auth_provided = True
+      if '${PASSWORD}' in self.options['url']:
+        auth_provided = False
+        if 'session' in self.options:
+          for _prop in self.options['session']['properties']:
+            if _prop['name'] == 'user':
+              vars['USER'] = _prop['value']
+              auth_provided = True
+            if _prop['name'] == 'password':
+              vars['PASSWORD'] = _prop['value']
+              auth_provided = True
 
-      if not auth_provided:
-        raise AuthenticationRequired(message='Missing username and/or password')
+        if 'PASSWORD' not in vars and 'password' in self.request.session:
+          vars['PASSWORD'] = self.request.session['password']
+          auth_provided = True
+
+        if not auth_provided:
+          raise AuthenticationRequired(message='Missing username and/or password')
 
       raw_url = Template(self.options['url'])
       url = raw_url.safe_substitute(**vars)
@@ -149,14 +175,28 @@ class SqlAlchemyApi(Api):
       s3_staging_dir = url.rsplit('s3_staging_dir=', 1)[1]
       url = url.replace(s3_staging_dir, urllib_quote_plus(s3_staging_dir))
 
+    if self.options.get('has_impersonation'):
+      m = re.search(URL_PATTERN, url)
+      driver_name = m.group('driver_name')
+
+      if not driver_name:
+        raise QueryError('Driver name of %(url)s could not be found and impersonation is turned on' % {'url': url})
+
+      url = url.replace(driver_name, '%(driver_name)s%(username)s@' % {
+        'driver_name': driver_name,
+        'username': self.user.username
+      })
+
     options = self.options.copy()
     options.pop('session', None)
     options.pop('url', None)
     options.pop('has_ssh', None)
+    options.pop('has_impersonation', None)
     options.pop('ssh_server_host', None)
     options.pop('cache_row_limit', None)
 
     return create_engine(url, **options)
+
 
   def _get_session(self, notebook, snippet):
     for session in notebook['sessions']:
@@ -170,9 +210,10 @@ class SqlAlchemyApi(Api):
     guid = uuid.uuid4().hex
 
     session = self._get_session(notebook, snippet)
-    if not session is None:
+    if session is not None:
       self.options['session'] = session
-    engine = self._create_engine()
+
+    engine = self._get_engine()
     connection = engine.connect()
 
     background_thread = threading.Thread(
@@ -181,8 +222,7 @@ class SqlAlchemyApi(Api):
       name='sqlalchemy-{}'.format(guid),
     )
     background_thread.daemon = True
-    CONNECTION_CACHE[guid] = {
-      'engine': engine,
+    CONNECTIONS[guid] = {
       'connection': connection,
       'background_thread': background_thread,
     }
@@ -197,7 +237,7 @@ class SqlAlchemyApi(Api):
   def _execute_statement_background(self, guid, engine, connection, statement):
     try:
       result = connection.execute(statement)
-      CONNECTION_CACHE[guid]['result'] = result
+      CONNECTIONS[guid]['result'] = result
       if result.cursor:
         result.cursor.hue_guid = guid
 
@@ -216,8 +256,7 @@ class SqlAlchemyApi(Api):
       else:
         first_rows = []
 
-      CONNECTION_CACHE[guid] = {
-        'engine': engine,
+      CONNECTIONS[guid] = {
         'connection': connection,
         'result': result,
         'first_rows': first_rows,
@@ -226,19 +265,23 @@ class SqlAlchemyApi(Api):
         'meta': meta,
       }
     except Exception as e:
-      CONNECTION_CACHE[guid] = {
-        'engine': engine,
+      CONNECTIONS[guid] = {
         'connection': connection,
         'exception': e,
       }
 
   def _extract_statement(self, snippet):
-    return snippet['statement']
+    statement = snippet['statement']
+    if self.options['url'].startswith('presto://') or \
+        self.interpreter.get('dialect_properties') and self.interpreter['dialect_properties']['trim_statement_semicolon']:
+      statement = statement.strip().rstrip(';')
+
+    return statement
 
   @query_error_handler
   def check_status(self, notebook, snippet):
     guid = snippet['result']['handle']['guid']
-    connection = CONNECTION_CACHE.get(guid)
+    connection = CONNECTIONS.get(guid)
 
     response = {'status': 'canceled'}
 
@@ -251,6 +294,8 @@ class SqlAlchemyApi(Api):
         response['status'] = 'available'
       else:
         response['status'] = 'success'
+    else:
+      raise QueryExpired()
 
     return response
 
@@ -262,48 +307,47 @@ class SqlAlchemyApi(Api):
   @query_error_handler
   def fetch_result(self, notebook, snippet, rows, start_over):
     guid = snippet['result']['handle']['guid']
-    cache = CONNECTION_CACHE.get(guid)
+    handle = CONNECTIONS.get(guid)
 
-    if cache and 'result' in cache:
-      if start_over and cache['can_start_over']:
+    if handle and 'result' in handle:
+      if start_over and handle['can_start_over']:
         # start_over with current_row > 0 only happens when exporting results
-        if cache['current_row'] != 0:
+        if handle['current_row'] != 0:
           # Break the connection <-> handle with the UI
           # connection and engine will be moved to another guid, and should close themselves at the end
-          cache['current_row'] = 0
-          CONNECTION_CACHE[guid] = {
+          handle['current_row'] = 0
+          CONNECTIONS[guid] = {
             'broke_ui_fetching': True,
           }
           guid = uuid.uuid4().hex
           snippet['result']['handle']['guid'] = guid
-          CONNECTION_CACHE[guid] = cache
+          CONNECTIONS[guid] = cache
 
-      current_row = cache.get('current_row')
-      first_rows = cache.get('first_rows')
+      current_row = handle.get('current_row')
+      first_rows = handle.get('first_rows')
       if current_row is not None and current_row < len(first_rows):
         data = first_rows[current_row : current_row + rows]
       else:
         data = []
 
       if len(data) < rows:
-        fetched_data = cache['result'].fetchmany(rows - len(data))
+        fetched_data = handle['result'].fetchmany(rows - len(data))
         data.extend(fetched_data)
         if first_rows is not None:
           if len(first_rows) + len(fetched_data) > self.cache_row_limit:
-            cache['can_start_over'] = False
-            del cache['first_rows']
-            del cache['current_row']
+            handle['can_start_over'] = False
+            del handle['first_rows']
+            del handle['current_row']
           else:
-            cache['first_rows'].extend(fetched_data)
-            cache['current_row'] += len(data)
+            handle['first_rows'].extend(fetched_data)
+            handle['current_row'] += len(data)
 
       meta = cache['meta']
       self._assign_types(data, meta)
     elif cache and 'broke_ui_fetching' in cache:
       raise QueryError('Cannot fetch results any more after query results have been exported')
     else:
-      data = []
-      meta = []
+      raise QueryExpired()
 
     return {
       'has_more': data and len(data) >= rows or False,
@@ -335,10 +379,9 @@ class SqlAlchemyApi(Api):
 
   @query_error_handler
   def cancel(self, notebook, snippet):
-    result = {'status': -1}
     try:
       guid = snippet['result']['handle']['guid']
-      connection = CONNECTION_CACHE.get(guid)
+      connection = CONNECTIONS.get(guid)
       if connection:
         try:  # Can fail if: no result, no cursor, cursor has no cancel, cancel fails
           connection['result'].cursor.cancel()
@@ -349,11 +392,8 @@ class SqlAlchemyApi(Api):
           connection['connection'].connection.connection.cancel()
         except:
           pass
-
-        _close_connection(guid)
-      result['status'] = 0
     finally:
-      return result
+      return self.close_statement(notebook, snippet)
 
 
   @query_error_handler
@@ -366,21 +406,13 @@ class SqlAlchemyApi(Api):
 
     try:
       guid = snippet['result']['handle']['guid']
-      _close_connection(guid)
+      connection = CONNECTIONS.get(guid)
+      if connection:
+        connection['connection'].close()
+        del CONNECTIONS[guid]
       result['status'] = 0
     finally:
       return result
-
-  def _close_connection(guid):
-    cache = CONNECTION_CACHE.get(guid)
-    if cache:
-      connection = cache.get('connection')
-      engine = cache.get('engine')
-      del CONNECTION_CACHE[guid]
-      if connection:
-        connection.close()
-      if engine:
-        engine.dispose()
 
   @query_error_handler
   def explain(self, notebook, snippet):
@@ -399,84 +431,82 @@ class SqlAlchemyApi(Api):
     finally:
       engine.dispose()
 
+  def close_session(self, session):
+    engine = self._get_engine()
+    engine.dispose()  # ENGINE_KEY currently includes the current user
+
+
   @query_error_handler
   def autocomplete(self, snippet, database=None, table=None, column=None, nested=None):
-    engine = self._create_engine()
+    engine = self._get_engine()
     inspector = inspect(engine)
 
     assist = Assist(inspector, engine, backticks=self.backticks)
     response = {'status': -1}
 
-    try:
-      if database is None:
-        response['databases'] = [db or 'NULL' for db in assist.get_databases()]
-      elif table is None:
-        tables_meta = []
-        database = self._fix_phoenix_empty_database(database)
-        for t in assist.get_tables(database):
-          t = self._fix_bigquery_db_prefixes(t)
-          tables_meta.append({'name': t, 'type': 'Table', 'comment': ''})
-        response['tables_meta'] = tables_meta
-      elif column is None:
-        database = self._fix_phoenix_empty_database(database)
-        columns = assist.get_columns(database, table)
+    if database is None:
+      response['databases'] = [db or 'NULL' for db in assist.get_databases()]
+    elif table is None:
+      tables_meta = []
+      database = self._fix_phoenix_empty_database(database)
+      for t in assist.get_tables(database):
+        t = self._fix_bigquery_db_prefixes(t)
+        tables_meta.append({'name': t, 'type': 'Table', 'comment': ''})
+      response['tables_meta'] = tables_meta
+    elif column is None:
+      database = self._fix_phoenix_empty_database(database)
+      columns = assist.get_columns(database, table)
 
-        response['columns'] = [col['name'] for col in columns]
-        response['extended_columns'] = [{
-            'autoincrement': col.get('autoincrement'),
-            'comment': col.get('comment'),
-            'default': col.get('default'),
-            'name': col.get('name'),
-            'nullable': col.get('nullable'),
-            'type': str(col.get('type')) if not isinstance(col.get('type'), NullType) else 'Null',
-          }
-          for col in columns
-        ]
-        response.update(assist.get_keys(database, table))
-      else:
-        columns = assist.get_columns(database, table)
-        response['name'] = next((col['name'] for col in columns if column == col['name']), '')
-        response['type'] = next((str(col['type']) for col in columns if column == col['name']), '')
+      response['columns'] = [col['name'] for col in columns]
+      response['extended_columns'] = [{
+          'autoincrement': col.get('autoincrement'),
+          'comment': col.get('comment'),
+          'default': col.get('default'),
+          'name': col.get('name'),
+          'nullable': col.get('nullable'),
+          'type': str(col.get('type')) if not isinstance(col.get('type'), NullType) else 'Null',
+        }
+        for col in columns
+      ]
+      response.update(assist.get_keys(database, table))
+    else:
+      columns = assist.get_columns(database, table)
+      response['name'] = next((col['name'] for col in columns if column == col['name']), '')
+      response['type'] = next((str(col['type']) for col in columns if column == col['name']), '')
 
-      response['status'] = 0
-      return response
-    finally:
-      engine.dispose()
-
+    response['status'] = 0
+    return response
 
   @query_error_handler
   def get_sample_data(self, snippet, database=None, table=None, column=None, is_async=False, operation=None):
-    engine = self._create_engine()
+    engine = self._get_engine()
     inspector = inspect(engine)
 
     assist = Assist(inspector, engine, backticks=self.backticks)
     response = {'status': -1, 'result': {}}
 
-    try:
-      metadata, sample_data = assist.get_sample_data(database, table, column=column, operation=operation)
+    metadata, sample_data = assist.get_sample_data(database, table, column=column, operation=operation)
 
-      response['status'] = 0
-      response['rows'] = escape_rows(sample_data)
+    response['status'] = 0
+    response['rows'] = escape_rows(sample_data)
 
-      if table and operation != 'hello':
-        columns = assist.get_columns(database, table)
-        response['full_headers'] = [{
-            'name': col.get('name'),
-            'type': str(col.get('type')) if not isinstance(col.get('type'), NullType) else 'Null',
-            'comment': ''
-          } for col in columns
-        ]
-      elif metadata:
-        response['full_headers'] = [{
-          'name': col[0] if type(col) is dict or type(col) is tuple else col.name if hasattr(col, 'name') else col,
-          'type': 'STRING_TYPE',
+    if table and operation != 'hello':
+      columns = assist.get_columns(database, table)
+      response['full_headers'] = [{
+          'name': col.get('name'),
+          'type': str(col.get('type')) if not isinstance(col.get('type'), NullType) else 'Null',
           'comment': ''
-        } for col in metadata
+        } for col in columns
       ]
+    elif metadata:
+      response['full_headers'] = [{
+        'name': col[0] if type(col) is dict or type(col) is tuple else col.name if hasattr(col, 'name') else col,
+        'type': 'STRING_TYPE',
+        'comment': ''
+      } for col in metadata
+    ]
 
-      return response
-    finally:
-      engine.dispose()
+    return response
 
   @query_error_handler
   def get_browse_query(self, snippet, database, table, partition_spec=None):

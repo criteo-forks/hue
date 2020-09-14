@@ -18,6 +18,7 @@ import $ from 'jquery';
 
 import catalogUtils from 'catalog/catalogUtils';
 import { getOptimizer } from './optimizer/optimizer';
+import { DataCatalog } from './dataCatalog';
 
 /**
  * Helper function to reload a Optimizer multi table attribute, like topAggs or topFilters
@@ -68,7 +69,7 @@ const genericOptimizerGet = function(
   dataAttribute,
   apiHelperFunction
 ) {
-  if (options && options.cachedOnly) {
+  if (DataCatalog.cacheEnabled() && options && options.cachedOnly) {
     return (
       catalogUtils.applyCancellable(multiTableEntry[promiseAttribute], options) ||
       $.Deferred()
@@ -76,7 +77,7 @@ const genericOptimizerGet = function(
         .promise()
     );
   }
-  if (options && options.refreshCache) {
+  if (!DataCatalog.cacheEnabled() || (options && options.refreshCache)) {
     return catalogUtils.applyCancellable(
       genericOptimizerReload(
         multiTableEntry,
@@ -169,6 +170,24 @@ class MultiTableEntry {
   }
 
   /**
+   * Returns the dialect of this entry.
+   *
+   * @return {string} - 'impala', 'hive', 'solr', etc.
+   */
+  getDialect() {
+    return this.getConnector().dialect || this.getConnector().id; // .id for editor v1
+  }
+
+  /**
+   * Returns the connector for this entry
+   *
+   * @return {Connector}
+   */
+  getConnector() {
+    return this.dataCatalog.connector;
+  }
+
+  /**
    * Gets the top aggregate UDFs for the entry. It will fetch it if not cached or if the refresh option is set.
    *
    * @param {Object} [options]
@@ -180,12 +199,13 @@ class MultiTableEntry {
    * @return {CancellablePromise}
    */
   getTopAggs(options) {
+    const optimizer = getOptimizer(this.dataCatalog.connector);
     return genericOptimizerGet(
       this,
       options,
       'topAggsPromise',
       'topAggs',
-      getOptimizer(this.dataCatalog.connector).fetchTopAggs
+      optimizer.fetchTopAggs.bind(optimizer)
     );
   }
 
@@ -201,12 +221,13 @@ class MultiTableEntry {
    * @return {CancellablePromise}
    */
   getTopColumns(options) {
+    const optimizer = getOptimizer(this.dataCatalog.connector);
     return genericOptimizerGet(
       this,
       options,
       'topColumnsPromise',
       'topColumns',
-      getOptimizer(this.dataCatalog.connector).fetchTopColumns
+      optimizer.fetchTopColumns.bind(optimizer)
     );
   }
 
@@ -222,12 +243,13 @@ class MultiTableEntry {
    * @return {CancellablePromise}
    */
   getTopFilters(options) {
+    const optimizer = getOptimizer(this.dataCatalog.connector);
     return genericOptimizerGet(
       this,
       options,
       'topFiltersPromise',
       'topFilters',
-      getOptimizer(this.dataCatalog.connector).fetchTopFilters
+      optimizer.fetchTopFilters.bind(optimizer)
     );
   }
 
@@ -243,12 +265,13 @@ class MultiTableEntry {
    * @return {CancellablePromise}
    */
   getTopJoins(options) {
+    const optimizer = getOptimizer(this.dataCatalog.connector);
     return genericOptimizerGet(
       this,
       options,
       'topJoinsPromise',
       'topJoins',
-      getOptimizer(this.dataCatalog.connector).fetchTopJoins
+      optimizer.fetchTopJoins.bind(optimizer)
     );
   }
 }

@@ -241,22 +241,24 @@ class HS2Api(Api):
     query_server = get_query_server_config(name=app_name)
 
     response = {'status': -1, 'message': ''}
+    session_record = None
 
     try:
       filters = {'id': session_id, 'application': query_server['server_name']}
       if not is_admin(self.user):
         filters['owner'] = self.user
-      session = Session.objects.get(**filters)
+      session_record = Session.objects.get(**filters)
     except Session.DoesNotExist:
       response['message'] = _('Session does not exist or you do not have permissions to close the session.')
 
-    if session:
-      session = dbms.get(self.user, query_server).close_session(session)
+    if session_record:
+      session_record = dbms.get(self.user, query_server).close_session(session_record)
       response['status'] = 0
       response['message'] = _('Session successfully closed.')
-      response['session'] = {'id': session_id, 'application': session.application, 'status': session.status_code}
+      response['session'] = {'id': session_id, 'application': session_record.application, 'status': session_record.status_code}
 
     return response
+
 
   def close_session_idle(self, notebook, session):
     idle = True
@@ -529,7 +531,14 @@ class HS2Api(Api):
       query = self._get_current_statement(notebook, snippet)['statement']
       database, table = '', ''
 
-    return _autocomplete(db, database, table, column, nested, query=query, cluster=self.interpreter)
+    resp = _autocomplete(db, database, table, column, nested, query=query, cluster=self.interpreter)
+
+    if resp.get('error'):
+      resp['message'] = resp.pop('error')
+      if 'Read timed out' in resp['message']:
+        raise QueryExpired(resp['message'])
+
+    return resp
 
 
   @query_error_handler
@@ -665,7 +674,7 @@ DROP TABLE IF EXISTS `%(table)s`;
     if session:
       session_id = session.get('id')
       if session_id:
-        filters = {'id': session_id, 'application': 'beeswax' if type == 'hive' else type}
+        filters = {'id': session_id, 'application': 'beeswax' if type == 'hive' or type == 'llap' else type}
         if not is_admin(self.user):
           filters['owner'] = self.user
         return Session.objects.get(**filters)
@@ -753,18 +762,24 @@ DROP TABLE IF EXISTS `%(table)s`;
 
 
   def _get_db(self, snippet, is_async=False, interpreter=None):
-    if not is_async and snippet['type'] == 'hive':
+    if interpreter and interpreter.get('dialect'):
+      dialect = interpreter['dialect']
+    else:
+      dialect = snippet['type']  # Backward compatibility without connectors
+
+    if not is_async and dialect == 'hive':
       name = 'beeswax'
-    elif snippet['type'] == 'hive':
+    elif dialect == 'hive':
       name = 'hive'
-    elif snippet['type'] == 'llap':
+    elif dialect == 'llap':
       name = 'llap'
-    elif snippet['type'] == 'impala':
+    elif dialect == 'impala':
       name = 'impala'
     else:
       name = 'sparksql'
 
-    return dbms.get(self.user, query_server=get_query_server_config(name=name, connector=interpreter)) # Note: name is not used if interpreter is present
+    # Note: name is not used if interpreter is present
+    return dbms.get(self.user, query_server=get_query_server_config(name=name, connector=interpreter))
 
 
   def _parse_job_counters(self, job_id):
@@ -780,14 +795,23 @@ DROP TABLE IF EXISTS `%(table)s`;
       # Extract totalCounterValue from HIVE counter group
       hive_counters = next((group for group in counter_groups if group.get('counterGroupName', '').upper() == 'HIVE'), None)
       if hive_counters:
-        total_records = next((counter.get('totalCounterValue') for counter in hive_counters['counter'] if counter['name'] == 'RECORDS_OUT_0'), None)
+        total_records = next(
+          (counter.get('totalCounterValue') for counter in hive_counters['counter'] if counter['name'] == 'RECORDS_OUT_0'),
+          None
+        )
       else:
         LOG.info("No HIVE counter group found for job: %s" % job_id)
 
       # Extract totalCounterValue from FileSystemCounter counter group
-      fs_counters = next((group for group in counter_groups if group.get('counterGroupName') == 'org.apache.hadoop.mapreduce.FileSystemCounter'), None)
+      fs_counters = next(
+          (group for group in counter_groups if group.get('counterGroupName') == 'org.apache.hadoop.mapreduce.FileSystemCounter'),
+          None
+        )
       if fs_counters:
-        total_size = next((counter.get('totalCounterValue') for counter in fs_counters['counter'] if counter['name'] == 'HDFS_BYTES_WRITTEN'), None)
+        total_size = next(
+          (counter.get('totalCounterValue') for counter in fs_counters['counter'] if counter['name'] == 'HDFS_BYTES_WRITTEN'),
+          None
+        )
       else:
         LOG.info("No FileSystemCounter counter group found for job: %s" % job_id)
 
@@ -904,7 +928,7 @@ DROP TABLE IF EXISTS `%(table)s`;
     }
 
   def describe_database(self, notebook, snippet, database=None):
-    db = self._get_db(snippet, self.interpreter)
+    db = self._get_db(snippet, interpreter=self.interpreter)
     return db.get_database(database)
 
   def get_log_is_full_log(self, notebook, snippet):

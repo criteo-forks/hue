@@ -62,7 +62,11 @@ class MetastoreNamespace {
       });
 
     // TODO: Use connectors in the table browser
-    const connector = {};
+    const connector = {
+      type: this.sourceType,
+      id: this.sourceType,
+      dialect: this.sourceType
+    };
     if (this.sourceType === 'hive' || this.sourceType === 'impala') {
       connector.optimizer = 'api';
     }
@@ -71,7 +75,6 @@ class MetastoreNamespace {
         namespace: this.namespace,
         compute: this.compute,
         connector: connector,
-        sourceType: this.sourceType,
         path: [],
         definition: { type: 'source' }
       })
@@ -102,9 +105,7 @@ class MetastoreNamespace {
     if (!this.loading() && this.catalogEntry()) {
       this.loading(true);
       // Clear will publish when done
-      this.catalogEntry().clearCache({
-        invalidate: this.sourceType === 'impala' ? 'invalidate' : 'cache'
-      });
+      this.catalogEntry().clearCache();
     }
   }
 
@@ -158,7 +159,7 @@ class MetastoreNamespace {
         this.setDatabase(foundDatabases[0], callback);
       } else if (clearCacheOnMissing) {
         this.catalogEntry()
-          .clearCache({ invalidate: 'invalidate', silenceErrors: true })
+          .clearCache({ silenceErrors: true })
           .then(() => {
             this.loadDatabases().done(() => {
               whenLoaded(false);

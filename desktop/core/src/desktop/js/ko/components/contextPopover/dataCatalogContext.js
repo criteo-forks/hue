@@ -19,6 +19,7 @@ import * as ko from 'knockout';
 
 import apiHelper from 'api/apiHelper';
 import huePubSub from 'utils/huePubSub';
+import { ASSIST_DB_HIGHLIGHT_EVENT } from 'ko/components/assist/events';
 
 class DataCatalogContext {
   constructor(options) {
@@ -76,11 +77,15 @@ class DataCatalogContext {
     self.load();
   }
 
+  setEntry(entry) {
+    this.catalogEntry(entry);
+  }
+
   refresh() {
     const self = this;
     self
       .catalogEntry()
-      .clearCache({ invalidate: 'invalidate', cascade: true })
+      .clearCache({ cascade: true })
       .always(self.load.bind(self));
   }
 
@@ -105,9 +110,10 @@ class DataCatalogContext {
         })
     );
 
+    // TODO: Use connector attributes in dataCatalogContext
     if (
-      self.catalogEntry().getSourceType() === 'impala' ||
-      self.catalogEntry().getSourceType() === 'hive'
+      self.catalogEntry().getDialect() === 'impala' ||
+      self.catalogEntry().getDialect() === 'hive'
     ) {
       self.activePromises.push(
         self
@@ -176,7 +182,7 @@ class DataCatalogContext {
 
   showInAssist() {
     const self = this;
-    huePubSub.publish('assist.db.highlight', self.catalogEntry());
+    huePubSub.publish(ASSIST_DB_HIGHLIGHT_EVENT, self.catalogEntry());
     huePubSub.publish('global.search.close');
   }
 
@@ -187,7 +193,7 @@ class DataCatalogContext {
       '/hue/dashboard/browse/' +
         self.catalogEntry().path.join('.') +
         '?engine=' +
-        self.catalogEntry().getSourceType()
+        self.catalogEntry().getConnector().id
     );
     huePubSub.publish('context.popover.hide');
     huePubSub.publish('global.search.close');
@@ -201,7 +207,7 @@ class DataCatalogContext {
         (self.catalogEntry().isTableOrView() ? '/' : 's/') +
         self.catalogEntry().path.join('/') +
         '?source_type=' +
-        self.catalogEntry().getSourceType() +
+        self.catalogEntry().getConnector().id +
         '&namespace=' +
         self.catalogEntry().namespace.id
     );

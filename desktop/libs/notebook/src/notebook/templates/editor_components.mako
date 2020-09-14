@@ -54,7 +54,6 @@ from notebook.conf import ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_
 %if ENABLE_QUERY_BUILDER.get():
 <!-- For query builder -->
 <link rel="stylesheet" href="${ static('desktop/ext/css/jquery.contextMenu.min.css') }">
-<script src="${ static('desktop/ext/js/jquery/plugins/jquery.contextMenu.min.js') }"></script>
 <script src="${ static('desktop/js/queryBuilder.js') }"></script>
 <script>
 
@@ -903,7 +902,7 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
     <!-- ko component: {
       name: 'hue-context-selector',
       params: {
-        sourceType: type,
+        connector: connector,
         compute: compute,
         namespace: namespace,
         availableDatabases: availableDatabases,
@@ -1548,12 +1547,12 @@ ${ sqlSyntaxDropdown.sqlSyntaxDropdown() }
       }"></div>
     </div>
     <div class="span6">
-      <div data-bind="html: renderMarkdown, attr: {'id': 'liveMD' + id()}"></div>
+      <div data-bind="html: renderMarkdown(), attr: {'id': 'liveMD' + id()}"></div>
     </div>
   </div>
   <!-- /ko -->
   <!-- ko if: $root.isPresentationMode() -->
-  <div data-bind="html: renderMarkdown"></div>
+  <div data-bind="html: renderMarkdown()"></div>
   <!-- /ko -->
 </script>
 
