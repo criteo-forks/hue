@@ -70,7 +70,7 @@ huePubSub.subscribe('editor.ws.query.fetch_result', executionResult => {
     result.fetchedOnce = true;
     result.handleResultResponse(executionResult);
     // eslint-disable-next-line no-undef
-    $('#wsResult').append('<div>' + executionResult.data + '</div>');
+    executionResult.data.forEach(element => $('#wsResult').append('<li>' + element + '</li>'));
   }
 });
 
@@ -78,11 +78,13 @@ export default class ExecutionResult {
   /**
    *
    * @param {Executable} executable
+   * @param {boolean} [streaming] (default false)
    */
-  constructor(executable) {
+  constructor(executable, streaming) {
     this.executable = executable;
 
     this.type = RESULT_TYPE.TABLE;
+    this.streaming = streaming;
     this.rows = [];
     this.meta = [];
 
@@ -138,10 +140,6 @@ export default class ExecutionResult {
    * @return {Promise}
    */
   async fetchRows(options) {
-    if (this.executable.status !== EXECUTION_STATUS.available) {
-      return Promise.reject();
-    }
-
     const resultResponse = await apiHelper.fetchResults({
       executable: this.executable,
       rows: (options && options.rows) || 100,
@@ -187,7 +185,9 @@ export default class ExecutionResult {
     }
     this.hasMore = resultResponse.has_more;
     this.isEscaped = resultResponse.isEscaped;
-    this.type = resultResponse.type;
+    if (resultResponse.type) {
+      this.type = resultResponse.type;
+    }
     this.fetchedOnce = true;
     this.notify();
   }

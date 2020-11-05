@@ -75,7 +75,7 @@ function BeeswaxViewModel(server, apiHelper) {
   self.database = ko.observable(null);
 
   var type = server === "beeswax" ? "hive" : "impala";
-  huePubSub.subscribe("assist.db.panel.ready", function () {
+  huePubSub.subscribe("assist.db.panel.is.ready", function () {
     // Defer to let the db be set
     window.setTimeout(function () {
       huePubSub.publish('assist.set.database', {
@@ -85,15 +85,15 @@ function BeeswaxViewModel(server, apiHelper) {
     }, 0);
   });
 
-  huePubSub.subscribe("assist.database.selected", function (database) {
-    if (database.sourceType === type && self.database() !== database.name) {
-      self.database(database.name);
+  huePubSub.subscribe("assist.database.selected", function (entry) {
+    if (entry.getConnector().id === type && self.database() !== entry.name) {
+      self.database(entry.name);
     }
   });
 
-  huePubSub.subscribe("assist.database.set", function (database) {
-    if (database.sourceType === type && self.database() !== database.name) {
-      self.database(database.name);
+  huePubSub.subscribe("assist.database.set", function (entry) {
+    if (entry.getConnector().id === type && self.database() !== entry.name) {
+      self.database(entry.name);
     }
   });
 

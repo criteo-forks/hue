@@ -1,6 +1,6 @@
 ---
-title: "4.6.0"
-date: 2019-12-05T18:28:08-07:00
+title: "4.7.0"
+date: 2020-04-10T18:28:08-07:00
 draft: false
 weight: -4050
 tags: ['skipIndexing']
@@ -10,6 +10,11 @@ tags: ['skipIndexing']
 
 Hue is an open source SQL Cloud Assistant for developing and accessing [Databases & Data Warehouses](https://docs.gethue.com/administrator/configuration/connectors/)/Data Apps and collaborating: http://gethue.com
 
+
+**Note**: Hue v4.7.1, released May 20th 2020 - [HUE-9356](https://issues.cloudera.org/browse/HUE-9356)
+
+* Kerberos 'TypeError: function takes at most 2 arguments (3 given)' [ISSUE 1101](https://github.com/cloudera/hue/issues/1101)
+* There was also other JavaScript bugs in the Query Browser related to some Ko-Js dependencies
 
 ### Summary
 
@@ -22,9 +27,9 @@ The focus of this release was to keep building on top of [4.6](https://gethue.co
 * A big summary of the [Datawarehouse UX](https://gethue.com/blog/2020-02-10-sql-query-experience-of-your-cloud-data-warehouse/) was published
 
 
-Read the complete list of improvements on [Hue 4.7 is out!](http://gethue.com/hue-4-7-and-its-improvements-are-out/).
+Read the complete list of improvements on [Hue 4.7 is out!](http://gethue.com/blog/hue-4-7-and-its-improvements-are-out/).
 
-Download the [tarball](https://cdn.gethue.com/downloads/hue-4.7.0.tgz) or [source](https://github.com/cloudera/hue/archive/release-4.7.0.zip) releases.
+Download the [tarball](https://cdn.gethue.com/downloads/hue-4.7.1.tgz) or [source](https://github.com/cloudera/hue/archive/release-4.7.1.zip) releases.
 
 ### Notable Changes
 

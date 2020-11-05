@@ -273,14 +273,13 @@ class HistoryPanel {
                 if (notebook.onSuccessUrl() === 'assist.db.refresh') {
                   dataCatalog
                     .getEntry({
-                      sourceType: snippet.type(),
                       namespace: snippet.namespace(),
                       compute: snippet.compute(),
                       connector: snippet.connector(),
                       path: []
                     })
                     .done(entry => {
-                      entry.clearCache({ invalidate: 'cache', cascade: true, silenceErrors: true });
+                      entry.clearCache({ cascade: true, silenceErrors: true });
                     });
                 } else if (notebook.onSuccessUrl()) {
                   huePubSub.publish(notebook.pubSubUrl());

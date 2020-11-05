@@ -33,9 +33,10 @@ import {
   SHOW_GRID_SEARCH_EVENT,
   SHOW_NORMAL_RESULT_EVENT,
   REDRAW_CHART_EVENT,
-  ACTIVE_SNIPPET_DIALECT_CHANGED_EVENT
+  IGNORE_NEXT_UNLOAD_EVENT
 } from 'apps/notebook2/events';
 import { DIALECT } from 'apps/notebook2/snippet';
+import { SHOW_LEFT_ASSIST_EVENT } from 'ko/components/assist/events';
 
 export const initNotebook2 = () => {
   window.Clipboard = Clipboard;
@@ -246,7 +247,7 @@ export const initNotebook2 = () => {
           }
         };
 
-        const handleFileSelect = function(evt) {
+        const handleFileSelect = evt => {
           evt.stopPropagation();
           evt.preventDefault();
           const dt = evt.dataTransfer;
@@ -356,8 +357,18 @@ export const initNotebook2 = () => {
         huePubSub.publish(REDRAW_FIXED_HEADERS_EVENT);
       });
 
+      let ignoreNextUnload = false;
+
+      huePubSub.subscribe(IGNORE_NEXT_UNLOAD_EVENT, () => {
+        ignoreNextUnload = true;
+      });
+
       // Close the notebook snippets when leaving the page
       window.onbeforeunload = function(e) {
+        if (ignoreNextUnload) {
+          ignoreNextUnload = false;
+          return;
+        }
         if (!viewModel.selectedNotebook().avoidClosing) {
           viewModel.selectedNotebook().close();
         }
@@ -575,7 +586,7 @@ export const initNotebook2 = () => {
       );
 
       huePubSub.subscribe(
-        'left.assist.show',
+        SHOW_LEFT_ASSIST_EVENT,
         () => {
           if (!viewModel.isLeftPanelVisible() && viewModel.assistAvailable()) {
             viewModel.isLeftPanelVisible(true);
@@ -714,36 +725,37 @@ export const initNotebook2 = () => {
       huePubSub.subscribe(
         'jobbrowser.data',
         jobs => {
-          const snippet = viewModel.selectedNotebook().snippets()[0];
-          if (!snippet || snippet.dialect() === DIALECT.impala) {
-            return;
-          }
-          if (jobs.length > 0) {
-            let progress = 0;
-            let parent;
-            jobs.forEach(job => {
-              const id = job.shortId || job.id;
-              const el = $('.jobs-overlay li:contains(' + id + ')');
-              if (!el.length) {
-                return;
-              }
-              const context = ko.contextFor(el[0]);
-              parent = context.$parent;
-              const _job = context.$data;
-              progress = parseInt(job.mapsPercentComplete);
-              if (isNaN(progress)) {
-                progress = parseInt(job.progress);
-              }
-              if (!isNaN(progress)) {
-                _job.percentJob(progress);
-              } else {
-                progress = 0;
-              }
-            });
-            if (parent && parent.jobs().length === 1) {
-              parent.progress(Math.max(progress, parent.progress()));
+          viewModel.withActiveSnippet(snippet => {
+            if (!snippet || snippet.dialect() === DIALECT.impala) {
+              return;
             }
-          }
+            if (jobs.length > 0) {
+              let progress = 0;
+              let parent;
+              jobs.forEach(job => {
+                const id = job.shortId || job.id;
+                const el = $('.jobs-overlay li:contains(' + id + ')');
+                if (!el.length) {
+                  return;
+                }
+                const context = ko.contextFor(el[0]);
+                parent = context.$parent;
+                const _job = context.$data;
+                progress = parseInt(job.mapsPercentComplete);
+                if (isNaN(progress)) {
+                  progress = parseInt(job.progress);
+                }
+                if (!isNaN(progress)) {
+                  _job.percentJob(progress);
+                } else {
+                  progress = 0;
+                }
+              });
+              if (parent && parent.jobs().length === 1) {
+                parent.progress(Math.max(progress, parent.progress()));
+              }
+            }
+          });
         },
         HUE_PUB_SUB_EDITOR_ID
       );

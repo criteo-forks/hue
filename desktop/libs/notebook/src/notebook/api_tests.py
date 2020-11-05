@@ -42,15 +42,15 @@ from useradmin.models import User
 import notebook.connectors.hiveserver2
 
 from notebook.api import _historify
-from notebook.connectors.base import Notebook, QueryError, Api
+from notebook.connectors.base import Notebook, QueryError, Api, QueryExpired
 from notebook.decorators import api_error_handler
 from notebook.conf import get_ordered_interpreters, INTERPRETERS_SHOWN_ON_WHEEL, INTERPRETERS
 from notebook.models import Analytics
 
 if sys.version_info[0] > 2:
-  from unittest.mock import patch
+  from unittest.mock import patch, Mock
 else:
-  from mock import patch
+  from mock import patch, Mock
 
 
 class TestApi(object):
@@ -141,19 +141,53 @@ class TestApi(object):
     assert_equal(doc.search, "select * from default.web_logs where app = 'metastore';")
 
 
-  def test_save_notebook_with_connector(self):
+  def test_save_notebook_with_connector_off(self):
+    reset = ENABLE_CONNECTORS.set_for_testing(False)
+
     notebook_cp = self.notebook.copy()
     notebook_cp.pop('id')
     notebook_cp['snippets'][0]['connector'] = {
-      "optimizer": "api"
+      'name': 'MySql',  # At some point even v1 should set those two
+      'dialect': 'mysql',
+      'optimizer': 'api',
     }
-    if not ENABLE_CONNECTORS.get():  # At some point even v1 should set those
-      notebook_cp['snippets'][0]['connector']['name'] = 'MySql'
-      notebook_cp['snippets'][0]['connector']['dialect'] = 'mysql'
     notebook_json = json.dumps(notebook_cp)
 
-    response = self.client.post(reverse('notebook:save_notebook'), {'notebook': notebook_json})
-    data = json.loads(response.content)
+    try:
+      response = self.client.post(reverse('notebook:save_notebook'), {'notebook': notebook_json})
+      data = json.loads(response.content)
+    finally:
+      reset()
+
+    assert_equal(0, data['status'], data)
+    doc = Document2.objects.get(pk=data['id'])
+    assert_equal('query-mysql', doc.type)
+
+
+  def test_save_notebook_with_connector_on(self):
+    if not ENABLE_CONNECTORS.get():
+      raise SkipTest
+
+    notebook_cp = self.notebook.copy()
+    notebook_cp.pop('id')
+
+    connector = Connector.objects.create(
+        name='MySql',
+        dialect='mysql'
+    )
+
+    notebook_cp['snippets'][0]['connector'] = {
+      'name': 'MySql',
+      'dialect': 'mysql',
+      'type': str(connector.id),
+      'optimizer': 'api',
+    }
+
+    try:
+      response = self.client.post(reverse('notebook:save_notebook'), {'notebook': notebook_json})
+      data = json.loads(response.content)
+    finally:
+      connector.delete()
 
     assert_equal(0, data['status'], data)
     doc = Document2.objects.get(pk=data['id'])
@@ -322,6 +356,26 @@ FROM déclenché c, c.addresses a"""
     response = send_exception(message)
     data = json.loads(response.content)
     assert_equal(1, data['status'])
+
+
+  def test_notebook_autocomplete(self):
+
+    with patch('notebook.api.get_api') as get_api:
+      get_api.return_value = Mock(
+        autocomplete=Mock(
+          side_effect=QueryExpired("HTTPSConnectionPool(host='gethue.com', port=10001): Read timed out. (read timeout=120)")
+        )
+      )
+
+      response = self.client.post(
+          reverse('notebook:api_autocomplete_tables', kwargs={'database': 'database'}),
+          {
+            'snippet': json.dumps({'type': 'hive'})
+          }
+      )
+
+      data = json.loads(response.content)
+      assert_equal(data, {'status': 0})  # We get back empty instead of failure with QueryExpired to silence end user messages
 
 
 class MockedApi(Api):

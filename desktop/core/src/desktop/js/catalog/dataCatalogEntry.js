@@ -23,6 +23,7 @@ import catalogUtils from 'catalog/catalogUtils';
 import huePubSub from 'utils/huePubSub';
 import I18n from 'utils/i18n';
 import { getOptimizer } from './optimizer/optimizer';
+import { DataCatalog } from './dataCatalog';
 
 /**
  * Helper function to reload the source meta for the given entry
@@ -153,10 +154,11 @@ const reloadSample = function(dataCatalogEntry, apiOptions) {
  */
 const reloadOptimizerMeta = function(dataCatalogEntry, apiOptions) {
   if (dataCatalogEntry.dataCatalog.canHaveOptimizerMeta()) {
+    const optimizer = getOptimizer(dataCatalogEntry.dataCatalog.connector);
     return dataCatalogEntry.trackedPromise(
       'optimizerMetaPromise',
       catalogUtils.fetchAndSave(
-        getOptimizer(dataCatalogEntry.dataCatalog.connector).fetchOptimizerMeta,
+        optimizer.fetchOptimizerMeta.bind(optimizer),
         'optimizerMeta',
         dataCatalogEntry,
         apiOptions
@@ -216,14 +218,19 @@ class DataCatalogEntry {
   constructor(options) {
     const self = this;
 
+    if (!options.dataCatalog.connector) {
+      throw new Error('DataCatalogEntry created without connector');
+    }
+
     self.namespace = options.namespace;
     self.compute = options.compute;
     self.dataCatalog = options.dataCatalog;
+
     self.path =
       typeof options.path === 'string' && options.path
         ? options.path.split('.')
         : options.path || [];
-    self.name = self.path.length ? self.path[self.path.length - 1] : options.dataCatalog.sourceType;
+    self.name = self.path.length ? self.path[self.path.length - 1] : self.getConnector().id;
     self.isTemporary = options.isTemporary;
 
     self.definition = options.definition;
@@ -304,7 +311,6 @@ class DataCatalogEntry {
    * Resets the entry and clears the cache
    *
    * @param {Object} options
-   * @param {string} [options.invalidate] - 'cache', 'invalidate' or 'invalidateAndFlush', default 'cache', only used for Impala
    * @param {boolean} [options.cascade] - Default false, only used when the entry is for the source
    * @param {boolean} [options.silenceErrors] - Default false
    * @param {string} [options.targetChild] - Optional specific child to invalidate
@@ -317,34 +323,6 @@ class DataCatalogEntry {
       options = {};
     }
 
-    let invalidatePromise;
-    let invalidate = options.invalidate || 'cache';
-
-    if (invalidate !== 'cache' && self.getSourceType() === 'impala') {
-      if (window.IS_K8S_ONLY) {
-        invalidate = 'invalidateAndFlush';
-      }
-      if (self.dataCatalog.invalidatePromise) {
-        invalidatePromise = self.dataCatalog.invalidatePromise;
-      } else {
-        invalidatePromise = apiHelper.invalidateSourceMetadata({
-          sourceType: self.getSourceType(),
-          compute: self.compute,
-          invalidate: invalidate,
-          path: options.targetChild ? self.path.concat(options.targetChild) : self.path,
-          silenceErrors: options.silenceErrors
-        });
-        self.dataCatalog.invalidatePromise = invalidatePromise;
-        invalidatePromise.always(() => {
-          delete self.dataCatalog.invalidatePromise;
-        });
-      }
-    } else {
-      invalidatePromise = $.Deferred()
-        .resolve()
-        .promise();
-    }
-
     if (self.definition && self.definition.optimizerLoaded) {
       delete self.definition.optimizerLoaded;
     }
@@ -354,16 +332,14 @@ class DataCatalogEntry {
       ? self.dataCatalog.clearStorageCascade(self.namespace, self.compute, self.path)
       : self.save();
 
-    const clearPromise = $.when(invalidatePromise, saveDeferred);
-
-    clearPromise.always(() => {
+    saveDeferred.always(() => {
       huePubSub.publish('data.catalog.entry.refreshed', {
         entry: self,
         cascade: !!options.cascade
       });
     });
 
-    return new CancellablePromise(clearPromise, undefined, [invalidatePromise]);
+    return new CancellablePromise(saveDeferred, undefined, []);
   }
 
   /**
@@ -391,6 +367,25 @@ class DataCatalogEntry {
   }
 
   /**
+   * Gets the parent entry, rejected if there's no parent.
+   *
+   * @return {Promise}
+   */
+  getParent() {
+    if (!this.path.length) {
+      return $.Deferred()
+        .reject()
+        .promise();
+    }
+
+    return this.dataCatalog.getEntry({
+      namespace: this.namespace,
+      compute: this.compute,
+      path: this.path.slice(0, this.path.length - 1)
+    });
+  }
+
+  /**
    * Get the children of the catalog entry, columns for a table entry etc.
    *
    * @param {Object} [options]
@@ -403,12 +398,18 @@ class DataCatalogEntry {
    */
   getChildren(options) {
     const self = this;
-    if (self.childrenPromise && (!options || !options.refreshCache)) {
+    if (self.childrenPromise && DataCatalog.cacheEnabled() && (!options || !options.refreshCache)) {
       return catalogUtils.applyCancellable(self.childrenPromise, options);
     }
     const deferred = $.Deferred();
 
-    if (options && options.cachedOnly && !self.sourceMeta && !self.sourceMetaPromise) {
+    if (
+      DataCatalog.cacheEnabled() &&
+      options &&
+      options.cachedOnly &&
+      !self.sourceMeta &&
+      !self.sourceMetaPromise
+    ) {
       return deferred.reject(false).promise();
     }
 
@@ -436,7 +437,7 @@ class DataCatalogEntry {
         const foreignKeys = {};
         if (sourceMeta.foreign_keys) {
           sourceMeta.foreign_keys.forEach(foreignKey => {
-            foreignKeys[foreignKey.name] = true;
+            foreignKeys[foreignKey.name] = foreignKey;
           });
         }
 
@@ -479,7 +480,7 @@ class DataCatalogEntry {
                         definition.primaryKey = !!primaryKeys[entity.name];
                       }
                       if (sourceMeta.foreign_keys) {
-                        definition.foreignKey = !!foreignKeys[entity.name];
+                        definition.foreignKey = foreignKeys[entity.name];
                       }
                       definition.index = index++;
                       catalogEntry.definition = definition;
@@ -490,10 +491,8 @@ class DataCatalogEntry {
             }
           });
         }
-        if (
-          (self.getSourceType() === 'impala' || self.getSourceType() === 'hive') &&
-          self.isComplex()
-        ) {
+        // TODO: Move to connector attributes
+        if ((self.getDialect() === 'impala' || self.getDialect() === 'hive') && self.isComplex()) {
           (sourceMeta.type === 'map' ? ['key', 'value'] : ['item']).forEach(path => {
             if (sourceMeta[path]) {
               promises.push(
@@ -555,7 +554,11 @@ class DataCatalogEntry {
         .promise();
     }
 
-    if (self.navigatorMetaForChildrenPromise && (!options || !options.refreshCache)) {
+    if (
+      self.navigatorMetaForChildrenPromise &&
+      DataCatalog.cacheEnabled() &&
+      (!options || !options.refreshCache)
+    ) {
       return catalogUtils.applyCancellable(self.navigatorMetaForChildrenPromise, options);
     }
 
@@ -570,7 +573,11 @@ class DataCatalogEntry {
           const someHaveNavMeta = children.some(childEntry => {
             return childEntry.navigatorMeta;
           });
-          if (someHaveNavMeta && (!options || !options.refreshCache)) {
+          if (
+            someHaveNavMeta &&
+            DataCatalog.cacheEnabled() &&
+            (!options || !options.refreshCache)
+          ) {
             deferred.resolve(children);
             return;
           }
@@ -738,12 +745,21 @@ class DataCatalogEntry {
         .reject()
         .promise();
     }
-    if (self.optimizerPopularityForChildrenPromise && (!options || !options.refreshCache)) {
+    if (
+      self.optimizerPopularityForChildrenPromise &&
+      DataCatalog.cacheEnabled() &&
+      (!options || !options.refreshCache)
+    ) {
       return catalogUtils.applyCancellable(self.optimizerPopularityForChildrenPromise, options);
     }
     const deferred = $.Deferred();
     const cancellablePromises = [];
-    if (self.definition && self.definition.optimizerLoaded && (!options || !options.refreshCache)) {
+    if (
+      self.definition &&
+      self.definition.optimizerLoaded &&
+      DataCatalog.cacheEnabled() &&
+      (!options || !options.refreshCache)
+    ) {
       cancellablePromises.push(
         self
           .getChildren(options)
@@ -794,9 +810,10 @@ class DataCatalogEntry {
    */
   canHaveNavigatorMetadata() {
     const self = this;
+    // TODO: Move to connector attributes
     return (
       window.HAS_CATALOG &&
-      (self.getSourceType() === 'hive' || self.getSourceType() === 'impala') &&
+      (self.getDialect() === 'hive' || self.getDialect() === 'impala') &&
       (self.isDatabase() || self.isTableOrView() || self.isColumn())
     );
   }
@@ -808,10 +825,8 @@ class DataCatalogEntry {
    */
   getResolvedComment() {
     const self = this;
-    if (
-      self.navigatorMeta &&
-      (self.getSourceType() === 'hive' || self.getSourceType() === 'impala')
-    ) {
+    // TODO: Move to connector attributes
+    if (self.navigatorMeta && (self.getDialect() === 'hive' || self.getDialect() === 'impala')) {
       return self.navigatorMeta.description || self.navigatorMeta.originalDescription || '';
     }
     return (self.sourceMeta && self.sourceMeta.comment) || '';
@@ -1030,7 +1045,7 @@ class DataCatalogEntry {
     } else {
       apiHelper
         .updateSourceMetadata({
-          sourceType: self.getSourceType(),
+          sourceType: self.getConnector().id,
           path: self.path,
           properties: {
             comment: comment
@@ -1158,13 +1173,21 @@ class DataCatalogEntry {
   }
 
   /**
-   * Returns the source type of this entry.
+   * Returns the dialect of this entry.
    *
    * @return {string} - 'impala', 'hive', 'solr', etc.
    */
-  getSourceType() {
-    const self = this;
-    return self.dataCatalog.sourceType;
+  getDialect() {
+    return this.getConnector().dialect || this.getConnector().id; // .id for editor v1
+  }
+
+  /**
+   * Returns the connector for this entry
+   *
+   * @return {Connector}
+   */
+  getConnector() {
+    return this.dataCatalog.connector;
   }
 
   /**
@@ -1641,7 +1664,7 @@ class DataCatalogEntry {
     if (options && options.operation && options.operation !== 'default') {
       return catalogUtils.applyCancellable(
         apiHelper.fetchSample({
-          sourceType: self.dataCatalog.sourceType,
+          sourceType: self.getConnector().id,
           compute: self.compute,
           path: self.path,
           silenceErrors: options && options.silenceErrors,

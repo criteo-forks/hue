@@ -72,7 +72,7 @@ class AuthenticationForm(DjangoAuthenticationForm):
     'inactive': _t("Account deactivated. Please contact an administrator."),
   }
 
-  username = CharField(label=_t("Username"), widget=TextInput(attrs={'maxlength': 30, 'placeholder': _t("Username"), 'autocomplete': 'off', 'autofocus': 'autofocus'}))
+  username = CharField(label=_t("Username"), widget=TextInput(attrs={'maxlength': 150, 'placeholder': _t("Username"), 'autocomplete': 'off', 'autofocus': 'autofocus'}))
   password = CharField(label=_t("Password"), widget=PasswordInput(attrs={'placeholder': _t("Password"), 'autocomplete': 'off'}))
 
   def authenticate(self):
@@ -84,7 +84,7 @@ class AuthenticationForm(DjangoAuthenticationForm):
         user = User.objects.get(username=self.cleaned_data.get('username'))
 
         expires_delta = datetime.timedelta(seconds=conf.AUTH.EXPIRES_AFTER.get())
-        if user.is_active and user.last_login + expires_delta < datetime.datetime.now():
+        if user.is_active and user.last_login and user.last_login + expires_delta < datetime.datetime.now():
           INACTIVE_EXPIRATION_DELTA = datetime.timedelta(days=365)
           if is_admin(user):
             if conf.AUTH.EXPIRE_SUPERUSERS.get():

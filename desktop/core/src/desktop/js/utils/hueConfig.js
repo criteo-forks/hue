@@ -23,13 +23,15 @@ export const CONFIG_REFRESHED_EVENT = 'cluster.config.set.config';
 export const GET_KNOWN_CONFIG_EVENT = 'cluster.config.get.config';
 
 let lastConfigPromise = undefined;
+let lastKnownConfig = undefined;
 
-const refreshConfig = () => {
+export const refreshConfig = async () => {
   lastConfigPromise = new Promise((resolve, reject) => {
     apiHelper
       .getClusterConfig()
       .done(data => {
         if (data.status === 0) {
+          lastKnownConfig = data;
           resolve(data);
         } else {
           $(document).trigger('error', data.message);
@@ -46,10 +48,75 @@ const refreshConfig = () => {
     .catch(() => {
       huePubSub.publish(CONFIG_REFRESHED_EVENT);
     });
+
+  return lastConfigPromise;
+};
+
+const validConnectorConfig = (config, type) => {
+  if (
+    !config ||
+    !config.app_config ||
+    !config.app_config[type] ||
+    !config.app_config[type].interpreters
+  ) {
+    console.error(`No "interpreters" attribute present in the config for type "${type}".`);
+    return false;
+  }
+  return true;
+};
+
+export const getLastKnownConfig = () => lastKnownConfig;
+
+const CONNECTOR_TYPES = {
+  editor: 'editor',
+  browser: 'browser'
+};
+
+const findConnector = (connectorTest, type) => {
+  if (validConnectorConfig(lastKnownConfig, type)) {
+    const connectors = lastKnownConfig.app_config[type].interpreters;
+    return connectors.find(connectorTest);
+  }
+};
+
+const filterConnectors = (connectorTest, type) => {
+  if (validConnectorConfig(lastKnownConfig, type)) {
+    const connectors = lastKnownConfig.app_config[type].interpreters;
+    return connectors.filter(connectorTest);
+  }
+  return [];
+};
+
+export const findBrowserConnector = connectorTest =>
+  findConnector(connectorTest, CONNECTOR_TYPES.browser);
+
+export const findEditorConnector = connectorTest =>
+  findConnector(connectorTest, CONNECTOR_TYPES.editor);
+
+export const filterEditorConnectors = connectorTest =>
+  filterConnectors(connectorTest, CONNECTOR_TYPES.editor);
+
+const rootPathRegex = /.*%3A%2F%2F(.+)$/;
+
+/**
+ * This takes the initial path from the "browser" config, used in cases where the users can't access '/'
+ * for abfs etc.
+ */
+export const getRootFilePath = connector => {
+  if (!connector || connector.type === 'hdfs') {
+    return '';
+  }
+  const match = connector.page.match(rootPathRegex);
+  if (match) {
+    return match[1] + '/';
+  }
+
+  return '';
 };
 
 huePubSub.subscribe(REFRESH_CONFIG_EVENT, refreshConfig);
 
+// TODO: Replace GET_KNOWN_CONFIG_EVENT pubSub with sync getKnownConfig const
 huePubSub.subscribe(GET_KNOWN_CONFIG_EVENT, callback => {
   if (lastConfigPromise && callback) {
     lastConfigPromise.then(callback).catch(callback);

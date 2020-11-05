@@ -130,7 +130,7 @@ def api_error_handler(f):
       response['status'] = -4
     except FilesystemException as e:
       response['status'] = 2
-      response['message'] = e.message
+      response['message'] = e.message or 'Query history not found'
     except QueryError as e:
       LOG.exception('Error running %s' % f.__name__)
       response['status'] = 1
@@ -141,7 +141,7 @@ def api_error_handler(f):
           response['help'] = {
             'setting': {
               'name': 'max_row_size',
-              'value':str(int(_closest_power_of_2(_to_size_in_bytes(size.group(1), size.group(2)))))
+              'value': str(int(_closest_power_of_2(_to_size_in_bytes(size.group(1), size.group(2)))))
             }
           }
       if e.handle:

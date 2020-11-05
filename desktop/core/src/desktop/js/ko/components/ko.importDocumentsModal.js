@@ -20,7 +20,7 @@ import * as ko from 'knockout';
 import componentUtils from './componentUtils';
 import huePubSub from 'utils/huePubSub';
 import I18n from 'utils/i18n';
-import HueFileEntry from '../../doc/hueFileEntry';
+import HueFileEntry from 'doc/hueFileEntry';
 
 export const HIDE_EVENT = 'hide.import.documents.modal';
 export const SHOW_EVENT = 'show.import.documents.modal';
@@ -168,7 +168,7 @@ componentUtils.registerComponent('import-documents-modal', undefined, TEMPLATE).
     huePubSub.publish(HIDE_EVENT);
 
     const $importDocumentsModal = $(
-      '<div id="importDocumentsModal" data-bind="descendantsComplete: descendantsComplete, component: { name: \'import-documents-modal\', params: params }" data-keyboard="true" class="modal hide fade fileupload-modal" tabindex="-1"/>'
+      '<div id="importDocumentsModal" data-bind="descendantsComplete: descendantsComplete, component: { name: \'import-documents-modal\', params: params }" data-keyboard="true" class="modal hide fade fileupload-modal" tabindex="-1"></div>'
     );
     $('body').append($importDocumentsModal);
 

@@ -380,9 +380,7 @@ class MetastoreTable {
     this.samples.loaded(false);
     this.partitions.loaded(false);
     // Clear will publish when done
-    this.catalogEntry.clearCache({
-      invalidate: this.catalogEntry.getSourceType() === 'impala' ? 'invalidate' : 'cache'
-    });
+    this.catalogEntry.clearCache();
   }
 
   showImportData() {
@@ -396,7 +394,7 @@ class MetastoreTable {
       '/metastore/table/' +
         this.catalogEntry.path.join('/') +
         '/load?source_type=' +
-        this.catalogEntry.getSourceType()
+        this.catalogEntry.getConnector().id
     )
       .done(data => {
         $('#import-data-modal').html(data['data']);

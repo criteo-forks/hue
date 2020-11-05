@@ -23,7 +23,6 @@ import 'apps/notebook2/components/ko.executableActions';
 import 'apps/notebook2/components/ko.executableLogs';
 import 'apps/notebook2/components/ko.executableProgressBar';
 import 'apps/notebook2/components/ko.snippetEditorActions';
-import 'apps/notebook2/components/ko.savedQueries';
 import 'apps/notebook2/components/ko.snippetResults';
 import 'apps/notebook2/components/ko.queryHistory';
 
@@ -32,20 +31,30 @@ import apiHelper from 'api/apiHelper';
 import Executor from 'apps/notebook2/execution/executor';
 import hueAnalytics from 'utils/hueAnalytics';
 import huePubSub from 'utils/huePubSub';
-import hueUtils from 'utils/hueUtils';
+import hueUtils, { defer } from 'utils/hueUtils';
 import sessionManager from 'apps/notebook2/execution/sessionManager';
 import SqlExecutable from 'apps/notebook2/execution/sqlExecutable';
-import { REDRAW_FIXED_HEADERS_EVENT } from 'apps/notebook2/events';
-import { EXECUTABLE_UPDATED_EVENT, EXECUTION_STATUS } from 'apps/notebook2/execution/executable';
+import { HIDE_FIXED_HEADERS_EVENT, REDRAW_FIXED_HEADERS_EVENT } from 'apps/notebook2/events';
+import {
+  EXECUTABLE_STATUS_TRANSITION_EVENT,
+  EXECUTABLE_UPDATED_EVENT,
+  EXECUTION_STATUS
+} from 'apps/notebook2/execution/executable';
 import {
   ACTIVE_STATEMENT_CHANGED_EVENT,
   REFRESH_STATEMENT_LOCATIONS_EVENT
 } from 'ko/bindings/ace/aceLocationHandler';
 import { EXECUTE_ACTIVE_EXECUTABLE_EVENT } from 'apps/notebook2/components/ko.executableActions';
-import { UPDATE_HISTORY_EVENT } from 'apps/notebook2/components/ko.queryHistory';
-import { GET_KNOWN_CONFIG_EVENT } from 'utils/hueConfig';
+import { ADD_TO_HISTORY_EVENT } from 'apps/notebook2/components/ko.queryHistory';
+import { findEditorConnector, getLastKnownConfig } from 'utils/hueConfig';
 import { cancelActiveRequest } from 'api/apiUtils';
 import { getOptimizer } from 'catalog/optimizer/optimizer';
+import {
+  ASSIST_GET_DATABASE_EVENT,
+  ASSIST_GET_SOURCE_EVENT,
+  ASSIST_SET_SOURCE_EVENT
+} from 'ko/components/assist/events';
+import { POST_FROM_LOCATION_WORKER_EVENT } from 'sql/sqlWorkerHandler';
 
 // TODO: Remove for ENABLE_NOTEBOOK_2. Temporary here for debug
 window.SqlExecutable = SqlExecutable;
@@ -191,46 +200,26 @@ export default class Snippet {
 
     this.connector = ko.observable();
 
-    this.dialect = ko.pureComputed(() => this.connector() && this.connector().dialect);
-    this.connectorType = ko.pureComputed(() => this.connector() && this.connector().type);
-
-    this.isSqlDialect = ko.pureComputed(() => this.connector() && this.connector().is_sql);
-    this.defaultLimit = ko.observable(snippetRaw.defaultLimit);
-
     this.connector.subscribe(connector => {
-      sessionManager.getSession({ type: connector.type }).then(() => {
+      sessionManager.getSession({ type: connector.id }).then(() => {
         this.status(STATUS.ready);
       });
     });
 
-    this.editorConfig = undefined;
+    this.initializeConnector(snippetRaw);
 
-    huePubSub.publish(GET_KNOWN_CONFIG_EVENT, config => {
-      if (config && config.app_config && config.app_config.editor) {
-        this.editorConfig = config.app_config.editor;
-        if (!this.defaultLimit() && this.editorConfig.default_limit) {
-          this.defaultLimit(this.editorConfig.default_limit);
-        }
-        const connectors = this.editorConfig.interpreters;
+    this.dialect = ko.pureComputed(() => this.connector() && this.connector().dialect);
+    this.connectorType = ko.pureComputed(() => this.connector() && this.connector().id);
 
-        if (snippetRaw.connector && snippetRaw.connector.type) {
-          this.connector(
-            connectors.find(connector => connector.type === snippetRaw.connector.type) ||
-              connectors.find(connector => connector.dialect === snippetRaw.connector.dialect)
-          );
-          if (!this.connector()) {
-            // Could happen if a connector is removed after a doc has been saved.
-            this.connector(snippetRaw.connector);
-          }
-        } else if (snippetRaw.type) {
-          // In the past "type" was used to denote dialect.
-          this.connector(
-            connectors.find(connector => connector.dialect === snippetRaw.type) ||
-              connectors.find(connector => connector.type === snippetRaw.type)
-          );
-        }
+    this.isSqlDialect = ko.pureComputed(() => this.connector() && this.connector().is_sql);
+    this.defaultLimit = ko.observable(snippetRaw.defaultLimit);
+
+    if (!this.defaultLimit()) {
+      const lastKnownConfig = getLastKnownConfig();
+      if (lastKnownConfig && lastKnownConfig.app_config && lastKnownConfig.app_config.editor) {
+        this.defaultLimit(lastKnownConfig.app_config.editor.default_limit);
       }
-    });
+    }
 
     this.isBatchable = ko.pureComputed(() => this.connector() && this.connector().is_batchable);
 
@@ -300,25 +289,29 @@ export default class Snippet {
 
     // History is currently in Notebook, same with saved queries by snippets, might be better in assist
     this.currentQueryTab = ko.observable(snippetRaw.currentQueryTab || 'queryHistory');
+
+    this.currentQueryTab.subscribe(newVal => {
+      huePubSub.publish(HIDE_FIXED_HEADERS_EVENT);
+      if (newVal === 'queryResults') {
+        defer(() => {
+          huePubSub.publish(REDRAW_FIXED_HEADERS_EVENT);
+        });
+      }
+    });
+
     this.pinnedContextTabs = ko.observableArray(snippetRaw.pinnedContextTabs || []);
 
-    huePubSub.subscribeOnce(
-      'assist.source.set',
-      source => {
-        if (source !== this.dialect()) {
-          huePubSub.publish('assist.set.source', this.dialect());
-        }
-      },
-      this.parentVm.huePubSubId
-    );
-
-    huePubSub.publish('assist.get.source');
+    huePubSub.publish(ASSIST_GET_SOURCE_EVENT, source => {
+      if (source !== this.dialect()) {
+        huePubSub.publish(ASSIST_SET_SOURCE_EVENT, this.dialect());
+      }
+    });
 
     this.ignoreNextAssistDatabaseUpdate = false;
 
     if (!this.database()) {
-      huePubSub.publish('assist.get.database.callback', {
-        source: this.dialect(),
+      huePubSub.publish(ASSIST_GET_DATABASE_EVENT, {
+        connector: this.connector(),
         callback: databaseDef => {
           this.handleAssistSelection(databaseDef);
         }
@@ -600,7 +593,7 @@ export default class Snippet {
     });
 
     const activeSourcePromises = [];
-    huePubSub.subscribe('ace.sql.location.worker.message', e => {
+    huePubSub.subscribe(POST_FROM_LOCATION_WORKER_EVENT, e => {
       while (activeSourcePromises.length) {
         const promise = activeSourcePromises.pop();
         if (promise.cancel) {
@@ -823,6 +816,125 @@ export default class Snippet {
       }
     });
 
+    this.wasBatchExecuted = ko.observable(!!snippetRaw.wasBatchExecuted);
+    this.isReady = ko.pureComputed(
+      () =>
+        (this.statementType() === 'text' &&
+          ((this.isSqlDialect() && this.statement() !== '') ||
+            ([DIALECT.jar, DIALECT.java, DIALECT.spark2, DIALECT.distcp].indexOf(this.dialect()) ===
+              -1 &&
+              this.statement() !== '') ||
+            ([DIALECT.jar, DIALECT.java].indexOf(this.dialect()) !== -1 &&
+              (this.properties().app_jar() !== '' && this.properties().class() !== '')) ||
+            (DIALECT.spark2 === this.dialect() && this.properties().jars().length > 0) ||
+            (DIALECT.shell === this.dialect() && this.properties().command_path().length > 0) ||
+            (DIALECT.mapreduce === this.dialect() && this.properties().app_jar().length > 0) ||
+            (DIALECT.distcp === this.dialect() &&
+              this.properties().source_path().length > 0 &&
+              this.properties().destination_path().length > 0))) ||
+        (this.statementType() === 'file' && this.statementPath().length > 0) ||
+        (this.statementType() === 'document' &&
+          this.associatedDocumentUuid() &&
+          this.associatedDocumentUuid().length > 0)
+    );
+    this.lastExecuted = ko.observable(snippetRaw.lastExecuted || 0);
+    this.lastAceSelectionRowOffset = ko.observable(snippetRaw.lastAceSelectionRowOffset || 0);
+
+    this.executingBlockingOperation = null; // A ExecuteStatement()
+    this.showLongOperationWarning = ko.observable(false);
+    this.showLongOperationWarning.subscribe(newValue => {
+      if (newValue) {
+        hueAnalytics.convert('editor', 'showLongOperationWarning');
+      }
+    });
+
+    this.longOperationTimeout = -1;
+
+    this.lastCompatibilityRequest = undefined;
+
+    this.isFetchingData = false;
+
+    this.isCanceling = ko.observable(false);
+
+    this.autocompleter = new AceAutocompleteWrapper({
+      snippet: this,
+      user: this.parentVm.user,
+      optEnabled: false,
+      timeout: this.parentVm.autocompleteTimeout
+    });
+
+    this.activeExecutable = ko.observable();
+
+    // TODO: User connector instead of compute, namespace, sourceType, isOptimizerEnabled, isSqlEngine
+    this.executor = new Executor({
+      compute: this.compute,
+      database: this.database,
+      connector: this.connector,
+      namespace: this.namespace,
+      defaultLimit: this.defaultLimit,
+      isOptimizerEnabled: this.parentVm.isOptimizerEnabled(),
+      snippet: this,
+      isSqlEngine: this.isSqlDialect
+    });
+
+    if (snippetRaw.executor) {
+      try {
+        this.executor.executables = snippetRaw.executor.executables.map(executableRaw => {
+          switch (executableRaw.type) {
+            case 'sqlExecutable': {
+              return SqlExecutable.fromJs(this.executor, executableRaw);
+            }
+            default: {
+              throw new Error('Failed to created executable of type ' + executableRaw.type);
+            }
+          }
+        });
+
+        this.executor.executables.forEach(async executable => {
+          if (executable.status !== EXECUTION_STATUS.ready) {
+            await executable.checkStatus();
+          } else {
+            executable.notify();
+          }
+        });
+      } catch (err) {
+        console.error(err); // TODO: Move up
+      }
+    }
+
+    huePubSub.subscribe(EXECUTABLE_UPDATED_EVENT, executable => {
+      if (this.activeExecutable() === executable) {
+        this.updateFromExecutable(executable);
+      }
+    });
+
+    huePubSub.subscribe(EXECUTABLE_STATUS_TRANSITION_EVENT, transitionDetails => {
+      if (this.activeExecutable() === transitionDetails.executable) {
+        if (
+          (transitionDetails.newStatus === EXECUTION_STATUS.available ||
+            transitionDetails.newStatus === EXECUTION_STATUS.failed ||
+            transitionDetails.newStatus === EXECUTION_STATUS.success) &&
+          this.activeExecutable().history &&
+          this.activeExecutable().handle
+        ) {
+          huePubSub.publish(ADD_TO_HISTORY_EVENT, {
+            absoluteUrl: undefined,
+            statement: this.activeExecutable().handle.statement,
+            lastExecuted: this.activeExecutable().executeStarted,
+            status: this.activeExecutable().status,
+            name: this.parentNotebook.name(),
+            uuid: this.activeExecutable().history.uuid
+          });
+        }
+      }
+    });
+
+    this.activeExecutable.subscribe(this.updateFromExecutable.bind(this));
+
+    this.refreshHistory = notebook.fetchHistory;
+
+    huePubSub.publish(REFRESH_STATEMENT_LOCATIONS_EVENT, this);
+
     // TODO: Add optimizer check per connector?
     if (window.HAS_OPTIMIZER && !this.parentVm.isNotificationManager()) {
       let lastComplexityRequest;
@@ -944,128 +1056,20 @@ export default class Snippet {
         this.checkComplexity();
       });
     }
-
-    this.wasBatchExecuted = ko.observable(!!snippetRaw.wasBatchExecuted);
-    this.isReady = ko.pureComputed(
-      () =>
-        (this.statementType() === 'text' &&
-          ((this.isSqlDialect() && this.statement() !== '') ||
-            ([DIALECT.jar, DIALECT.java, DIALECT.spark2, DIALECT.distcp].indexOf(this.dialect()) ===
-              -1 &&
-              this.statement() !== '') ||
-            ([DIALECT.jar, DIALECT.java].indexOf(this.dialect()) !== -1 &&
-              (this.properties().app_jar() !== '' && this.properties().class() !== '')) ||
-            (DIALECT.spark2 === this.dialect() && this.properties().jars().length > 0) ||
-            (DIALECT.shell === this.dialect() && this.properties().command_path().length > 0) ||
-            (DIALECT.mapreduce === this.dialect() && this.properties().app_jar().length > 0) ||
-            (DIALECT.distcp === this.dialect() &&
-              this.properties().source_path().length > 0 &&
-              this.properties().destination_path().length > 0))) ||
-        (this.statementType() === 'file' && this.statementPath().length > 0) ||
-        (this.statementType() === 'document' &&
-          this.associatedDocumentUuid() &&
-          this.associatedDocumentUuid().length > 0)
-    );
-    this.lastExecuted = ko.observable(snippetRaw.lastExecuted || 0);
-    this.lastAceSelectionRowOffset = ko.observable(snippetRaw.lastAceSelectionRowOffset || 0);
-
-    this.executingBlockingOperation = null; // A ExecuteStatement()
-    this.showLongOperationWarning = ko.observable(false);
-    this.showLongOperationWarning.subscribe(newValue => {
-      if (newValue) {
-        hueAnalytics.convert('editor', 'showLongOperationWarning');
-      }
-    });
-
-    this.longOperationTimeout = -1;
-
-    this.lastCompatibilityRequest = undefined;
-
-    this.isFetchingData = false;
-
-    this.isCanceling = ko.observable(false);
-
-    this.autocompleter = new AceAutocompleteWrapper({
-      snippet: this,
-      user: this.parentVm.user,
-      optEnabled: false,
-      timeout: this.parentVm.autocompleteTimeout
-    });
-
-    this.activeExecutable = ko.observable();
-
-    // TODO: User connector instead of compute, namespace, sourceType, isOptimizerEnabled, isSqlEngine
-    this.executor = new Executor({
-      compute: this.compute,
-      database: this.database,
-      connector: this.connector,
-      namespace: this.namespace,
-      defaultLimit: this.defaultLimit,
-      isOptimizerEnabled: this.parentVm.isOptimizerEnabled(),
-      snippet: this,
-      isSqlEngine: this.isSqlDialect
-    });
-
-    if (snippetRaw.executor) {
-      try {
-        this.executor.executables = snippetRaw.executor.executables.map(executableRaw => {
-          switch (executableRaw.type) {
-            case 'sqlExecutable': {
-              return SqlExecutable.fromJs(this.executor, executableRaw);
-            }
-            default: {
-              throw new Error('Failed to created executable of type ' + executableRaw.type);
-            }
-          }
-        });
-
-        this.executor.executables.forEach(async executable => {
-          if (executable.status !== EXECUTION_STATUS.ready) {
-            await executable.checkStatus();
-          } else {
-            executable.notify();
-          }
-        });
-      } catch (err) {
-        console.error(err); // TODO: Move up
-      }
-    }
-
-    huePubSub.subscribe(EXECUTABLE_UPDATED_EVENT, executable => {
-      if (this.activeExecutable() === executable) {
-        this.updateFromExecutable(executable);
-      }
-    });
-
-    this.activeExecutable.subscribe(this.updateFromExecutable.bind(this));
-
-    this.refreshHistory = notebook.fetchHistory;
-
-    huePubSub.publish(REFRESH_STATEMENT_LOCATIONS_EVENT, this);
   }
 
   changeDialect(dialect) {
-    huePubSub.publish(GET_KNOWN_CONFIG_EVENT, config => {
-      if (config && config.app_config && config.app_config.editor) {
-        const foundConnector = config.app_config.editor.interpreters.find(
-          connector => connector.dialect === dialect
-        );
-        if (foundConnector) {
-          this.connector(foundConnector);
-        }
-      }
-    });
+    const connector = findEditorConnector(connector => connector.dialect === dialect);
+    if (!connector) {
+      throw new Error('No connector found for dialect ' + dialect);
+    }
+    // TODO: Switch changeDialect to changeType
+    this.connector(connector);
   }
 
   updateFromExecutable(executable) {
     if (executable) {
-      if (
-        executable.status === EXECUTION_STATUS.available ||
-        executable.status === EXECUTION_STATUS.failed ||
-        executable.status === EXECUTION_STATUS.success
-      ) {
-        huePubSub.publish(UPDATE_HISTORY_EVENT);
-      }
+      this.lastExecuted(executable.executeStarted);
       this.status(executable.status);
       if (executable.result) {
         this.currentQueryTab('queryResults');
@@ -1304,15 +1308,15 @@ export default class Snippet {
     }
   }
 
-  handleAssistSelection(databaseDef) {
+  handleAssistSelection(entry) {
     if (this.ignoreNextAssistDatabaseUpdate) {
       this.ignoreNextAssistDatabaseUpdate = false;
-    } else if (databaseDef.sourceType === this.dialect()) {
-      if (this.namespace() !== databaseDef.namespace) {
-        this.namespace(databaseDef.namespace);
+    } else if (entry.getConnector().id === this.connector().id) {
+      if (this.namespace() !== entry.namespace) {
+        this.namespace(entry.namespace);
       }
-      if (this.database() !== databaseDef.name) {
-        this.database(databaseDef.name);
+      if (this.database() !== entry.name) {
+        this.database(entry.name);
       }
     }
   }
@@ -1329,6 +1333,27 @@ export default class Snippet {
     } else if (this.status() === STATUS.readyExecute) {
       this.execute();
     }
+  }
+
+  initializeConnector(snippetRaw) {
+    const connectorIdToFind = (snippetRaw.connector && snippetRaw.connector.id) || snippetRaw.type;
+    let foundConnector = findEditorConnector(connector => connector.id === connectorIdToFind);
+
+    if (!foundConnector) {
+      // If not found by type pick the first by dialect
+      const connectorDialectToFind =
+        (snippetRaw.connector && snippetRaw.connector.dialect) || snippetRaw.type;
+      foundConnector = findEditorConnector(
+        connector => connector.dialect === connectorDialectToFind
+      );
+    }
+
+    if (!foundConnector && snippetRaw.connector) {
+      // This could happen when the connector has been removed completely
+      foundConnector = snippetRaw.connector;
+    }
+
+    this.connector(foundConnector);
   }
 
   onKeydownInVariable(context, e) {
@@ -1440,6 +1465,7 @@ export default class Snippet {
       statementType: this.statementType(),
       statement: this.statement(),
       aceCursorPosition: this.aceCursorPosition(),
+      lastExecuted: this.lastExecuted(),
       statementPath: this.statementPath(),
       associatedDocumentUuid: this.associatedDocumentUuid(),
       properties: komapping.toJS(this.properties), // TODO: Drop komapping
@@ -1461,10 +1487,7 @@ export default class Snippet {
       connector: this.connector(),
       currentQueryTab: this.currentQueryTab(),
       database: this.database(),
-      defaultLimit:
-        !this.editorConfig || this.defaultLimit() !== this.editorConfig.default_limit
-          ? this.defaultLimit()
-          : undefined,
+      defaultLimit: this.defaultLimit(),
       id: this.id(),
       is_redacted: this.is_redacted(),
       lastAceSelectionRowOffset: this.lastAceSelectionRowOffset(),
