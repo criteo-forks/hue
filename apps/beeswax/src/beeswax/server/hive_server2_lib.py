@@ -1167,7 +1167,11 @@ class HiveServerClient(object):
 
 
   def _get_query_configuration(self, query):
-    return dict([(setting['key'], setting['value']) for setting in query.settings])
+    query_configuration = dict([(setting['key'], setting['value']) for setting in query.settings])
+    query_configuration.update({
+      'com.criteo.hive.client': 'hue'
+    })
+    return query_configuration
 
 
 class HiveServerTableCompatible(HiveServerTable):
