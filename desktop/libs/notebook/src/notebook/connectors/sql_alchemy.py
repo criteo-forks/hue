@@ -302,7 +302,7 @@ class SqlAlchemyApi(Api):
   @query_error_handler
   def can_start_over(self, notebook, snippet):
     guid = snippet['result']['handle']['guid']
-    return CONNECTION_CACHE.get(guid, {}).get('can_start_over', False)
+    return CONNECTIONS.get(guid, {}).get('can_start_over', False)
 
   @query_error_handler
   def fetch_result(self, notebook, snippet, rows, start_over):
@@ -321,7 +321,7 @@ class SqlAlchemyApi(Api):
           }
           guid = uuid.uuid4().hex
           snippet['result']['handle']['guid'] = guid
-          CONNECTIONS[guid] = cache
+          CONNECTIONS[guid] = handle
 
       current_row = handle.get('current_row')
       first_rows = handle.get('first_rows')
@@ -342,9 +342,9 @@ class SqlAlchemyApi(Api):
             handle['first_rows'].extend(fetched_data)
             handle['current_row'] += len(data)
 
-      meta = cache['meta']
+      meta = handle['meta']
       self._assign_types(data, meta)
-    elif cache and 'broke_ui_fetching' in cache:
+    elif handle and 'broke_ui_fetching' in handle:
       raise QueryError('Cannot fetch results any more after query results have been exported')
     else:
       raise QueryExpired()
