@@ -17,7 +17,7 @@
 
 import pyhive.presto
 
-from notebook.connectors.sql_alchemy import SqlAlchemyApi, CONNECTION_CACHE
+from notebook.connectors.sql_alchemy import SqlAlchemyApi
 
 LOG_JSON_CACHE = {}
 STAGE_LINE = '{stage:10s}{state:1s}  {rows:5s}  {rows_per_sec:6s}  {bytes:5s}  {bytes_per_sec:7s}  {queued:6s}  {run:5s}  {done:5s}'
