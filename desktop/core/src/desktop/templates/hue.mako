@@ -51,6 +51,8 @@
   <meta name="description" content="Open source SQL Query Assistant for Databases/Warehouses.">
   <meta name="author" content="Hue Team">
 
+  <%include file="/google_analytics.mako" />
+
   <link href="${ static('desktop/css/roboto.css') }" rel="stylesheet">
   <link href="${ static('desktop/ext/css/font-awesome.min.css') }" rel="stylesheet">
   <link href="${ static('desktop/ext/css/cui/cui.css') }" rel="stylesheet">

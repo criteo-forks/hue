@@ -83,6 +83,8 @@ if USE_NEW_EDITOR.get():
   <link href="${ static('desktop/css/hue3.css') }" rel="stylesheet">
   <link href="${ static('desktop/css/hue3-extra.css') }" rel="stylesheet">
 
+  <%include file="/google_analytics.mako" />
+
   <style type="text/css">
     % if banner_message or conf.CUSTOM.BANNER_TOP_HTML.get():
       body {
