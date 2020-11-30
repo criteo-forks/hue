@@ -312,10 +312,10 @@ SECURE_CONTENT_SECURITY_POLICY = Config(
   key="secure_content_security_policy",
   help=_('X-Content-Type-Options: nosniff This is a HTTP response header feature that helps prevent attacks based on MIME-type confusion.'),
   type=str,
-  default="script-src 'self' 'unsafe-inline' 'unsafe-eval' *.google-analytics.com *.doubleclick.net data:;"+
-          "img-src 'self' *.google-analytics.com *.doubleclick.net http://*.tile.osm.org *.tile.osm.org *.gstatic.com data:;"+
+  default="script-src 'self' 'unsafe-inline' 'unsafe-eval' *.google-analytics.com *.doubleclick.net *.googletagmanager.com data:;"+
+          "img-src 'self' *.google-analytics.com *.doubleclick.net http://*.tile.osm.org *.tile.osm.org *.gstatic.com *.googletagmanager.com data:;"+
           "style-src 'self' 'unsafe-inline' fonts.googleapis.com;"+
-          "connect-src 'self';"+
+          "connect-src 'self' *.google-analytics.com *.googletagmanager.com;"+
           "frame-src *;"+
           "child-src 'self' data: *.vimeo.com;"+
           "object-src 'none'")
@@ -439,6 +439,13 @@ COLLECT_USAGE = Config(
          "Use Google Analytics to see how many times an application or specific section of an application is used, nothing more."),
   type=coerce_bool,
   default=True)
+
+GOOGLE_GTAG = Config(
+  key="google_gtag",
+  help=_("Collect Hue usage analytics."
+         "Use Google Analytics"),
+  type=str,
+  default="")
 
 REST_RESPONSE_SIZE = Config(
   key="rest_response_size",
