@@ -660,6 +660,7 @@ class HiveServerClient(object):
 
     if self.query_server['server_name'] == 'beeswax': # All the time
       kwargs['configuration'].update({'hive.server2.proxy.user': user.username})
+      kwargs['configuration'].update({'com.criteo.hive.client': 'hue'})
 
     if self.query_server['server_name'] == 'llap': # All the time
       kwargs['configuration'].update({'hive.server2.proxy.user': user.username})
@@ -1167,11 +1168,7 @@ class HiveServerClient(object):
 
 
   def _get_query_configuration(self, query):
-    query_configuration = dict([(setting['key'], setting['value']) for setting in query.settings])
-    if 'com.criteo.hive.client' not in query_configuration:
-      query_configuration['com.criteo.hive.client'] = 'hue'
-    return query_configuration
-
+    return dict([(setting['key'], setting['value']) for setting in query.settings])
 
 class HiveServerTableCompatible(HiveServerTable):
   """Same API as Beeswax"""
