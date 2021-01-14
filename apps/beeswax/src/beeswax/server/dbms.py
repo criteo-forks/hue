@@ -278,7 +278,7 @@ def get_query_server_config(name='beeswax', connector=None):
 
 def get_nodes_from_consul(consul):
   jq = requests.get(consul).json()
-  return set([(item['Node']['Node'], item['Service']['Port']) for item in jq])
+  return set([(item['Node']['Address'], item['Service']['Port']) for item in jq])
 
 def get_query_server_config_via_connector(connector):
   # TODO: connector is actually a notebook interpreter
