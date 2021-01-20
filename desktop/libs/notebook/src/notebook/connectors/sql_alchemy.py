@@ -131,20 +131,23 @@ class SqlAlchemyApi(Api):
     else:
       self.backticks = '"' if re.match('^((postgresql|presto|vertica)([+][^:]+)?://|awsathena|elasticsearch|)', self.options.get('url', '')) else '`'
 
-  def _get_engine(self):
-    engine_key = ENGINE_KEY % {
+  def _get_engine_key(self):
+    return ENGINE_KEY % {
       'username': self.user.username,
       'connector_name': self.interpreter['name']
     }
 
+  def _get_engine(self):
+    engine_key = self._get_engine_key()
+
     if engine_key not in ENGINES:
       ENGINES[engine_key] = self._create_engine()
-
     return ENGINES[engine_key]
 
   def _create_engine(self):
     if '${' in self.options['url']:  # URL parameters substitution
       vars = {'USER': self.user.username}
+
 
       if '${PASSWORD}' in self.options['url']:
         auth_provided = False
@@ -435,6 +438,10 @@ class SqlAlchemyApi(Api):
     engine = self._get_engine()
     engine.dispose()  # ENGINE_KEY currently includes the current user
 
+    engine_key = self._get_engine_key()
+
+    if engine_key in ENGINES:
+      del ENGINES[engine_key]
 
   @query_error_handler
   def autocomplete(self, snippet, database=None, table=None, column=None, nested=None):
