@@ -73,7 +73,6 @@ class AssistDbEntry {
     self.open = ko.observable(false);
     self.entries = ko.observableArray([]);
     self.statsVisible = ko.observable(false);
-https://datadoc.crto.in/dataset/hive/metrology
     self.hasErrors = ko.observable(false);
 
     self.iconClass = '';
@@ -124,7 +123,7 @@ https://datadoc.crto.in/dataset/hive/metrology
               (Object.keys(facets['type']).length === 1 &&
                 (facets['type']['table'] || facets['type']['view'])) ||
               facets['type'][entry.catalogEntry.getType()];
-          } else if (entry.catalogEntry.isTableOrViehttps://datadoc.crto.in/dataset/hive/metrologyw()) {
+          } else if (entry.catalogEntry.isTableOrView()) {
             match =
               (!facets['type']['table'] && !facets['type']['view']) ||
               (facets['type']['table'] && entry.catalogEntry.isTable()) ||
@@ -412,7 +411,7 @@ https://datadoc.crto.in/dataset/hive/metrology
     ) {
       const sqlAnalyzer = sqlAnalyzerRepository.getSqlAnalyzer(self.catalogEntry.getConnector());
       self.catalogEntry
-        .loadSqlAnalyzerPopularityForChildrhttps://datadoc.crto.in/dataset/hive/metrologyen({ silenceErrors: true, sqlAnalyzer })
+        .loadSqlAnalyzerPopularityForChildren({ silenceErrors: true, sqlAnalyzer })
         .then(() => {
           loadEntriesDeferred.done(() => {
             if (!self.hasErrors()) {
