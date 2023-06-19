@@ -14,8 +14,12 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
+  import sys
   from desktop.lib.django_util import extract_field_data
-  from django.utils.translation import ugettext as _
+  if sys.version_info[0] > 2:
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 
 <%def name="menubar(is_embeddable=False)">
@@ -92,10 +96,16 @@
     if attributes is None:
       attributes = {}
     ret_str = ""
-    for key, value in attributes.iteritems():
-      if key == "klass":
-        key = "class"
-      ret_str += "%s='%s' " % (key.replace("_", "-"), unicode(value))
+    if sys.version_info[0] > 2:
+      for key, value in attributes.items():
+        if key == "klass":
+          key = "class"
+        ret_str += "%s='%s' " % (key.replace("_", "-"), str(value))
+    else:
+      for key, value in attributes.iteritems():
+        if key == "klass":
+          key = "class"
+        ret_str += "%s='%s' " % (key.replace("_", "-"), unicode(value))
     return ret_str
 
   if not attrs:

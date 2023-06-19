@@ -18,12 +18,12 @@
 from builtins import str
 import json
 import logging
+import sys
 
 from datetime import datetime
 from django.urls import reverse
 from django.forms.formsets import formset_factory
 from django.shortcuts import redirect
-from django.utils.translation import ugettext as _
 
 from desktop.conf import USE_NEW_EDITOR, IS_MULTICLUSTER_ONLY
 from desktop.lib import django_mako
@@ -49,6 +49,11 @@ from oozie.models2 import Node, Workflow, Coordinator, Bundle, NODES, WORKFLOW_N
   _import_workspace, _save_workflow
 from oozie.utils import convert_to_server_timezone
 from oozie.views.editor import edit_workflow as old_edit_workflow, edit_coordinator as old_edit_coordinator, edit_bundle as old_edit_bundle
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -80,7 +85,7 @@ def open_old_workflow(request):
     _workflow = import_workflow_from_hue_3_7(workflow)
     return _edit_workflow(request, None, _workflow)
   except Exception as e:
-    LOG.warn('Could not open old worklow: %s' % smart_str(e))
+    LOG.warning('Could not open old worklow: %s' % smart_str(e))
     return old_edit_workflow(request, workflow=workflow.id)
 
 
@@ -525,7 +530,7 @@ def edit_coordinator(request):
       except Document2.DoesNotExist as e:
         document = None
         coordinator.data['properties']['workflow'] = ''
-        LOG.warn("Workflow with uuid %s doesn't exist: %s" % (scheduled_uuid, e))
+        LOG.warning("Workflow with uuid %s doesn't exist: %s" % (scheduled_uuid, e))
 
       if document and document.is_trashed:
         raise PopupException(_('Your workflow %s has been trashed!') % (document.name if document.name else ''))
@@ -632,7 +637,7 @@ def save_coordinator(request):
   if scheduled_id:
     scheduled_doc = Document2.objects.get(uuid=scheduled_id)
     scheduled_doc.can_read_or_exception(request.user)
-    coordinator_doc.dependencies = [scheduled_doc]
+    coordinator_doc.dependencies.set([scheduled_doc])
 
   coordinator_doc1 = coordinator_doc._get_doc1(doc2_type='coordinator2')
   coordinator_doc.update_data(coordinator_data)
@@ -869,7 +874,7 @@ def save_bundle(request):
     dependencies = Document2.objects.filter(type='oozie-coordinator2', uuid__in=[c['coordinator'] for c in bundle_data['coordinators']])
     for doc in dependencies:
       doc._get_doc1(doc2_type='coordinator2').can_read_or_exception(request.user)
-    bundle_doc.dependencies = dependencies
+    bundle_doc.dependencies.set(dependencies)
 
   bundle_doc1 = bundle_doc.doc.get()
   bundle_doc.update_data(bundle_data)

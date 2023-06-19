@@ -20,12 +20,14 @@ import sys
 
 import beeswax.hive_site
 
-from django.utils.translation import ugettext_lazy as _t, ugettext as _
-
 from desktop.conf import has_connectors
 from desktop.lib.exceptions import StructuredThriftTransportException
 from beeswax.settings import NICE_NAME
 
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext_lazy as _t, gettext as _
+else:
+  from django.utils.translation import ugettext_lazy as _t, ugettext as _
 
 LOG = logging.getLogger(__name__)
 
@@ -72,10 +74,24 @@ def config_validator(user):
 
   try:
     from desktop.lib.fsmanager import get_filesystem
+    from aws.conf import is_enabled as is_s3_enabled
+    from azure.conf import is_abfs_enabled
     warehouse = beeswax.hive_site.get_metastore_warehouse_dir()
     fs = get_filesystem()
+    fs_scheme = fs._get_scheme(warehouse)
     if fs:
-      fs.do_as_superuser(fs.stats, warehouse)
+      if fs_scheme == 's3a':
+        if is_s3_enabled():
+          fs.do_as_user(user, fs.stats, warehouse)
+        else:
+          LOG.warning("Warehouse is in S3, but no credential available.")
+      elif fs_scheme == 'abfs':
+        if is_abfs_enabled():
+          fs.do_as_user(user, fs.stats, warehouse)
+        else:
+          LOG.warning("Warehouse is in ABFS, but no credential available.")
+      else:
+        fs.do_as_superuser(fs.stats, warehouse)
   except Exception:
     msg = 'Failed to access Hive warehouse: %s'
     LOG.exception(msg % warehouse)

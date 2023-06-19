@@ -37,7 +37,17 @@ The default setting is port 8888 on all configured IP addresses.
     http_host=0.0.0.0
     http_port=8888
 
-[Gunicorn](https://gunicorn.org/) support is planned to come in via [HUE-8739](https://issues.cloudera.org/browse/HUE-8739).
+### Gunicorn server
+
+Instead of running CherryPy, [Gunicorn](https://gunicorn.org/) will be launched:
+
+      # Set to true to use CherryPy as the webserver, set to false
+      # to use Gunicorn as the webserver. Defaults to CherryPy if
+      # key is not specified.
+      use_cherrypy_server=false
+
+      # Gunicorn work class: gevent or evenlet, gthread or sync.
+      gunicorn_work_class=sync
 
 ### Specifying the Secret Key
 
@@ -269,7 +279,7 @@ Configure Hue for SAML Authentication
 
 The Service Provider (Hue) and the Identity Provider use a metadata file to confirm each other's identity. Hue stores metadata from the SAML server, and the IdP stores metadata from Hue server.
 
-In Configure Hue at the Command Line, you must copy the metadata from your IdP's SAML server and store it in an XML file on every ost with a Hue server.
+In Configure Hue at the Command Line, you must copy the metadata from your IdP's SAML server and store it in an XML file on every host with a Hue server.
 Important: Read the documentation of your Identity Provider for details on how to procure the XML of the SAML server metadata.
 
 Configure Hue at the Command Line
@@ -597,6 +607,49 @@ When idle_session_timeout is set, users will automatically be logged out after N
 
 [Read more about it here](http://gethue.com/introducing-the-new-login-modal-and-idle-session-timeout/).
 
+### Login
+
+In the section:
+
+    [desktop]
+    [[auth]]
+
+Users will expire after they have not logged in for 'n' amount of seconds. A negative number means that users will never expire.
+
+    expires_after=-1
+
+Apply 'expires_after' to superusers.
+
+    expire_superusers=true
+
+Users will automatically be logged out after 'n' seconds of inactivity. A negative number means that idle sessions will not be timed out.
+
+    idle_session_timeout=-1
+
+Force users to change password on first login with desktop.auth.backend.AllowFirstUserDjangoBackend
+
+    change_default_password=false
+
+Number of login attempts allowed before a record is created for failed logins
+
+    login_failure_limit=3
+
+After number of allowed login attempts are exceeded, do we lock out this IP and optionally user agent?
+
+    login_lock_out_at_failure=false
+
+If set, defines period of inactivity in hours after which failed logins will be forgotten. A value of 0 or None will disable this check. Default: None
+
+    login_cooloff_time=None
+
+If True, lock out based on an IP address AND a user agent. This means requests from different user agents but from the same IP are treated differently.
+
+    login_lock_out_use_user_agent=false
+
+If True, lock out based on IP and user
+
+    login_lock_out_by_combination_user_and_ip=false
+
 ### Auditing
 
 Read more about [Auditing User Administration Operations with Hue and Cloudera Navigator](http://gethue.com/auditing-user-administration-operations-with-hue-and-cloudera-navigator-2/).
@@ -611,7 +664,29 @@ If set, limits the number of concurrent user sessions. 1 represents 1 browser se
 
 [Read more about it here](http://gethue.com/restrict-number-of-concurrent-sessions-per-user/).
 
-## Customize the UI
+## Query execution timeouts
+
+i.e. if the SQL query takes more than 30 seconds, it might timeout without it:
+
+    504 Gateway Time-out 504 Gateway Time-out nginx/1.17.10
+
+One solution is to  execute long blocking or resource intensive operations in tasks outside of the server. This is particularly useful for querying databases other than Hive or Impala that uses the SqlAlchemy interface which is blocking until the query actually finishes.
+
+Read more in the [Task Server section](/administrator/administration/reference/#task-server) of the Reference Guide.
+
+An alternative is to increase the NGINX timeouts from 30s to more minutes:
+
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: '900'
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '900'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '900'
+
+## Customization
+
+### Language
+
+The user language is auto-detected and can also be manually overriden as a [per user basis](/user/concept/#changing-the-language).
+
+If text strings are not all translated from English, feel free to improve the `django.po` files of the corresponding language and [recompile them](/developer/development/#internationalization). Those translation mappings are located across the project in [locale](https://github.com/cloudera/hue/tree/master/desktop/core/src/desktop/locale) directories.
 
 ### Maps look and feel
 
@@ -657,42 +732,94 @@ Read more about it in [Hue with a custom logo](http://gethue.com/hue-with-a-cust
 
 By default Hue stores the [saved documents](/user/concept/#documents) in its database. This features aims at pointing to any source versioning systems like GitHub, BitBucket... to open and save queries.
 
-**Note** This feature is experiemental and tracked in [HUE-951](https://issues.cloudera.org/browse/HUE-951).
+**Note** This feature is experimental and tracked in [HUE-951](https://issues.cloudera.org/browse/HUE-951).
 
     [desktop]
 
     [[vcs]]
 
     ## [[[git-read-only]]]
-        ## Base URL to Remote Server
-        # remote_url=https://github.com/cloudera/hue/tree/master
+    ## Base URL to Remote Server
+    # remote_url=https://github.com/cloudera/hue/tree/master
 
-        ## Base URL to Version Control API
-        # api_url=https://api.github.com
+    ## Base URL to Version Control API
+    # api_url=https://api.github.com
+
     ## [[[github]]]
+    ## Base URL to Remote Server
+    # remote_url=https://github.com/cloudera/hue/tree/master
 
-        ## Base URL to Remote Server
-        # remote_url=https://github.com/cloudera/hue/tree/master
+    ## Base URL to Version Control API
+    # api_url=https://api.github.com
 
-        ## Base URL to Version Control API
-        # api_url=https://api.github.com
+    # These will be necessary when you want to write back to the repository.
+    ## Client ID for Authorized Application
+    # client_id=
 
-        # These will be necessary when you want to write back to the repository.
-        ## Client ID for Authorized Application
-        # client_id=
+    ## Client Secret for Authorized Application
+    # client_secret=
 
-        ## Client Secret for Authorized Application
-        # client_secret=
     ## [[[svn]]
-        ## Base URL to Remote Server
-        # remote_url=https://github.com/cloudera/hue/tree/master
+    ## Base URL to Remote Server
+    # remote_url=https://github.com/cloudera/hue/tree/master
 
-        ## Base URL to Version Control API
-        # api_url=https://api.github.com
+    ## Base URL to Version Control API
+    # api_url=https://api.github.com
 
-        # These will be necessary when you want to write back to the repository.
-        ## Client ID for Authorized Application
-        # client_id=
+    # These will be necessary when you want to write back to the repository.
+    ## Client ID for Authorized Application
+    # client_id=
 
-        ## Client Secret for Authorized Application
-        # client_secret=
+    ## Client Secret for Authorized Application
+    # client_secret=
+
+## Slack
+Currently in **Beta**
+
+This [integration](/user/concept/#slack) with Hue helps users by assisting them with their SQL queries and have better collaboration/discussion with other users via Slack.
+
+### Architectural View
+![Share to Slack Architecture](https://cdn.gethue.com/uploads/2021/04/share_to_slack_architecture.png)
+
+One of the flows for sharing query/gist links, the main bot logic lies on top of the Hue server listening to the events posted by the Hue App from Slack to an endpoint, processing those events such as generating a rich preview to unfurl for the links shared in the Slack channels and using Slack API methods for sending these responses back to Slack.
+
+The 'Smart Query Assistance' block on top of Hue server which drives the other flow for SQL Assistance is currently a work in progress for replying to users asking questions on how to find certain data tables or to query them.
+
+### Improved Slack App Installation
+Steps to be followed by the **Slack workspace admin** to set up their own Hue Slack app. The app needs to be created only once, other Hue users can simply [interact](/user/concept/#slack) with the App in the Slack channels!
+
+- Go to https://gethue.com/ and in the last section, give your **Hue instance hostname** _(e.g. hue.gethue.com:8000)_.
+- Choose the Slack workspace where you want to install the app and click **Next**.
+- You can review the configuration and simply click **Create**.
+- Once the app is created, install it in the workspace and plug-it with Hue by following this [last step](/administrator/configuration/server/#updating-your-hueini-config-file).
+
+![Easier Installation GIF](https://cdn.gethue.com/uploads/2021/06/easier_installation_slack.gif)
+
+### Manual Slack App Installation
+
+#### App Manifest (YAML)
+The latest version of the manifest file is checked-in [here](https://github.com/cloudera/hue/blob/master/tools/slack/manifest.yml).
+
+#### Changes needed in the YAML Manifest
+Update the two _demo.gethue.com_ with **your Hue instance hostname:**
+- Under **unfurl_domains**
+- Under **event_subscriptions**, in **request_url** `https://<hue-instance-hostname>/desktop/slack/events/`
+
+#### Creating your app
+1. Go to https://api.slack.com/apps and click **Create New App**.
+2. Choose **From an app manifest** option and workspace where you want to install the app and click **Next**.
+3. Choose **YAML** and paste the Manifest code (make sure you do the necessary changes mentioned above) and click **Next**.
+4. Read the review summary and if everything’s correct, click **Create**.
+5. Once the app is created, install it in the workspace.
+
+#### Updating your hue.ini config file
+6. Go to the **OAuth & Permissions** page, copy the **Bot User OAuth Token** and update **slack_bot_user_token** (e.g. _xoxb-xxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxx_).
+7. Similarly, go to the **Basic Information** page, copy the **Verification Token** and update **slack_verification_token**.
+8. Paste this in your hue.ini file under `[desktop]` section.
+
+        [[slack]]
+        is_enabled=true
+        slack_verification_token=<your-slack-verification-token>
+        slack_bot_user_token=<your-slack-bot-user-token>
+
+Now add the Slack app in your desired channels and send some [query/gist links](/user/concept/#slack).

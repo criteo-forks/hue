@@ -16,10 +16,10 @@
 
 import d3v3 from 'd3v3';
 
-import hueUtils from 'utils/hueUtils';
+import htmlEncode from 'utils/html/htmlEncode';
 import nv from 'ext/nv.d3.1.1.15b.custom';
 
-nv.models.lineWithBrushChart = function() {
+nv.models.lineWithBrushChart = function () {
   'use strict';
   //============================================================
   // Public Variables with Default Settings
@@ -49,20 +49,13 @@ nv.models.lineWithBrushChart = function() {
     tooltips = true,
     tooltip = null,
     displayValuesInLegend = false;
-  const tooltipSimple = function(value) {
-      return (
-        '<h3>' +
-        hueUtils.htmlEncode(value.key) +
-        '</h3>' +
-        '<p>' +
-        hueUtils.htmlEncode(value.x) +
-        '</p>'
-      );
+  const tooltipSimple = function (value) {
+      return '<h3>' + htmlEncode(value.key) + '</h3>' + '<p>' + htmlEncode(value.x) + '</p>';
     },
-    tooltipMultiple = function(values) {
+    tooltipMultiple = function (values) {
       return (
         '<h3>' +
-        hueUtils.htmlEncode(values[0] && values[0].x) +
+        htmlEncode(values[0] && values[0].x) +
         '</h3>' +
         values
           .map(value => {
@@ -70,22 +63,22 @@ nv.models.lineWithBrushChart = function() {
               '<p><span class="circle" style="background-color:' +
               value.color +
               '"></span><b>' +
-              hueUtils.htmlEncode(value.key) +
+              htmlEncode(value.key) +
               '</b> ' +
-              hueUtils.htmlEncode(value.y) +
+              htmlEncode(value.y) +
               '</p>'
             );
           })
           .join('')
       );
     },
-    getX = function(d) {
+    getX = function (d) {
       return d.x;
     }, // accessor to get the x value
-    getY = function(d) {
+    getY = function (d) {
       return d.y;
     }, // accessor to get the y value;
-    controlWidth = function() {
+    controlWidth = function () {
       return showControls ? (selectionHidden ? 240 : 300) : 0;
     },
     legendWidth = 175,
@@ -115,7 +108,7 @@ nv.models.lineWithBrushChart = function() {
   // Private Variables
   //------------------------------------------------------------
 
-  const showTooltip = function(e, offsetElement) {
+  const showTooltip = function (e, offsetElement) {
     let values;
     if (!tooltip) {
       values = (e.list || [e]).map(e => {
@@ -159,7 +152,7 @@ nv.models.lineWithBrushChart = function() {
   //============================================================
 
   function chart(selection) {
-    selection.each(function(data) {
+    selection.each(function (data) {
       const container = d3v3.select(this),
         that = this;
 
@@ -169,12 +162,8 @@ nv.models.lineWithBrushChart = function() {
         availableHeight =
           (height || parseInt(container.style('height')) || 400) - margin.top - margin.bottom;
 
-      chart.update = function() {
-        container
-          .transition()
-          .duration(transitionDuration)
-          .each('end', onChartUpdate)
-          .call(chart);
+      chart.update = function () {
+        container.transition().duration(transitionDuration).each('end', onChartUpdate).call(chart);
         filteredData = data.filter(series => {
           return !series.disabled;
         });
@@ -409,10 +398,7 @@ nv.models.lineWithBrushChart = function() {
           // Can happen if the state change before the charts has been created.
           return;
         }
-        brush
-          .x(x)
-          .on('brush', onBrush)
-          .on('brushend', onBrushEnd);
+        brush.x(x).on('brush', onBrush).on('brushend', onBrushEnd);
         if (chart.brushDomain) {
           const brushExtent = [
             fGetNumericValue(chart.brushDomain[0]),
@@ -483,9 +469,7 @@ nv.models.lineWithBrushChart = function() {
           .tickSize(-availableHeight, 0);
 
         g.select('.nv-x.nv-axis').attr('transform', 'translate(0,' + y.range()[0] + ')');
-        g.select('.nv-x.nv-axis')
-          .transition()
-          .call(xAxis);
+        g.select('.nv-x.nv-axis').transition().call(xAxis);
       }
 
       if (showYAxis) {
@@ -494,9 +478,7 @@ nv.models.lineWithBrushChart = function() {
           .ticks(availableHeight / 36)
           .tickSize(-availableChartWidth, 0);
 
-        g.select('.nv-y.nv-axis')
-          .transition()
-          .call(yAxis);
+        g.select('.nv-y.nv-axis').transition().call(yAxis);
       }
       //------------------------------------------------------------
 
@@ -632,7 +614,7 @@ nv.models.lineWithBrushChart = function() {
       }
 
       function onBrushEnd() {
-        const closest = function() {
+        const closest = function () {
           if (!data[0].values.length) {
             return [];
           }
@@ -919,7 +901,7 @@ nv.models.lineWithBrushChart = function() {
 
   chart.options = nv.utils.optionsFunc.bind(chart);
 
-  chart.margin = function(_) {
+  chart.margin = function (_) {
     if (!arguments.length) {
       return margin;
     }
@@ -930,7 +912,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.width = function(_) {
+  chart.width = function (_) {
     if (!arguments.length) {
       return width;
     }
@@ -938,7 +920,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.height = function(_) {
+  chart.height = function (_) {
     if (!arguments.length) {
       return height;
     }
@@ -946,7 +928,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.color = function(_) {
+  chart.color = function (_) {
     if (!arguments.length) {
       return color;
     }
@@ -955,7 +937,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.showControls = function(_) {
+  chart.showControls = function (_) {
     if (!arguments.length) {
       return showControls;
     }
@@ -963,7 +945,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.showLegend = function(_) {
+  chart.showLegend = function (_) {
     if (!arguments.length) {
       return showLegend;
     }
@@ -971,7 +953,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.showXAxis = function(_) {
+  chart.showXAxis = function (_) {
     if (!arguments.length) {
       return showXAxis;
     }
@@ -979,7 +961,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.showYAxis = function(_) {
+  chart.showYAxis = function (_) {
     if (!arguments.length) {
       return showYAxis;
     }
@@ -987,7 +969,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.rightAlignYAxis = function(_) {
+  chart.rightAlignYAxis = function (_) {
     if (!arguments.length) {
       return rightAlignYAxis;
     }
@@ -996,7 +978,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.useInteractiveGuideline = function(_) {
+  chart.useInteractiveGuideline = function (_) {
     if (!arguments.length) {
       return useInteractiveGuideline;
     }
@@ -1008,7 +990,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.tooltips = function(_) {
+  chart.tooltips = function (_) {
     if (!arguments.length) {
       return tooltips;
     }
@@ -1016,7 +998,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.tooltipContent = function(_) {
+  chart.tooltipContent = function (_) {
     if (!arguments.length) {
       return tooltip;
     }
@@ -1024,7 +1006,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.state = function(_) {
+  chart.state = function (_) {
     if (!arguments.length) {
       return state;
     }
@@ -1032,7 +1014,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.defaultState = function(_) {
+  chart.defaultState = function (_) {
     if (!arguments.length) {
       return defaultState;
     }
@@ -1040,7 +1022,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.noData = function(_) {
+  chart.noData = function (_) {
     if (!arguments.length) {
       return noData;
     }
@@ -1048,7 +1030,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.transitionDuration = function(_) {
+  chart.transitionDuration = function (_) {
     if (!arguments.length) {
       return transitionDuration;
     }
@@ -1056,31 +1038,31 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.enableSelection = function() {
+  chart.enableSelection = function () {
     selectionEnabled = true;
     return chart;
   };
 
-  chart.disableSelection = function() {
+  chart.disableSelection = function () {
     selectionEnabled = false;
     return chart;
   };
 
-  chart.isSelectionEnabled = function() {
+  chart.isSelectionEnabled = function () {
     return selectionEnabled;
   };
 
-  chart.hideSelection = function() {
+  chart.hideSelection = function () {
     selectionHidden = true;
     return chart;
   };
 
-  chart.showSelection = function() {
+  chart.showSelection = function () {
     selectionHidden = false;
     return chart;
   };
 
-  chart.onSelectRange = function(_) {
+  chart.onSelectRange = function (_) {
     if (!arguments.length) {
       return onSelectRange;
     }
@@ -1088,7 +1070,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.onChartUpdate = function(_) {
+  chart.onChartUpdate = function (_) {
     if (!arguments.length) {
       return onChartUpdate;
     }
@@ -1096,7 +1078,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.onStateChange = function(_) {
+  chart.onStateChange = function (_) {
     if (!arguments.length) {
       return onStateChange;
     }
@@ -1104,7 +1086,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.onLegendChange = function(_) {
+  chart.onLegendChange = function (_) {
     if (!arguments.length) {
       return onLegendChange;
     }
@@ -1112,7 +1094,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.displayValuesInLegend = function(_) {
+  chart.displayValuesInLegend = function (_) {
     if (!arguments.length) {
       return displayValuesInLegend;
     }
@@ -1120,7 +1102,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.brush = function(_) {
+  chart.brush = function (_) {
     if (!arguments.length) {
       return brush;
     }
@@ -1128,7 +1110,7 @@ nv.models.lineWithBrushChart = function() {
     return chart;
   };
 
-  chart.selectBars = function(args) {
+  chart.selectBars = function (args) {
     if (!arguments.length) {
       return chart.brushDomain;
     }

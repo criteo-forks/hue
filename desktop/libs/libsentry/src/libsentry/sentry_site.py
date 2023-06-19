@@ -19,8 +19,7 @@ import errno
 import logging
 import os.path
 import random
-
-from django.utils.translation import ugettext as _
+import sys
 
 from hadoop import confparse
 
@@ -28,6 +27,11 @@ from desktop.lib import security_util
 from desktop.lib.exceptions_renderable import PopupException
 
 from libsentry.conf import SENTRY_CONF_DIR, HOSTNAME, PORT
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -117,7 +121,7 @@ def get_sentry_server(current_host=None):
         LOG.debug("Current Sentry host, %s, index is: %d." % (current_host, current_idx))
         next_idx = (current_idx + 1) % len(servers)
       except ValueError as e:
-        LOG.warn("Current host: %s not found in list of servers: %s" % (current_host, ','.join(hosts)))
+        LOG.warning("Current host: %s not found in list of servers: %s" % (current_host, ','.join(hosts)))
 
     server = servers[next_idx]
     LOG.debug("Returning Sentry host, %s, at next index: %d." % (server['hostname'], next_idx))

@@ -17,13 +17,15 @@
 import $ from 'jquery';
 import * as ko from 'knockout';
 
-import apiHelper from 'api/apiHelper';
-import componentUtils from 'ko/components/componentUtils';
+import { ASSIST_DOC_HIGHLIGHT_EVENT, ASSIST_SHOW_DOC_EVENT } from './events';
+import { DOCUMENT_TYPES } from 'doc/docSupport';
 import HueFileEntry from 'doc/hueFileEntry';
+import componentUtils from 'ko/components/componentUtils';
+import { CONFIG_REFRESHED_TOPIC } from 'config/events';
+import { getLastKnownConfig } from 'config/hueConfig';
 import huePubSub from 'utils/huePubSub';
 import I18n from 'utils/i18n';
-import { DOCUMENT_TYPES } from 'doc/docSupport';
-import { ASSIST_DOC_HIGHLIGHT_EVENT, ASSIST_SHOW_DOC_EVENT } from './events';
+import { getFromLocalStorage, setInLocalStorage } from 'utils/storageUtils';
 
 export const REFRESH_DOC_ASSIST_EVENT = 'assist.document.refresh';
 
@@ -42,12 +44,17 @@ const TEMPLATE = `
     <li><a href="javascript: void(0);" data-bind="click: open"><i class="fa fa-fw fa-edit"></i> ${I18n(
       'Open document'
     )}</a></li>
-    <li><a href="javascript: void(0);" data-bind="click: function() { huePubSub.publish('doc.show.delete.modal', $data); activeEntry().getSelectedDocsWithDependents(); activeEntry().showDeleteConfirmation(); }"><i class="fa fa-fw fa-trash-o"></i> ${I18n(
+    <li><a href="javascript: void(0);" data-bind="click: function() { $data.selected(true); huePubSub.publish('doc.show.delete.modal', $data.parent); }"><i class="fa fa-fw fa-trash-o"></i> ${I18n(
       'Delete document'
     )}</a></li>
     <!-- /ko -->
+    <!-- ko if: $containerContext.sharingEnabled -->
     <li><a href="javascript: void(0);" data-bind="publish: { 'doc.show.share.modal': $data }"><i class="fa fa-fw fa-users"></i> ${I18n(
       'Share'
+    )}</a></li>
+    <!-- /ko -->
+    <li><a href="javascript: void(0);" data-bind="click: contextMenuDownload"><i class="fa fa-fw fa-download"></i> ${I18n(
+      'Download'
     )}</a></li>
   </script>
 
@@ -67,10 +74,10 @@ const TEMPLATE = `
             <!-- ko if: window.HUE_APPS.indexOf('beeswax') !== -1 -->
               <li>
                 <a title="${I18n(
-                  'Hive Query'
+                    window.ENABLE_UNIFIED_ANALYTICS ? 'Unified Analytics Query' : 'Hive Query'
                 )}" data-bind="click: function() { huePubSub.publish('open.editor.new.query', {type: 'hive', 'directoryUuid': $data.getDirectory()}); }" href="javascript:void(0);">
-                  <!-- ko template: { name: 'app-icon-template', data: { icon: 'hive' } } --><!-- /ko --> ${I18n(
-                    'Hive Query'
+                  <!-- ko template: { name: 'app-icon-template', data: { icon: window.ENABLE_UNIFIED_ANALYTICS ? 'impala' : 'hive' } } --><!-- /ko --> ${I18n(
+                    window.ENABLE_UNIFIED_ANALYTICS ? 'Unified Analytics' : 'Hive'
                   )}
                 </a>
               </li>
@@ -81,7 +88,7 @@ const TEMPLATE = `
                   'Impala Query'
                 )}" class="dropdown-item" data-bind="click: function() { huePubSub.publish('open.editor.new.query', {type: 'impala', 'directoryUuid': $data.getDirectory()}); }" href="javascript:void(0);">
                   <!-- ko template: { name: 'app-icon-template', data: { icon: 'impala' } } --><!-- /ko --> ${I18n(
-                    'Impala Query'
+                    'Impala'
                   )}
                 </a>
             </li>
@@ -150,7 +157,7 @@ const TEMPLATE = `
             <!-- /ko -->
             <li class="divider"></li>
             <li data-bind="css: { 'disabled': $data.isTrash() || $data.isTrashed() || !$data.canModify() }">
-              <a href="javascript:void(0);" data-bind="click: function () { $('.new-document-drop-down').removeClass('open'); huePubSub.publish('show.create.directory.modal', $data); $data.showNewDirectoryModal()}"><svg class="hi"><use xlink:href="#hi-folder"></use><use xlink:href="#hi-plus-addon"></use></svg> ${I18n(
+              <a href="javascript:void(0);" data-bind="click: function () { $('.new-document-drop-down').removeClass('open'); huePubSub.publish('show.create.directory.modal', $data); }"><svg class="hi"><use xlink:href="#hi-folder"></use><use xlink:href="#hi-plus-addon"></use></svg> ${I18n(
                 'New folder'
               )}</a>
             </li>
@@ -198,7 +205,7 @@ const TEMPLATE = `
       </ul>
       <!-- /ko -->
       <ul class="assist-tables" data-bind="foreachVisible: { data: filteredEntries, minHeight: 27, container: '.assist-file-scrollable' }">
-        <li class="assist-entry assist-file-entry" data-bind="appAwareTemplateContextMenu: { template: 'document-context-items', scrollContainer: '.assist-file-scrollable', beforeOpen: beforeContextOpen }, assistFileDroppable, assistFileDraggable, visibleOnHover: { 'selector': '.assist-file-actions' }">
+        <li class="assist-entry assist-file-entry" data-bind="appAwareTemplateContextMenu: { template: 'document-context-items', containerContext: $parents[2], scrollContainer: '.assist-file-scrollable', beforeOpen: beforeContextOpen }, assistFileDroppable, assistFileDraggable, visibleOnHover: { 'selector': '.assist-file-actions' }">
           <div class="assist-file-actions table-actions">
             <a class="inactive-action" href="javascript:void(0)" data-bind="popoverOnHover: showContextPopover, css: { 'blue': statsVisible }"><i class="fa fa-fw fa-info" title="${I18n(
               'Show details'
@@ -237,10 +244,20 @@ class AssistDocumentsPanel {
     self.activeEntry = ko.observable();
     self.activeSort = ko.observable('defaultAsc');
     self.typeFilter = ko.observable(DOCUMENT_TYPES[0]); // all is first
+    self.sharingEnabled = ko.observable(false);
+
+    const updateFromConfig = hueConfig => {
+      self.sharingEnabled(
+        hueConfig && (hueConfig.hue_config.is_admin || hueConfig.hue_config.enable_sharing)
+      );
+    };
+
+    updateFromConfig(getLastKnownConfig());
+    huePubSub.subscribe(CONFIG_REFRESHED_TOPIC, updateFromConfig);
 
     self.highlightTypeFilter = ko.observable(false);
 
-    const lastOpenedUuid = apiHelper.getFromTotalStorage('assist', 'last.opened.assist.doc.uuid');
+    const lastOpenedUuid = getFromLocalStorage('assist.last.opened.assist.doc.uuid');
 
     if (lastOpenedUuid) {
       self.activeEntry(
@@ -270,20 +287,12 @@ class AssistDocumentsPanel {
             newEntry.definition() &&
             newEntry.definition().uuid
           ) {
-            apiHelper.setInTotalStorage(
-              'assist',
-              'last.opened.assist.doc.uuid',
-              newEntry.definition().uuid
-            );
+            setInLocalStorage('assist.last.opened.assist.doc.uuid', newEntry.definition().uuid);
           }
           loadedSub.dispose();
         });
       } else if (!newEntry.hasErrors() && newEntry.definition() && newEntry.definition().uuid) {
-        apiHelper.setInTotalStorage(
-          'assist',
-          'last.opened.assist.doc.uuid',
-          newEntry.definition().uuid
-        );
+        setInLocalStorage('assist.last.opened.assist.doc.uuid', newEntry.definition().uuid);
       }
     });
 
@@ -383,7 +392,7 @@ class AssistDocumentsPanel {
       (self.activeEntry().definition() &&
         (self.activeEntry().definition().path !== '/' || self.activeEntry().definition().uuid))
     ) {
-      apiHelper.setInTotalStorage('assist', 'last.opened.assist.doc.uuid', null);
+      setInLocalStorage('assist.last.opened.assist.doc.uuid', null);
       self.activeEntry(
         new HueFileEntry({
           activeEntry: self.activeEntry,

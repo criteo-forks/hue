@@ -77,6 +77,7 @@
 # Global variables
 ###################################
 ROOT := $(realpath .)
+PPC64LE := $(shell uname -m)
 
 include $(ROOT)/Makefile.vars.priv
 
@@ -128,15 +129,43 @@ endif
 ###################################
 # virtual-env
 ###################################
+
+.PHONY: virtual-env
 virtual-env: $(BLD_DIR_ENV)/stamp
 $(BLD_DIR_ENV)/stamp:
 	@echo "--- Creating virtual environment at $(BLD_DIR_ENV)"
-	$(SYS_PYTHON) $(VIRTUAL_BOOTSTRAP) \
-		$(VIRTUALENV_OPTS) --system-site-packages $(BLD_DIR_ENV)
+ifeq ($(PYTHON_VER),python2.7)
+	@$(SYS_PYTHON) $(VIRTUAL_BOOTSTRAP) $(VIRTUALENV_OPTS) --system-site-packages $(BLD_DIR_ENV)
+else ifeq ($(PYTHON_VER),python3.8)
+	@$(SYS_PYTHON) -m pip install --upgrade pip==22.2.2
+	@$(SYS_PIP) install virtualenv==20.16.5 virtualenv-make-relocatable==0.0.1
+	@if [[ "ppc64le" == $(PPC64LE) ]]; then \
+	  $(SYS_PYTHON) -m venv $(BLD_DIR_ENV); \
+	 fi
+	@virtualenv -p $(PYTHON_VER) $(BLD_DIR_ENV)
+endif
+	@echo "--- Virtual environment $(BLD_DIR_ENV) ready"
 	@touch $@
-	@echo "--- $(BLD_DIR_ENV) ready"
-
-.PHONY: virtual-env
+	@echo '--- Installing PIP_MODULES in virtual-env'
+ifeq ($(PYTHON_VER),python2.7)
+	@echo "--- start installing PIP_MODULES in virtual-env"
+	@$(ENV_PIP) install --upgrade pip
+	@$(ENV_PIP) install --upgrade --force-reinstall $(PIP_MODULES)
+	@echo "--- done installing PIP_MODULES in virtual-env"
+else ifeq ($(PYTHON_VER),python3.8)
+	@if [[ "ppc64le" == $(PPC64LE) ]]; then \
+	  echo '--- Installing $(REQUIREMENT_PPC64LE_FILE) into virtual-env via $(ENV_PIP)'; \
+	  $(ENV_PIP) install -r $(REQUIREMENT_PPC64LE_FILE); \
+	  echo '--- Finished $(REQUIREMENT_PPC64LE_FILE) into virtual-env'; \
+	 else \
+	  echo '--- Installing $(REQUIREMENT_FILE) into virtual-env via $(ENV_PIP)'; \
+	  $(ENV_PIP) install -r $(REQUIREMENT_FILE); \
+	  echo '--- Finished $(REQUIREMENT_FILE) into virtual-env'; \
+         fi
+	@$(ENV_PIP) install $(NAVOPTAPI_WHL)
+	@echo '--- Finished $(NAVOPTAPI_WHL) into virtual-env'
+	@touch $(REQUIREMENT_DOT_FILE)
+endif
 
 ###################################
 # Build desktop
@@ -169,7 +198,7 @@ INSTALL_CORE_FILES = \
 	tools/virtual-bootstrap \
 	tools/enable-python27.sh \
 	tools/relocatable.sh \
-	VERS* LICENSE* README* webpack-stats*.json
+	VERS* LICENSE* README*
 
 .PHONY: install
 install: virtual-env install-check install-core-structure install-desktop install-apps install-env
@@ -183,7 +212,7 @@ install-check:
 
 .PHONY: install-core-structure
 install-core-structure:
-	@echo --- Installing core source structure...
+	@echo --- Installing core source structure in $(INSTALL_DIR)...
 	@mkdir -p $(INSTALL_DIR)
 	@tar cf - $(INSTALL_CORE_FILES) | tar -C $(INSTALL_DIR) -xf -
 	@# Add some variables to Makefile to make sure that our virtualenv
@@ -213,12 +242,12 @@ install-env:
 	$(MAKE) -C $(INSTALL_DIR)/apps env-install
 	@echo --- Setting up Frontend assets
 	cp $(ROOT)/package.json $(INSTALL_DIR)
+	cp $(ROOT)/package-lock.json $(INSTALL_DIR)
 	cp $(ROOT)/webpack.config*.js $(INSTALL_DIR)
-	cp $(ROOT)/.babelrc $(INSTALL_DIR)
+	cp $(ROOT)/babel.config.js $(INSTALL_DIR)
+	cp $(ROOT)/tsconfig.json $(INSTALL_DIR)
 	$(MAKE) -C $(INSTALL_DIR) npm-install
-	@if [ "$(MAKECMDGOALS)" = "install" ]; then \
-	  $(MAKE) -C $(INSTALL_DIR) create-static; \
-	fi
+	$(MAKE) -C $(INSTALL_DIR) create-static
 
 
 ###################################
@@ -234,13 +263,11 @@ npm-install:
 	npm run webpack-login
 	npm run webpack-workers
 	node_modules/.bin/removeNPMAbsolutePaths .
-	@if [ "$(MAKECMDGOALS)" = "install" ]; then \
-	  rm -rf node_modules; \
-	fi
+	rm -rf node_modules
 
 .PHONY: create-static
 create-static:
-	./build/env/bin/hue collectstatic --noinput
+	./build/env/bin/python ./build/env/bin/hue collectstatic --noinput
 
 # <<<< DEV ONLY
 .PHONY: doc
@@ -279,35 +306,35 @@ ace:
 # <<<< DEV ONLY
 .PHONY: global-search-parser
 global-search-parser:
-	@pushd tools/jison/ && node tools/jison/generateParsers.js globalSearchParser && popd
+	@pushd tools/jison/ && npm install && node generateParsers.js globalSearchParser && popd
 
 .PHONY: solr-all-parsers
 solr-all-parsers:
-	@pushd tools/jison/ && node tools/jison/generateParsers.js solrQueryParser solrFormulaParser && popd
+	@pushd tools/jison/ && npm install  && node generateParsers.js solrQueryParser solrFormulaParser && popd
 
 .PHONY: solr-query-parser
 solr-query-parser:
-	@pushd tools/jison/ && node tools/jison/generateParsers.js solrQueryParser && popd
+	@pushd tools/jison/ && npm install  && node generateParsers.js solrQueryParser && popd
 
 .PHONY: solr-formula-parser
 solr-formula-parser:
-	@pushd tools/jison/ && node tools/jison/generateParsers.js solrFormulaParser && popd
+	@pushd tools/jison/ && npm install  && node generateParsers.js solrFormulaParser && popd
 
 .PHONY: sql-all-parsers
 sql-all-parsers:
-	@pushd tools/jison/ && node generateParsers.js generic hive impala && popd && popd
+	@pushd tools/jison/ && npm install  && node generateParsers.js generic hive impala && popd
 
 .PHONY: sql-autocomplete-parser
 sql-autocomplete-parser:
-	@pushd tools/jison/ && node tools/jison/generateParsers.js genericAutocomp hiveAutocomp impalaAutocomp && popd
+	@pushd tools/jison/ && npm install  && node generateParsers.js genericAutocomp hiveAutocomp impalaAutocomp && popd
 
 .PHONY: sql-statement-parser
 sql-statement-parser:
-	@pushd tools/jison/ && node tools/jison/generateParsers.js sqlStatementsParser && popd
+	@pushd tools/jison/ && npm install  && node generateParsers.js sqlStatementsParser && popd
 
 .PHONY: sql-syntax-parser
 sql-syntax-parser:
-	@pushd tools/jison/ && node tools/jison/generateParsers.js genericSyntax hiveSyntax impalaSyntax && popd
+	@pushd tools/jison/ && npm install  && node generateParsers.js genericSyntax hiveSyntax impalaSyntax && popd
 # END DEV ONLY >>>>
 
 ###################################

@@ -17,6 +17,7 @@
 import json
 import logging
 import os
+import sys
 import tempfile
 
 from pyformance.reporters.reporter import Reporter
@@ -46,11 +47,18 @@ class FileReporter(Reporter):
     # rename the file to the real location.
 
     f = tempfile.NamedTemporaryFile(
+        mode='w' if sys.version_info[0] > 2 else 'w+b',
         dir=dirname,
         delete=False)
 
     try:
-      json.dump(self.registry.dump_metrics(), f)
+      # import threading
+      # LOG.info("===> FileReporter pid: %d thread: %d" % (os.getpid(), threading.get_ident()))
+      metrics_data = global_registry().get_metrics_shared_data() \
+        if 'rungunicornserver' in sys.argv \
+        else self.registry.dump_metrics()
+
+      json.dump(metrics_data, f)
       f.close()
 
       os.rename(f.name, self.location)

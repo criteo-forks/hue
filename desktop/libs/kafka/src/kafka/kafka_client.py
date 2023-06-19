@@ -19,11 +19,9 @@
 from builtins import object
 import logging
 import json
+import sys
 
 from subprocess import call
-
-from django.core.cache import cache
-from django.utils.translation import ugettext as _
 
 from desktop.lib.rest.http_client import RestException, HttpClient
 from desktop.lib.rest.resource import Resource
@@ -31,6 +29,11 @@ from desktop.lib.i18n import smart_unicode
 
 from kafka.conf import KAFKA
 from libzookeeper.conf import zkensemble
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -71,13 +74,42 @@ class KafkaApi(object):
   def create_topic(self, name, partitions=1, replication_factor=1):
     # Create/delete topics are not available in the REST API.
     # Here only works with hack if command is available on the Hue host.
-    try:      
+    try:
       return call(
-        'kafka-topics --zookeeper %(zookeeper)s --create --if-not-exists --topic %(name)s --partitions %(partitions)s --replication-factor %(replication_factor)s' % {
+        'kafka-topics --zookeeper %(zookeeper)s --create --if-not-exists --topic %(name)s --partitions %(partitions)s '
+        '--replication-factor %(replication_factor)s' % {
            'zookeeper': zkensemble(),
            'name': name,
            'partitions': partitions,
            'replication_factor': replication_factor
       })
+    except RestException as e:
+      raise KafkaApiException(e)
+
+
+class SchemaRegistryApi(object):
+  """
+  https://github.com/confluentinc/schema-registry
+  """
+
+  def __init__(self, user=None, security_enabled=False, ssl_cert_ca_verify=False):
+    self._api_url = KAFKA.SCHEMA_REGISTRY_API_URL.get().strip('/') if KAFKA.SCHEMA_REGISTRY_API_URL.get() else ''
+
+    self.user = user
+    self._client = HttpClient(self._api_url, logger=LOG)
+    self._root = Resource(self._client)
+
+
+  def subjects(self):
+    try:
+      response = self._root.get('subjects')
+      return json.loads(response)
+    except RestException as e:
+      raise KafkaApiException(e)
+
+  def subject(self, name):
+    try:
+      response = self._root.get('subjects/%s/versions/latest' % name)
+      return json.loads(response)
     except RestException as e:
       raise KafkaApiException(e)

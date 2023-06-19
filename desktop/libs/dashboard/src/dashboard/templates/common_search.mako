@@ -15,12 +15,17 @@
 ## limitations under the License.
 
 <%!
-from django.utils.translation import ugettext as _
+import sys
 
 from desktop import conf
 from desktop.views import commonheader, commonfooter, _ko, commonshare
 
-from dashboard.conf import USE_GRIDSTER, USE_NEW_ADD_METHOD, HAS_REPORT_ENABLED, HAS_WIDGET_FILTER, HAS_TREE_WIDGET
+from dashboard.conf import USE_GRIDSTER, USE_NEW_ADD_METHOD, HAS_REPORT_ENABLED, HAS_WIDGET_FILTER, HAS_TREE_WIDGET, ALLOW_UNSECURE_HTML
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="dashboard" file="common_dashboard.mako" />
@@ -109,7 +114,8 @@ from dashboard.conf import USE_GRIDSTER, USE_NEW_ADD_METHOD, HAS_REPORT_ENABLED,
               fixedPostfix: $root.collection.engine() !== 'solr' ? function() { return ' GROUP BY 1;' } : undefined,
               namespace: $root.collection.activeNamespace,
               compute: $root.collection.activeCompute,
-              database: function () { return $root.collection.name().split('.')[0] },
+              database: $root.collection.simpleAceDatabase,
+              disableWorkers: true,
               singleLine: true }
             }"></div>
 ##             <input data-bind="clearable: q, valueUpdate:'afterkeydown', typeahead: { target: q, nonBindableSource: queryTypeahead, multipleValues: true, multipleValuesSeparator: ':', extraKeywords: 'AND OR TO', completeSolrRanges: true }, css: {'input-small': $root.query.qs().length > 1, 'flat-left': $index() === 0, 'input-xlarge': $root.collection.supportAnalytics()}" maxlength="4096" type="text" class="search-query">
@@ -201,11 +207,13 @@ from dashboard.conf import USE_GRIDSTER, USE_NEW_ADD_METHOD, HAS_REPORT_ENABLED,
             </a>
           </li>
           <li data-bind="visible: columns().length != 0" class="divider"></li>
+          <!-- ko if: $root.sharingEnabled -->
           <li data-bind="visible: isSaved()">
             <a class="share-link" data-bind="click: prepareShareModal, css: {'isShared': isShared()}">
               <i class="fa fa-fw fa-users"></i> ${ _('Share') }
             </a>
           </li>
+          <!-- /ko -->
           %if not is_embeddable:
             <li>
               <a class="pointer" data-bind="click: function(){ hueUtils.goFullScreen(); $root.isEditing(false); $root.isPlayerMode(true); }">
@@ -1049,7 +1057,11 @@ ${ dashboard.layout_skeleton(suffix='search') }
         </thead>
         <tbody data-bind="foreach: {data: $root.results, as: 'doc'}" class="result-tbody">
           <tr data-bind="style: {'backgroundColor': $index() % 2 == 0 ? '#FFF': '#F6F6F6'}">
+          % if ALLOW_UNSECURE_HTML.get():
+            <td><div data-bind="htmlUnsecure: content" style="margin-bottom: -20px"></div></td>
+          % else:
             <td><div data-bind="html: content" style="margin-bottom: -20px"></div></td>
+          % endif
           </tr>
           <tr>
             <td class="show-details-icon pointer" data-bind="click: toggleDocDetails">
@@ -2182,7 +2194,8 @@ ${ dashboard.layout_skeleton(suffix='search') }
         fixedPostfix: $root.collection.engine() !== 'solr' ? function() { return ' GROUP BY 1;' } : undefined,
         namespace: $root.collection.activeNamespace,
         compute: $root.collection.activeCompute,
-        database: function () { return $root.collection.name().split('.')[0] },
+        database: $root.collection.simpleAceDatabase,
+        disableWorkers: true,
         singleLine: true }
       }"></div>
     </span>
@@ -3066,7 +3079,6 @@ ${ dashboard.import_layout(True) }
 <script src="${ static('dashboard/js/search.utils.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/js/jquery.textsqueezer.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/shortcut.js') }" type="text/javascript" charset="utf-8"></script>
-<script src="${ static('desktop/ext/js/mustache.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/jquery/plugins/jquery.hotkeys.js') }"></script>
 <script src="${ static('dashboard/js/search.ko.js') }" type="text/javascript" charset="utf-8"></script>
 
@@ -5038,7 +5050,7 @@ $(document).ready(function () {
   huePubSub.subscribe('app.dom.unload', function (app) {
     if (app === 'dashboard') {
       %if is_report:
-      if (window.apiHelper.getFromTotalStorage('assist', 'right_assist_panel_visible', false)) {
+      if (window.hueUtils.hueLocalStorage('assist.right_assist_panel_visible')) {
         huePubSub.publish('right.assist.show');
       }
       %endif

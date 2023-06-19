@@ -27,7 +27,7 @@ from django.utils.encoding import iri_to_uri, smart_str
 from django.utils.http import urlencode
 
 from requests import exceptions
-from requests.auth import AuthBase ,HTTPBasicAuth, HTTPDigestAuth
+from requests.auth import AuthBase, HTTPBasicAuth, HTTPDigestAuth
 from requests_kerberos import HTTPKerberosAuth, REQUIRED, OPTIONAL, DISABLED
 from urllib3.contrib import pyopenssl
 
@@ -58,7 +58,13 @@ def get_request_session(url, logger):
     with CACHE_SESSION_LOCK:
       CACHE_SESSION[url] = requests.Session()
       logger.debug("Setting request Session")
-      CACHE_SESSION[url].mount(url, requests.adapters.HTTPAdapter(pool_connections=conf.CHERRYPY_SERVER_THREADS.get(), pool_maxsize=conf.CHERRYPY_SERVER_THREADS.get()))
+      CACHE_SESSION[url].mount(
+        url,
+        requests.adapters.HTTPAdapter(
+          pool_connections=conf.CHERRYPY_SERVER_THREADS.get(),
+          pool_maxsize=conf.CHERRYPY_SERVER_THREADS.get()
+        )
+      )
       logger.debug("Setting session adapter for %s" % url)
 
   return CACHE_SESSION
@@ -175,7 +181,7 @@ class HttpClient(object):
     return self._session.headers.copy()
 
   def execute(self, http_method, path, params=None, data=None, headers=None, allow_redirects=False, urlencode=True,
-              files=None, clear_cookies=False, timeout=conf.REST_CONN_TIMEOUT.get()):
+              files=None, stream=False, clear_cookies=False, timeout=conf.REST_CONN_TIMEOUT.get()):
     """
     Submit an HTTP request.
     @param http_method: GET, POST, PUT, DELETE
@@ -186,18 +192,24 @@ class HttpClient(object):
     @param allow_redirects: requests should automatically resolve redirects.
     @param urlencode: percent encode paths.
     @param files: for posting Multipart-Encoded files
+    @param stream: Bool to stream the response
     @param clear_cookies: flag to force clear any cookies set in the current session
 
     @return: The result of urllib2.urlopen()
     """
-    # Prepare URL and params
     if urlencode:
       path = urllib_quote(smart_str(path))
-    url = self._make_url(path, params)
+
+    url = self._make_url(path, params, do_urlencode=urlencode)
+
     if http_method in ("GET", "DELETE"):
       if data is not None:
         self.logger.warn("GET and DELETE methods do not pass any data. Path '%s'" % path)
         data = None
+
+    if headers and 'timeout' in headers:
+      timeout = int(headers['timeout'])
+      LOG.debug("Overriding timeout xxx via header value %d" % timeout)
 
     request_kwargs = {'allow_redirects': allow_redirects, 'timeout': timeout}
     if headers:
@@ -206,6 +218,8 @@ class HttpClient(object):
       request_kwargs['data'] = data
     if files:
       request_kwargs['files'] = files
+    if stream:
+      request_kwargs['stream'] = True
 
     if self._cookies and not clear_cookies:
       request_kwargs['cookies'] = self._cookies
@@ -213,13 +227,14 @@ class HttpClient(object):
     if clear_cookies:
       self._session.cookies.clear()
 
+    request_kwargs['verify'] = self._session.verify
+
     try:
       resp = getattr(self._session, http_method.lower())(url, **request_kwargs)
       if resp.status_code >= 300:
         resp.raise_for_status()
         raise exceptions.HTTPError(response=resp)
-      # Cache request cookie for the next http_client call.
-      self._cookies = resp.cookies
+      self._cookies = resp.cookies  # Cache request cookie for the next http_client call.
       return resp
     except (exceptions.ConnectionError,
             exceptions.HTTPError,
@@ -228,28 +243,28 @@ class HttpClient(object):
             exceptions.TooManyRedirects) as ex:
       raise self._exc_class(ex)
 
-  def _make_url(self, path, params):
+  def _make_url(self, path, params, do_urlencode=True):
     res = self._base_url
     if path:
       res += posixpath.normpath('/' + path.lstrip('/'))
     if params:
-      param_str = urlencode(params)
+      param_str = urlencode(params) if do_urlencode else '&'.join(['%s=%s' % (k, v) for k, v in params.items()])
       res += '?' + param_str
     return iri_to_uri(res)
 
 
 class HTTPBearerAuth(AuthBase):
-    """Attaches HTTP Basic Authentication to the given Request object."""
+  """Attaches HTTP Basic Authentication to the given Request object."""
 
-    def __init__(self, token):
-        self.token = token
+  def __init__(self, token):
+    self.token = token
 
-    def __eq__(self, other):
-        return self.token == getattr(other, 'token', None)
+  def __eq__(self, other):
+    return self.token == getattr(other, 'token', None)
 
-    def __ne__(self, other):
-        return not self == other
+  def __ne__(self, other):
+    return not self == other
 
-    def __call__(self, r):
-        r.headers['Authorization'] = 'Bearer %s' % self.token
-        return r
+  def __call__(self, r):
+    r.headers['Authorization'] = 'Bearer %s' % self.token
+    return r

@@ -20,9 +20,11 @@ See desktop/auth/backend.py
 
 from __future__ import absolute_import
 
+import json
 import logging
 
 from django.contrib.auth import logout as auth_logout
+from django.http import HttpResponse
 from djangosaml2.backends import Saml2Backend as _Saml2Backend
 from djangosaml2.views import logout as saml_logout
 from libsaml import conf
@@ -59,6 +61,12 @@ class SAML2Backend(_Saml2Backend):
     return force_username_case(main_attribute)
 
 
+  def is_authorized(self, attributes, attribute_mapping):
+    """Hook to allow custom authorization policies based on user belonging to a list of SAML groups."""
+    LOG.debug('is_authorized() attributes = %s' % attributes)
+    LOG.debug('is_authorized() attribute_mapping = %s' % attribute_mapping)
+    return True
+
   def get_user(self, user_id):
     if isinstance(user_id, str):
       user_id = force_username_case(user_id)
@@ -90,6 +98,10 @@ class SAML2Backend(_Saml2Backend):
       user.username = force_username_case(user.username)
       profile = get_profile(user)
       profile.creation_method = UserProfile.CreationMethod.EXTERNAL.name
+      json_data = json.loads(profile.json_data)
+      if attributes:
+        json_data['saml_attributes'] = attributes
+        profile.json_data = json.dumps(json_data)
       profile.save()
       user.is_superuser = is_super
       user = rewrite_user(user)
@@ -109,6 +121,13 @@ class SAML2Backend(_Saml2Backend):
       response = saml_logout(request)
       auth_logout(request)
       return response
+    elif conf.CDP_LOGOUT_URL.get():
+      auth_logout(request)
+      redirect_url = conf.get_logout_redirect_url()
+      html = '<html><body onload="document.forms[0].submit()">' \
+             '<form action="%s" method="POST"><input name="logoutRedirect" type="hidden" value="%s"/></form>' \
+             '</body></html>' % (conf.CDP_LOGOUT_URL.get(), redirect_url)
+      return HttpResponse(html)
     else:
       return None
 

@@ -15,8 +15,12 @@
 ## limitations under the License.
 
 <%!
+  import sys
   from desktop.views import commonheader, commonfooter
-  from django.utils.translation import ugettext as _
+  if sys.version_info[0] > 2:
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="layout" file="../navigation-bar.mako" />
@@ -70,7 +74,7 @@ ${ layout.menubar(section='oozie', dashboard=True) }
       </form>
       <div class="tabbable">
         <ul class="nav nav-tabs nav-tabs-border">
-            % for category in instrumentation.iterkeys():
+            % for category in instrumentation.keys():
             <li
             % if loop.first:
               class="active"
@@ -82,7 +86,7 @@ ${ layout.menubar(section='oozie', dashboard=True) }
         </ul>
 
         <div class="tab-content">
-            % for category in instrumentation.iterkeys():
+            % for category in instrumentation.keys():
             <div class="tab-pane
               % if loop.first:
               active
@@ -99,7 +103,7 @@ ${ layout.menubar(section='oozie', dashboard=True) }
                   <td>${ name }</td>
                 % if category == 'timers':
                   <td>
-                    % for label, timer in zip(['ownMinTime', 'ownTimeStdVar', 'totalTimeStdVar', 'ownTimeAvg', 'ticks', 'name', 'ownMaxTime', 'totalMinTime', 'totalMaxTime', 'totalTimeAvg'], item.values()):
+                    % for label, timer in list(zip(['ownMinTime', 'ownTimeStdVar', 'totalTimeStdVar', 'ownTimeAvg', 'ticks', 'name', 'ownMaxTime', 'totalMinTime', 'totalMaxTime', 'totalTimeAvg'], item.values())):
                     ${ label } :
                     % if label == 'name':
                       ${ name } -
@@ -274,7 +278,7 @@ ${ layout.menubar(section='oozie', dashboard=True) }
 
    var instrumentationTables = [];
 
-   % for category in instrumentation.iterkeys():
+   % for category in instrumentation.keys():
       % for index in range(len(instrumentation[category])):
         var table = $("#intrumentationTable-${ category }-${ index }").dataTable({
             "bPaginate": false,

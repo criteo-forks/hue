@@ -14,13 +14,18 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
-from django.utils.translation import ugettext as _
+import sys
 
 from desktop.auth.backend import is_admin
 from desktop.conf import ENABLE_ORGANIZATIONS
 from desktop.views import commonheader, commonfooter, antixss
 
 from useradmin.models import group_permissions
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="actionbar" file="actionbar.mako" />
@@ -51,10 +56,10 @@ ${ layout.menubar(section='organizations') }
       </%def>
       <%def name="creation()">
         %if is_admin(user):
-          <a id="addGroupBtn" href="${url('useradmin.views.edit_group')}" class="btn"><i
-              class="fa fa-plus-circle"></i> ${_('Add group')}</a>
+          <a id="addGroupBtn" href="${url('useradmin:useradmin.views.edit_group')}" class="btn"><i
+              class="fa fa-plus-circle"></i> ${_('Add organization')}</a>
           % if is_ldap_setup:
-            <a id="addLdapGroupBtn" href="${url('useradmin.views.add_ldap_groups')}" class="btn"><i
+            <a id="addLdapGroupBtn" href="${url('useradmin:useradmin.views.add_ldap_groups')}" class="btn"><i
                 class="fa fa-refresh"></i> ${_('Add/Sync LDAP group')}</a>
           % endif
           <a href="http://gethue.com/making-hadoop-accessible-to-your-employees-with-ldap/"
@@ -73,8 +78,9 @@ ${ layout.menubar(section='organizations') }
             <div class="select-all hue-checkbox fa"></div>
           </th>
         %endif
-        <th>${_('Group Name')}</th>
+        <th>${_('Name')}</th>
         <th>${_('Members')}</th>
+        <th>${_('Groups')}</th>
         <th>${_('Permissions')}</th>
       </tr>
       </thead>
@@ -88,20 +94,11 @@ ${ layout.menubar(section='organizations') }
             </td>
           % endif
           <td>
-            % if is_admin(user):
-              <strong>
-                <a title="${ _('Edit %(groupname)s') % dict(groupname=group.name) }"
-                  href="${ url('useradmin.views.edit_group', name=group.name) }"
-                  data-row-selector="true">
-                    ${group.name}
-                </a>
-              </strong>
-            % else:
-              <strong>${group.name}</strong>
-            % endif
+            <strong>${ group.name }</strong>
           </td>
           <td>${ ', '.join([group_user.username for group_user in group.organizationuser_set.all()]) }</td>
-          <td>${ group.organizationgroup_set.count() } ${ group.huepermission_set.count() }</td>
+          <td>${ ', '.join([org.name for org in group.organizationgroup_set.all()]) }</td>
+          <td>${ ', '.join([perm.connector.name for perm in group.huepermission_set.all()]) }</td>
         </tr>
         % endfor
       </tbody>
@@ -118,7 +115,7 @@ ${ layout.menubar(section='organizations') }
   </div>
 
   <div class="modal hide fade delete-group">
-    <form action="${ url('useradmin.views.delete_group') }" method="POST">
+    <form action="${ url('useradmin:useradmin.views.delete_group') }" method="POST">
       ${ csrf_token(request) | n,unicode }
       % if is_embeddable:
         <input type="hidden" value="true" name="is_embeddable" />
@@ -166,6 +163,7 @@ ${ layout.menubar(section='organizations') }
         % if is_admin(user):
             { "bSortable": false },
         % endif
+        { "sWidth": "20%" },
         { "sWidth": "20%" },
         { "sWidth": "20%" },
         null

@@ -18,10 +18,12 @@
 import 'core-js/stable';
 import 'regenerator-runtime/runtime';
 
-import 'apps/notebook2/execution/sessionManager';
+import 'apps/editor/execution/sessionManager';
 import './jquery.setup';
 import './sqlTestUtils';
 
+import 'ext/bootstrap.2.3.2.min';
+import axios from 'axios';
 import $ from 'jquery';
 import * as ko from 'knockout';
 import komapping from 'knockout.mapping';
@@ -39,7 +41,7 @@ const globalVars = {
   AUTOCOMPLETE_TIMEOUT: 1,
   CACHEABLE_TTL: 1,
   HAS_LINK_SHARING: true,
-  HAS_OPTIMIZER: false,
+  HAS_SQL_ANALYZER: false,
   HUE_I18n: {},
   HUE_BASE_URL: '',
   HUE_CHARTS: {
@@ -103,8 +105,21 @@ Object.keys(globalVars).forEach(key => {
 });
 
 $.ajaxSetup({
-  beforeSend: function() {
+  beforeSend: function () {
     console.warn('actual jQuery ajax called');
     console.trace();
   }
 });
+
+axios.interceptors.request.use(config => {
+  console.warn('Actual axios ajax request made to url: ' + config.url);
+  console.trace();
+  return config;
+});
+
+process.on('unhandledRejection', err => {
+  fail(err);
+});
+
+jest.mock('../utils/i18nReact');
+jest.mock('../utils/hueAnalytics');

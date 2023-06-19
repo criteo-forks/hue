@@ -20,8 +20,6 @@ import os
 import socket
 import sys
 
-from django.utils.translation import ugettext_lazy as _t, ugettext as _
-
 from desktop.conf import default_ssl_cacerts, default_ssl_validate, AUTH_USERNAME as DEFAULT_AUTH_USERNAME, \
     AUTH_PASSWORD as DEFAULT_AUTH_PASSWORD, has_connectors
 from desktop.lib.conf import ConfigSection, Config, coerce_bool, coerce_csv, coerce_password_from_script
@@ -31,6 +29,10 @@ from desktop.lib.paths import get_desktop_root
 from impala.impala_flags import get_max_result_cache_size, is_impersonation_enabled, is_kerberos_enabled, is_webserver_spnego_enabled
 from impala.settings import NICE_NAME
 
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext_lazy as _t, gettext as _
+else:
+  from django.utils.translation import ugettext_lazy as _t, ugettext as _
 
 LOG = logging.getLogger(__name__)
 
@@ -46,25 +48,32 @@ SERVER_PORT = Config(
   default=21050,
   type=int)
 
+PROXY_ENDPOINT = Config(
+  key="proxy_endpoint",
+  help=_t("Endpoint of the Impala Proxy Server, "
+          "for example: '/endpoint'. Note that SERVER_PORT will be used when set."),
+  type=str,
+  default="")
+
 COORDINATOR_URL = Config(
   key="coordinator_url",
   help=_t("URL of the Impala Coordinator Server."),
   type=str,
   default="")
 
-IMPALA_PRINCIPAL=Config(
+IMPALA_PRINCIPAL = Config(
   key='impala_principal',
   help=_t("Kerberos principal name for Impala. Typically 'impala/hostname.foo.com'."),
   type=str,
   default="impala/%s" % socket.getfqdn())
 
-IMPERSONATION_ENABLED=Config(
+IMPERSONATION_ENABLED = Config(
   key='impersonation_enabled',
   help=_t("Turn on/off impersonation mechanism when talking to Impala."),
   type=coerce_bool,
   dynamic_default=is_impersonation_enabled)
 
-QUERYCACHE_ROWS=Config(
+QUERYCACHE_ROWS = Config(
   key='querycache_rows',
   help=_t("Number of initial rows of a resultset to ask Impala to cache in order to"
           " support re-fetching them for downloading them."
@@ -109,6 +118,14 @@ CONFIG_WHITELIST = Config(
   help=_t('A comma-separated list of white-listed Impala configuration properties that users are authorized to set.')
 )
 
+USER_SCRATCH_DIR_PERMISSION = Config(
+  key="user_scratch_dir_permission",
+  help=_t("Due to IMPALA-10272, the importer fails with READ permissions."
+          "Setting this to True, means setting the scratch directory and its file to 777 so the importer does not fail with permission issue."),
+  type=coerce_bool,
+  default=False
+)
+
 IMPALA_CONF_DIR = Config(
   key='impala_conf_dir',
   help=_t('Impala configuration directory, where impala_flags is located.'),
@@ -120,31 +137,31 @@ SSL = ConfigSection(
   key='ssl',
   help=_t('SSL configuration for the server.'),
   members=dict(
-    ENABLED = Config(
+    ENABLED=Config(
       key="enabled",
       help=_t("SSL communication enabled for this server."),
       type=coerce_bool,
       default=False
     ),
-    CACERTS = Config(
+    CACERTS=Config(
       key="cacerts",
       help=_t("Path to Certificate Authority certificates."),
       type=str,
       dynamic_default=default_ssl_cacerts,
     ),
-    KEY = Config(
+    KEY=Config(
       key="key",
       help=_t("Path to the private key file, e.g. /etc/hue/key.pem"),
       type=str,
       default=None
     ),
-    CERT = Config(
+    CERT=Config(
       key="cert",
       help=_t("Path to the public certificate file, e.g. /etc/hue/cert.pem"),
       type=str,
       default=None
     ),
-    VALIDATE = Config(
+    VALIDATE=Config(
       key="validate",
       help=_t("Choose whether Hue should validate certificates received from the server."),
       type=coerce_bool,
@@ -216,7 +233,8 @@ DAEMON_API_PASSWORD = Config(
 
 DAEMON_API_PASSWORD_SCRIPT = Config(
   key="daemon_api_password_script",
-  help=_t("Execute this script to produce the Impala Daemon Password. This will be used when `daemon_api_password` is not set."),
+  help=_t("Execute this script to produce the Impala Daemon Password. "
+          "This will be used when `daemon_api_password` is not set."),
   private=True,
   type=coerce_password_from_script,
   default=None
@@ -229,6 +247,14 @@ DAEMON_API_USERNAME = Config(
   dynamic_default=get_daemon_api_username
 )
 
+DAEMON_API_AUTH_SCHEME = Config(
+  key="daemon_api_auth_scheme",
+  help=_t("The authentication scheme to use with 'daemon_api_username' and 'daemon_api_password' "
+          "when authenticating to the Impala Daemon UI, either 'digest' (default) or 'basic'."),
+  private=False,
+  default="digest"
+)
+
 def get_use_sasl_default():
   """kerberos enabled or password is specified"""
   return is_kerberos_enabled() or AUTH_PASSWORD.get() is not None # Maps closely to legacy behavior
@@ -239,6 +265,14 @@ USE_SASL = Config(
   private=False,
   type=coerce_bool,
   dynamic_default=get_use_sasl_default
+)
+
+USE_THRIFT_HTTP = Config(
+  key="use_thrift_http",
+  help=_t("Use Thrift over HTTP for the transport mode."),
+  private=False,
+  type=coerce_bool,
+  default=False
 )
 
 

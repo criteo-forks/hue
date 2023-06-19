@@ -14,10 +14,14 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
+import sys
 from desktop.lib.i18n import smart_unicode
 from desktop.views import commonheader, commonfooter
 from django.utils.encoding import force_unicode
-from django.utils.translation import ugettext as _
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="layout" file="layout.mako" />
@@ -95,7 +99,7 @@ ${layout.menubar(section='query')}
                       % if n_jobs > 0:
                         <li class="nav-header">${mr_jobs} (${n_jobs})</li>
                         % for jobid in hadoop_jobs:
-                          <li><a href="${url("jobbrowser.views.single_job", job=jobid.replace('application', 'job'))}">${ jobid.replace("application_", "") }</a></li>
+                          <li><a href="${url("jobbrowser:jobbrowser.views.single_job", job=jobid.replace('application', 'job'))}">${ jobid.replace("application_", "") }</a></li>
                         % endfor
                       % else:
                         <li class="nav-header">${mr_jobs}</li>

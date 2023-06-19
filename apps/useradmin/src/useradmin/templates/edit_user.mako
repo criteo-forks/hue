@@ -14,7 +14,7 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
-from django.utils.translation import ugettext as _
+import sys
 
 from desktop.auth.backend import is_admin, is_hue_admin
 from desktop.conf import ENABLE_ORGANIZATIONS, ENABLE_CONNECTORS
@@ -22,6 +22,11 @@ from desktop.views import commonheader, commonfooter
 
 from useradmin.hue_password_policy import is_password_policy_enabled, get_password_hint
 from useradmin.views import is_user_locked_out
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="layout" file="layout.mako" />
@@ -147,7 +152,7 @@ $(document).ready(function(){
   $editUserComponents.find("#id_groups").jHueSelector({
     selectAllLabel: "${_('Select all')}",
     searchPlaceholder: "${_('Search')}",
-    noChoicesFound: "${_('No groups found.')} <a href='${url('useradmin.views.edit_group')}'>${_('Create a new group now')} &raquo;</a>",
+    noChoicesFound: "${_('No groups found.')} <a href='${url('useradmin:useradmin.views.edit_group')}'>${_('Create a new group now')} &raquo;</a>",
     width:618,
     height:240
   });

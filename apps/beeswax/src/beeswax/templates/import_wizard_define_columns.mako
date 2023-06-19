@@ -14,9 +14,15 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
+import sys
+
 from desktop import conf
 from desktop.views import commonheader, commonfooter
-from django.utils.translation import ugettext as _
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="comps" file="beeswax_components.mako" />
@@ -217,15 +223,17 @@ ${ layout.metastore_menubar() }
       self.apiHelper = window.apiHelper;
       self.assistAvailable = ko.observable(true);
       self.isLeftPanelVisible = ko.observable();
-      self.apiHelper.withTotalStorage('assist', 'assist_panel_visible', self.isLeftPanelVisible, true);
-
+      window.hueUtils.withLocalStorage('assist.assist_panel_visible', self.isLeftPanelVisible, true);
+      self.isLeftPanelVisible.subscribe(function () {
+        huePubSub.publish('assist.forceRender');
+      });
 
       huePubSub.subscribe("assist.table.selected", function (entry) {
-        location.href = '/metastore/table/' + entry.path[0] + '/' + entry.name + '?source_type=' + entry.getConnector().id + '&namespace=' + entry.namespace.id;
+        location.href = '/metastore/table/' + entry.path[0] + '/' + entry.name + '?connector_id=' + entry.getConnector().id + '&namespace=' + entry.namespace.id;
       });
 
       huePubSub.subscribe("assist.database.selected", function (entry) {
-        location.href = '/metastore/tables/' + entry.name + '?source_type=' + entry.getConnector().id + '&namespace=' + entry.namespace.id;
+        location.href = '/metastore/tables/' + entry.name + '?connector_id=' + entry.getConnector().id + '&namespace=' + entry.namespace.id;
       });
     }
 
@@ -235,8 +243,8 @@ ${ layout.metastore_menubar() }
 
       ko.applyBindings(viewModel);
 
-      if (location.getParameter("error") != "") {
-        $.jHueNotify.error(location.getParameter("error"));
+      if (hueUtils.getParameter("error") != "") {
+        $.jHueNotify.error(hueUtils.getParameter("error"));
       }
 
       $("[rel='tooltip']").tooltip();

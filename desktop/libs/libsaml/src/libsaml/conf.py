@@ -19,10 +19,14 @@ import json
 import logging
 import os
 import subprocess
-
-from django.utils.translation import ugettext_lazy as _t, ugettext as _
+import sys
 
 from desktop.lib.conf import Config, coerce_bool, coerce_csv, coerce_password_from_script
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext_lazy as _t, gettext as _
+else:
+  from django.utils.translation import ugettext_lazy as _t, ugettext as _
 
 LOG = logging.getLogger(__name__)
 
@@ -70,7 +74,8 @@ ENTITY_ID = Config(
   key="entity_id",
   default="<base_url>/saml2/metadata/",
   type=str,
-  help=_t("Entity ID for Hue acting as service provider. Can also accept a pattern where '<base_url>' will be replaced with server URL base."))
+  help=_t("Entity ID for Hue acting as service provider."
+  "Can also accept a pattern where '<base_url>' will be replaced with server URL base."))
 
 CREATE_USERS_ON_LOGIN = Config(
   key="create_users_on_login",
@@ -80,7 +85,7 @@ CREATE_USERS_ON_LOGIN = Config(
 
 ATTRIBUTE_MAP_DIR = Config(
   key="attribute_map_dir",
-  default=os.path.abspath( os.path.join(BASEDIR, '..', '..', 'attribute-maps') ),
+  default=os.path.abspath(os.path.join(BASEDIR, '..', '..', 'attribute-maps')),
   type=str,
   private=True,
   help=_t("Attribute map directory contains files that map SAML attributes to pysaml2 attributes."))
@@ -106,7 +111,7 @@ OPTIONAL_ATTRIBUTES = Config(
 
 METADATA_FILE = Config(
   key="metadata_file",
-  default=os.path.abspath( os.path.join(BASEDIR, '..', '..', 'examples', 'idp.xml') ),
+  default=os.path.abspath(os.path.join(BASEDIR, '..', '..', 'examples', 'idp.xml')),
   type=str,
   help=_t("IdP metadata in the form of a file. This is generally an XML file containing metadata that the Identity Provider generates."))
 
@@ -114,7 +119,8 @@ KEY_FILE = Config(
   key="key_file",
   default="",
   type=str,
-  help=_t("key_file is the name of a PEM formatted file that contains the private key of the Hue service. This is presently used both to encrypt/sign assertions and as client key in a HTTPS session."))
+  help=_t("key_file is the name of a PEM formatted file that contains the private key of the Hue service."
+  "This is presently used both to encrypt/sign assertions and as client key in a HTTPS session."))
 
 KEY_FILE_PASSWORD = Config(
   key="key_file_password",
@@ -133,9 +139,16 @@ CERT_FILE = Config(
   type=str,
   help=_t("This is the public part of the service private/public key pair. cert_file must be a PEM formatted certificate chain file."))
 
+ACCEPTED_TIME_DIFF = Config(
+  key="accepted_time_diff",
+  default=0,
+  type=int,
+  help=_t("If your computer and another computer that you are communicating with are not in synch regarding the computer clock,"
+  "then here you can state how big a difference you are prepared to accept in milliseconds.")
+)
 USER_ATTRIBUTE_MAPPING = Config(
   key="user_attribute_mapping",
-  default={'uid': ('username', )},
+  default={'uid': ('username',)},
   type=dict_list_map,
   help=_t("A mapping from attributes in the response from the IdP to django user attributes."))
 
@@ -181,6 +194,23 @@ NAME_ID_FORMAT = Config(
   type=str,
   help=_t("Request this NameID format from the server"))
 
+REQUIRED_GROUPS = Config(
+  key="required_groups",
+  type=coerce_csv,
+  default=[],
+  help=_t("Comma separated list of group names which are all required to complete the authentication. e.g. admin,sales"))
+
+REQUIRED_GROUPS_ATTRIBUTE = Config(
+  key="required_groups_attribute",
+  default="groups",
+  type=str,
+  help=_t("Name of the SAML attribute containing the list of groups the user belongs to."))
+
+CDP_LOGOUT_URL = Config(
+  key="logout_url",
+  type=str,
+  default="",
+  help=_t("To log users out of magic-sso, CDP control panel use Logout URL"))
 
 def get_key_file_password():
   password = os.environ.get('HUE_SAML_KEY_FILE_PASSWORD')
@@ -199,3 +229,11 @@ def config_validator(user):
   if USERNAME_SOURCE.get() not in USERNAME_SOURCES:
     res.append(("libsaml.username_source", _("username_source not configured properly. SAML integration may not work.")))
   return res
+
+def get_logout_redirect_url():
+  # This logic was derived from KNOX.
+  prod_url = "consoleauth.altus.cloudera.com"
+  redirect_url = "https://sso.cloudera.com/bin/services/support/api/public/logout"
+  if prod_url not in CDP_LOGOUT_URL.get():
+    redirect_url = "https://sso.staging-upgrade.aem.cloudera.com/bin/services/support/api/public/logout"
+  return redirect_url

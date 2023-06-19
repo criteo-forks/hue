@@ -16,10 +16,10 @@
 
 import d3v3 from 'd3v3';
 
-import hueUtils from 'utils/hueUtils';
+import htmlEncode from 'utils/html/htmlEncode';
 import nv from 'ext/nv.d3.1.1.15b.custom';
 
-nv.models.multiBarWithBrushChart = function() {
+nv.models.multiBarWithBrushChart = function () {
   'use strict';
   //============================================================
   // Public Variables with Default Settings
@@ -59,20 +59,13 @@ nv.models.multiBarWithBrushChart = function() {
     state = { stacked: false, selectionEnabled: false },
     defaultState = null,
     noData = 'No Data Available.';
-  const tooltipSimple = function(value) {
-      return (
-        '<h3>' +
-        hueUtils.htmlEncode(value.key) +
-        '</h3>' +
-        '<p>' +
-        hueUtils.htmlEncode(value.x) +
-        '</p>'
-      );
+  const tooltipSimple = function (value) {
+      return '<h3>' + htmlEncode(value.key) + '</h3>' + '<p>' + htmlEncode(value.x) + '</p>';
     },
-    tooltipMultiple = function(values) {
+    tooltipMultiple = function (values) {
       return (
         '<h3>' +
-        hueUtils.htmlEncode(values[0] && values[0].x) +
+        htmlEncode(values[0] && values[0].x) +
         '</h3>' +
         values
           .map(value => {
@@ -80,23 +73,23 @@ nv.models.multiBarWithBrushChart = function() {
               '<p><span class="circle" style="background-color:' +
               value.color +
               '"></span><b>' +
-              hueUtils.htmlEncode(value.key) +
+              htmlEncode(value.key) +
               '</b> ' +
-              hueUtils.htmlEncode(value.y) +
+              htmlEncode(value.y) +
               '</p>'
             );
           })
           .join('')
       );
     },
-    getX = function(d) {
+    getX = function (d) {
       return d.x;
     }, // accessor to get the x value
-    getY = function(d) {
+    getY = function (d) {
       return d.y;
     }, // accessor to get the y value
     dispatch = d3v3.dispatch('tooltipShow', 'tooltipHide', 'stateChange', 'changeState', 'brush'),
-    controlWidth = function() {
+    controlWidth = function () {
       return showControls ? (selectionHidden ? 240 : 300) : 0;
     },
     legendWidth = 175;
@@ -129,7 +122,7 @@ nv.models.multiBarWithBrushChart = function() {
   // Private Variables
   //------------------------------------------------------------
 
-  const showTooltip = function(e, offsetElement) {
+  const showTooltip = function (e, offsetElement) {
     let values;
     if (!tooltipContent) {
       values = (e.list || [e]).map(e => {
@@ -173,7 +166,7 @@ nv.models.multiBarWithBrushChart = function() {
   //============================================================
 
   function chart(selection) {
-    selection.each(function(data) {
+    selection.each(function (data) {
       const container = d3v3.select(this),
         that = this;
 
@@ -183,18 +176,14 @@ nv.models.multiBarWithBrushChart = function() {
         availableHeight =
           (height || parseInt(container.style('height')) || 400) - margin.top - margin.bottom;
 
-      chart.recommendedTicks = function() {
+      chart.recommendedTicks = function () {
         return Math.floor(availableWidth / minTickWidth);
       };
-      chart.update = function() {
+      chart.update = function () {
         if (!data) {
           return;
         }
-        container
-          .transition()
-          .duration(transitionDuration)
-          .each('end', onChartUpdate)
-          .call(chart);
+        container.transition().duration(transitionDuration).each('end', onChartUpdate).call(chart);
         filteredData = data.filter(series => {
           return !series.disabled;
         });
@@ -450,11 +439,7 @@ nv.models.multiBarWithBrushChart = function() {
           // Can happen if the state change before the charts has been created.
           return;
         }
-        brush
-          .x(x)
-          .on('brush', onBrush)
-          .on('brushstart', onBrushStart)
-          .on('brushend', onBrushEnd);
+        brush.x(x).on('brush', onBrush).on('brushstart', onBrushStart).on('brushend', onBrushEnd);
         if (chart.brushDomain) {
           const selection = fromSelection(chart.brushDomain);
           if (!selection.isWholeDomain) {
@@ -526,16 +511,14 @@ nv.models.multiBarWithBrushChart = function() {
           .tickSize(-availableHeight, 0);
 
         g.select('.nv-x.nv-axis').attr('transform', 'translate(0,' + y.range()[0] + ')');
-        g.select('.nv-x.nv-axis')
-          .transition()
-          .call(xAxis);
+        g.select('.nv-x.nv-axis').transition().call(xAxis);
 
         const xTicks = g.selectAll('.nv-x.nv-axis g.tick');
 
         xTicks.selectAll('line, text').style('opacity', 1);
 
         if (staggerLabels) {
-          const getTranslate = function(x, y) {
+          const getTranslate = function (x, y) {
             return 'translate(' + x + ',' + y + ')';
           };
 
@@ -544,7 +527,7 @@ nv.models.multiBarWithBrushChart = function() {
           const staggerUp = 5,
             staggerDown = 17; //pixels to stagger by
           // Issue #140
-          xTicks.selectAll('text').attr('transform', function(d, i, j) {
+          xTicks.selectAll('text').attr('transform', function (d, i, j) {
             const self = d3v3.select(this);
             let textLength = self.node().getComputedTextLength(),
               text = self.text();
@@ -571,9 +554,7 @@ nv.models.multiBarWithBrushChart = function() {
             .style('text-anchor', rotateLabels > 0 ? 'start' : 'end');
         }
 
-        g.select('.nv-x.nv-axis')
-          .selectAll('g.nv-axisMaxMin text')
-          .style('opacity', 1);
+        g.select('.nv-x.nv-axis').selectAll('g.nv-axisMaxMin text').style('opacity', 1);
       }
 
       if (showYAxis) {
@@ -582,9 +563,7 @@ nv.models.multiBarWithBrushChart = function() {
           .ticks(availableHeight / 36)
           .tickSize(-availableChartWidth, 0);
 
-        g.select('.nv-y.nv-axis')
-          .transition()
-          .call(yAxis);
+        g.select('.nv-y.nv-axis').transition().call(yAxis);
       }
 
       //------------------------------------------------------------
@@ -670,10 +649,7 @@ nv.models.multiBarWithBrushChart = function() {
       }
 
       function onBrushStart() {
-        gEnter
-          .select('.nv-brush')
-          .select('.extent')
-          .style('display', 'block');
+        gEnter.select('.nv-brush').select('.extent').style('display', 'block');
       }
 
       function onBrushEnd() {
@@ -1011,7 +987,7 @@ nv.models.multiBarWithBrushChart = function() {
 
   chart.options = nv.utils.optionsFunc.bind(chart);
 
-  chart.margin = function(_) {
+  chart.margin = function (_) {
     if (!arguments.length) {
       return margin;
     }
@@ -1022,7 +998,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.width = function(_) {
+  chart.width = function (_) {
     if (!arguments.length) {
       return width;
     }
@@ -1030,7 +1006,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.height = function(_) {
+  chart.height = function (_) {
     if (!arguments.length) {
       return height;
     }
@@ -1038,7 +1014,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.color = function(_) {
+  chart.color = function (_) {
     if (!arguments.length) {
       return color;
     }
@@ -1047,7 +1023,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.showControls = function(_) {
+  chart.showControls = function (_) {
     if (!arguments.length) {
       return showControls;
     }
@@ -1055,7 +1031,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.showLegend = function(_) {
+  chart.showLegend = function (_) {
     if (!arguments.length) {
       return showLegend;
     }
@@ -1063,7 +1039,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.showXAxis = function(_) {
+  chart.showXAxis = function (_) {
     if (!arguments.length) {
       return showXAxis;
     }
@@ -1071,7 +1047,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.showYAxis = function(_) {
+  chart.showYAxis = function (_) {
     if (!arguments.length) {
       return showYAxis;
     }
@@ -1079,7 +1055,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.rightAlignYAxis = function(_) {
+  chart.rightAlignYAxis = function (_) {
     if (!arguments.length) {
       return rightAlignYAxis;
     }
@@ -1088,7 +1064,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.reduceXTicks = function(_) {
+  chart.reduceXTicks = function (_) {
     if (!arguments.length) {
       return reduceXTicks;
     }
@@ -1096,7 +1072,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.rotateLabels = function(_) {
+  chart.rotateLabels = function (_) {
     if (!arguments.length) {
       return rotateLabels;
     }
@@ -1104,7 +1080,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.staggerLabels = function(_) {
+  chart.staggerLabels = function (_) {
     if (!arguments.length) {
       return staggerLabels;
     }
@@ -1112,7 +1088,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.tooltip = function(_) {
+  chart.tooltip = function (_) {
     if (!arguments.length) {
       return tooltip;
     }
@@ -1120,7 +1096,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.tooltips = function(_) {
+  chart.tooltips = function (_) {
     if (!arguments.length) {
       return tooltips;
     }
@@ -1128,7 +1104,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.tooltipContent = function(_) {
+  chart.tooltipContent = function (_) {
     if (!arguments.length) {
       return tooltipContent;
     }
@@ -1136,7 +1112,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.state = function(_) {
+  chart.state = function (_) {
     if (!arguments.length) {
       return state;
     }
@@ -1144,7 +1120,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.defaultState = function(_) {
+  chart.defaultState = function (_) {
     if (!arguments.length) {
       return defaultState;
     }
@@ -1152,7 +1128,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.noData = function(_) {
+  chart.noData = function (_) {
     if (!arguments.length) {
       return noData;
     }
@@ -1160,7 +1136,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.transitionDuration = function(_) {
+  chart.transitionDuration = function (_) {
     if (!arguments.length) {
       return transitionDuration;
     }
@@ -1168,39 +1144,39 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.enableSelection = function() {
+  chart.enableSelection = function () {
     selectionEnabled = true;
     return chart;
   };
 
-  chart.disableSelection = function() {
+  chart.disableSelection = function () {
     selectionEnabled = false;
     return chart;
   };
 
-  chart.isSelectionEnabled = function() {
+  chart.isSelectionEnabled = function () {
     return selectionEnabled;
   };
 
-  chart.hideSelection = function() {
+  chart.hideSelection = function () {
     selectionHidden = true;
     return chart;
   };
 
-  chart.showSelection = function() {
+  chart.showSelection = function () {
     selectionHidden = false;
     return chart;
   };
 
-  chart.showStacked = function() {
+  chart.showStacked = function () {
     stackedHidden = false;
   };
 
-  chart.hideStacked = function() {
+  chart.hideStacked = function () {
     stackedHidden = true;
   };
 
-  chart.onSelectRange = function(_) {
+  chart.onSelectRange = function (_) {
     if (!arguments.length) {
       return onSelectRange;
     }
@@ -1208,7 +1184,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.onStateChange = function(_) {
+  chart.onStateChange = function (_) {
     if (!arguments.length) {
       return onStateChange;
     }
@@ -1216,7 +1192,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.onLegendChange = function(_) {
+  chart.onLegendChange = function (_) {
     if (!arguments.length) {
       return onLegendChange;
     }
@@ -1224,7 +1200,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.onChartUpdate = function(_) {
+  chart.onChartUpdate = function (_) {
     if (!arguments.length) {
       return onChartUpdate;
     }
@@ -1232,7 +1208,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.minTickWidth = function(val) {
+  chart.minTickWidth = function (val) {
     if (!arguments.length) {
       return minTickWidth;
     }
@@ -1240,7 +1216,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.selectBars = function(args) {
+  chart.selectBars = function (args) {
     if (!arguments.length) {
       return selectBars;
     }
@@ -1256,7 +1232,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.displayValuesInLegend = function(val) {
+  chart.displayValuesInLegend = function (val) {
     if (!arguments.length) {
       return displayValuesInLegend;
     }
@@ -1264,7 +1240,7 @@ nv.models.multiBarWithBrushChart = function() {
     return chart;
   };
 
-  chart.brush = function(val) {
+  chart.brush = function (val) {
     if (!arguments.length) {
       return brush;
     }

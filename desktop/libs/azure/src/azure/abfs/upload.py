@@ -25,11 +25,15 @@ else:
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.files.uploadhandler import FileUploadHandler, SkipFile, StopFutureHandlers, StopUpload, UploadFileException
-from django.utils.translation import ugettext as _
 
-from desktop.lib import fsmanager
+from desktop.lib.fsmanager import get_client
 from azure.abfs.__init__ import parse_uri
 from azure.abfs.abfs import ABFSFileSystemException
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 DEFAULT_WRITE_SIZE = 30 * 1000 * 1000 # TODO: set in configuration
 
@@ -54,13 +58,13 @@ class ABFSFileUploadHandler(FileUploadHandler):
     self.file = None
     self._request = request
     self._part_size = DEFAULT_WRITE_SIZE
-    
+
     if self._is_abfs_upload():
       self._fs = self._get_abfs(request)
       self.filesystem, self.directory = parse_uri(self.destination)[:2]
        # Verify that the path exists
       self._fs.stats(self.destination)
-      
+
     LOG.debug("Chunk size = %d" % DEFAULT_WRITE_SIZE)
 
 
@@ -70,7 +74,7 @@ class ABFSFileUploadHandler(FileUploadHandler):
 
       LOG.info('Using ABFSFileUploadHandler to handle file upload wit temp file%s.' % file_name)
       self.target_path = self._fs.join(self.destination, file_name)
-      
+
       try:
         # Check access permissions before attempting upload
         #self._check_access() #implement later
@@ -78,7 +82,7 @@ class ABFSFileUploadHandler(FileUploadHandler):
         self._fs.create(self.target_path)
         self.file = SimpleUploadedFile(name=file_name, content='')
         raise StopFutureHandlers()
-      except (ABFSFileUploadHandler, ABFSFileSystemException) as e:
+      except (ABFSFileUploadError, ABFSFileSystemException) as e:
         LOG.error("Encountered error in ABFSUploadHandler check_access: %s" % e)
         self.request.META['upload_failed'] = e
         raise StopUpload()
@@ -88,7 +92,7 @@ class ABFSFileUploadHandler(FileUploadHandler):
     if self._is_abfs_upload():
       try:
         LOG.debug("ABFSFileUploadHandler uploading file part with size: %s" % self._part_size)
-        self._fs._append(self.target_path, raw_data, params = {'position' : int(start)})
+        self._fs._append(self.target_path, raw_data, params={'position': int(start)})
         return None
       except Exception as e:
         self._fs.remove(self.target_path)
@@ -100,7 +104,7 @@ class ABFSFileUploadHandler(FileUploadHandler):
   def file_complete(self, file_size):
     if self._is_abfs_upload():
       #finish the upload
-      self._fs.flush(self.target_path, {'position' : int(file_size)})
+      self._fs.flush(self.target_path, {'position': int(file_size)})
       LOG.info("ABFSFileUploadHandler has completed file upload to ABFS, total file size is: %d." % file_size)
       self.file.size = file_size
       LOG.debug("%s" % self._fs.stats(self.target_path))
@@ -109,7 +113,7 @@ class ABFSFileUploadHandler(FileUploadHandler):
       return None
 
   def _get_abfs(self, request):
-    fs = fsmanager.get_client(fs='abfs')
+    fs = get_client(fs='abfs', user=request.user.username)
 
     if not fs:
       raise ABFSFileUploadError(_("No ABFS filesystem found"))

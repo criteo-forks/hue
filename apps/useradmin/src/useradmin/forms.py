@@ -18,12 +18,12 @@
 from builtins import object
 import logging
 import re
+import sys
 
 import django.contrib.auth.forms
 from django import forms
 from django.forms import ValidationError
 from django.forms.utils import ErrorList
-from django.utils.translation import get_language, ugettext as _, ugettext_lazy as _t
 
 from desktop import conf as desktop_conf
 from desktop.conf import ENABLE_ORGANIZATIONS
@@ -33,6 +33,11 @@ from desktop.settings import LANGUAGES
 from useradmin.hue_password_policy import hue_get_password_validators
 from useradmin.models import GroupPermission, HuePermission, get_default_user_group, User, Group, Organization
 from useradmin.organization import get_user_request_organization
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import get_language, gettext as _, gettext_lazy as _t
+else:
+  from django.utils.translation import get_language, ugettext as _, ugettext_lazy as _t
 
 
 LOG = logging.getLogger(__name__)
@@ -53,8 +58,8 @@ def validate_username(username_pattern):
 
   if not username_pattern:
     raise ValidationError(_('Username is required.'))
-  if len(username_pattern) > 30:
-    raise ValidationError(_('Username must be fewer than 30 characters.'))
+  if len(username_pattern) > 150:
+    raise ValidationError(_('Username must be fewer than 150 characters.'))
   if not validator.match(username_pattern):
     raise ValidationError(_("Username must not contain whitespaces and ':'"))
 

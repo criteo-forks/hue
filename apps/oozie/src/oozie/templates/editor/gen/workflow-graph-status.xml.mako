@@ -21,10 +21,12 @@
 <%!
   import re
   import sys
-  from django.utils.translation import ugettext as _
 
   if sys.version_info[0] > 2:
     unicode = str
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 
 <%def name="get_tab(form, action, control, css_box_class)">
@@ -54,7 +56,7 @@
   <div class="row-fluid">
     % if action and action.externalId and re.match('\\w+', action.externalId):
       <div style="text-align:left; padding:10px;border:1px solid #DDD; border-top:0" class="span12">
-          <div style="font-size: 30px; margin-top:14px" class="pull-right"><a href="${ url('jobbrowser.views.job_single_logs', job=action.externalId) }" title="${ _('View the logs') }" rel="tooltip" data-row-selector-exclude="true"><i class="fa fa-tasks"></i></a></div>
+          <div style="font-size: 30px; margin-top:14px" class="pull-right"><a href="${ url('jobbrowser:jobbrowser.views.job_single_logs', job=action.externalId) }" title="${ _('View the logs') }" rel="tooltip" data-row-selector-exclude="true"><i class="fa fa-tasks"></i></a></div>
           <h4><a href="${ action.get_absolute_url() }" title="${ _('View workflow action') }" rel="tooltip">${ form.instance.__unicode__() }</a></h4>
           <span class="muted">${ form.instance.description }&nbsp;</span>
           % if action:

@@ -14,12 +14,14 @@ spec:
     metadata:
       labels:
         pod: celery-worker
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap-hue-extra.yaml") . | sha256sum }}
     spec:
       containers:
         - name: celery-worker
           image: {{ .Values.image.registry }}/hue:{{ .Values.image.tag }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ['./build/env/bin/celery', 'worker', '-A', 'desktop', '-l', 'info']
+          command: ['./build/env/bin/hue', 'runcelery', 'worker', '--loglevel', 'info']
           resources:
             requests:
               # memory: "400Mi"

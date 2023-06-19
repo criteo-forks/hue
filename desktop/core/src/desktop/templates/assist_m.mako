@@ -14,9 +14,13 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
+import sys
 from desktop import conf
 from desktop.views import commonheader_m, commonfooter_m
-from django.utils.translation import ugettext as _
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 %>
 
 ${ commonheader_m(_('Assist'), 'assist', user, request) | n,unicode }
@@ -62,7 +66,10 @@ ${ commonheader_m(_('Assist'), 'assist', user, request) | n,unicode }
       self.apiHelper = window.apiHelper;
       self.assistAvailable = ko.observable(true);
       self.isLeftPanelVisible = ko.observable();
-      self.apiHelper.withTotalStorage('assist', 'assist_panel_visible', self.isLeftPanelVisible, true);
+      window.hueUtils.withLocalStorage('assist.assist_panel_visible', self.isLeftPanelVisible, true);
+      self.isLeftPanelVisible.subscribe(function () {
+        huePubSub.publish('assist.forceRender');
+      });
 
       self.sqlSourceTypes = [];
       self.availableLanguages = [];

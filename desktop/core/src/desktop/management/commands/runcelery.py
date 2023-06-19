@@ -24,7 +24,11 @@ from desktop.lib.daemon_utils import drop_privileges_if_necessary
 
 from django.core.management.base import BaseCommand
 from django.utils import autoreload
-from django.utils.translation import ugettext as _
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 SERVER_HELP = r"""
   Run celery worker.
@@ -66,14 +70,23 @@ class Command(BaseCommand):
     return SERVER_HELP
 
 def runcelery(*args, **options):
-  #CeleryCommand().handle_argv(['worker', '--app=desktop.celery', '--concurrency=1', '--loglevel=DEBUG'])
-  opts = ['runcelery', 'worker', '--app=' + options['app'], '--concurrency=' + str(options['concurrency']), '--loglevel=' + options['loglevel']]
+  # Native does not load Hue's config
+  # CeleryCommand().handle_argv(['worker', '--app=desktop.celery', '--concurrency=1', '--loglevel=DEBUG'])
+  opts = [
+      'runcelery',
+      'worker',
+      '--app=' + options['app'],
+      '--concurrency=' + str(options['concurrency']),
+      '--loglevel=' + options['loglevel']
+  ]
   drop_privileges_if_necessary(CELERY_OPTIONS)
+
   if conf.DEV.get():
     autoreload.main(celery_main, (opts,))
   else:
     celery_main(opts)
-  LOG.error("Failed to exec '%s' with argument '%s'" % args)
+
+  LOG.info("Stopping command '%s'" % ' '.join(opts))
   sys.exit(-1)
 
 if __name__ == '__main__':

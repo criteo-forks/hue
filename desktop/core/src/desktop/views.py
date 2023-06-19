@@ -16,6 +16,7 @@
 # limitations under the License.
 
 from future import standard_library
+
 standard_library.install_aliases()
 import json
 import logging
@@ -33,16 +34,15 @@ import validate
 from django.http import HttpResponseRedirect
 from django.conf import settings
 from django.contrib.staticfiles.storage import staticfiles_storage
-from django.shortcuts import render_to_response
+from django.shortcuts import render as django_render
 from django.http import HttpResponse
 from django.http.response import StreamingHttpResponse
 from django.urls import reverse
 from django.shortcuts import redirect
-from django.utils.translation import ugettext as _
 from django.views.decorators.http import require_POST
 from configobj import ConfigObj, get_extra_values, ConfigObjError
 from wsgiref.util import FileWrapper
-from webpack_loader.utils import get_files
+from webpack_loader.utils import get_static
 import django.views.debug
 
 import desktop.conf
@@ -60,14 +60,19 @@ from desktop.lib.django_util import JsonResponse, login_notrequired, render
 from desktop.lib.i18n import smart_str
 from desktop.lib.paths import get_desktop_root
 from desktop.lib.thread_util import dump_traceback
+from desktop.lib.view_util import is_ajax
 from desktop.log.access import access_log_level, access_warn, AccessInfo
 from desktop.log import set_all_debug as _set_all_debug, reset_all_debug as _reset_all_debug, get_all_debug as _get_all_debug
 from desktop.models import Settings, hue_version, _get_apps, UserPreferences
+from libsaml.conf import REQUIRED_GROUPS, REQUIRED_GROUPS_ATTRIBUTE
+from useradmin.models import get_profile
 
 if sys.version_info[0] > 2:
   from io import StringIO as string_io
+  from django.utils.translation import gettext as _
 else:
   from StringIO import StringIO as string_io
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -76,10 +81,48 @@ LOG = logging.getLogger(__name__)
 def is_alive(request):
   return HttpResponse('')
 
+def samlgroup_check(request):
+  if 'SAML2Backend' in desktop.auth.forms.get_backend_names():
+    if REQUIRED_GROUPS.get():
+      try:
+        userprofile = get_profile(request.user)
+      except:
+        return False
+
+      json_data = json.loads(userprofile.json_data)
+      if not json_data:
+        LOG.info("Empty userprofile data for %s user" % (request.user.username))
+        return False
+
+      if not json_data.get('saml_attributes', False):
+        LOG.info("Empty saml_attributes data for %s user" % request.user.username)
+        return False
+
+      if not json_data['saml_attributes'].get(REQUIRED_GROUPS_ATTRIBUTE.get(), False):
+        LOG.info("Missing %s in SAMLResponse for %s user" % (REQUIRED_GROUPS_ATTRIBUTE.get(), request.user.username))
+        return False
+
+      # Earlier we had AND condition, It means user has to be there in all given groups.
+      # Now we are doing OR condition, which means user must be in one of the given groups.
+      saml_group_found = set(REQUIRED_GROUPS.get()).intersection(
+                         set(json_data['saml_attributes'].get(REQUIRED_GROUPS_ATTRIBUTE.get())))
+      if not saml_group_found:
+        LOG.info("User %s not found in required SAML groups, %s" % (request.user.username, REQUIRED_GROUPS.get()))
+        return False
+
+      LOG.info("User %s found in the required SAML groups %s" % (request.user.username, ",".join(saml_group_found)))
+  return True
 
 def hue(request):
   current_app, other_apps, apps_list = _get_apps(request.user, '')
   clusters = list(get_clusters(request.user).values())
+
+  user_permitted = request.session.get('samlgroup_permitted_flag')
+
+  if (not user_permitted) and (not samlgroup_check(request)):
+    return render('403.mako', request, {
+      'is_embeddable': True
+    })
 
   return render('hue.mako', request, {
     'apps': apps_list,
@@ -177,7 +220,11 @@ def log_js_error(request):
 
 def log_analytics(request):
   ai = AccessInfo(request)
-  ai.log(level=logging.INFO, msg='PAGE: ' + request.POST.get('page'))
+  area = request.POST.get('area')
+  action = request.POST.get('action')
+
+  if area is not None and action is not None:
+    ai.log(level=logging.INFO, msg='UI INTERACTION: ' + area + ' > ' + action)
 
   return JsonResponse({'status': 0})
 
@@ -246,7 +293,7 @@ def download_log_view(request):
         LOG.exception("Couldn't construct zip file to write logs")
         return log_view(request)
 
-  return render_to_response("logs.mako", dict(log=[_("No logs found.")], is_embeddable=request.GET.get('is_embeddable', False)))
+  return django_render(request, "logs.mako", dict(log=[_("No logs found.")], is_embeddable=request.GET.get('is_embeddable', False)))
 
 
 def bootstrap(request):
@@ -305,7 +352,7 @@ def threads(request):
   out = string_io()
   dump_traceback(file=out)
 
-  if request.is_ajax():
+  if is_ajax(request):
     return HttpResponse(out.getvalue(), content_type="text/plain")
   else:
     return render("threads.mako", request, {'text': out.getvalue(), 'is_embeddable': request.GET.get('is_embeddable', False)})
@@ -371,10 +418,13 @@ def ace_sql_syntax_worker(request):
 #Redirect to static resources no need for auth. Fails with 401 with Knox.
 @login_notrequired
 def dynamic_bundle(request, config, bundle_name):
-  bundle_name = re.sub(r'-(bundle|chunk).*', '', bundle_name)
-  files = get_files(bundle_name, None, config.upper())
-  if len(files) == 1:
-    return HttpResponseRedirect(files[0]['url'])
+  try:
+    static_path = get_static(bundle_name, config.upper())
+    webpack_app = config if config != 'default' else 'hue'
+    static_path = static_path.replace('static/', 'static/desktop/js/bundles/%s/' % webpack_app)
+    return HttpResponseRedirect(static_path)
+  except Exception as ex:
+    LOG.exception("Failed loading dynamic bundle %s: %s" % (bundle_name, ex))
   return render("404.mako", request, dict(uri=request.build_absolute_uri()), status=404)
 
 def assist_m(request):
@@ -392,6 +442,7 @@ def csrf_failure(request, reason=None):
   access_warn(request, reason)
   return render("403_csrf.mako", request, dict(uri=request.build_absolute_uri()), status=403)
 
+@login_notrequired
 def serve_403_error(request, *args, **kwargs):
   """Registered handler for 403. We just return a simple error"""
   access_warn(request, "403 access forbidden")
@@ -411,8 +462,10 @@ def serve_500_error(request, *args, **kwargs):
         # If (None, None, None), default server error describing why this failed.
         return django.views.debug.technical_500_response(request, *exc_info)
       else:
-        # Could have an empty traceback
-        return render("500.mako", request, {'traceback': traceback.extract_tb(exc_info[2])})
+        tb = traceback.extract_tb(exc_info[2])
+        if is_ajax(request):
+          tb = '\n'.join(tb.format() if sys.version_info[0] > 2 else [str(t) for t in tb])
+        return render("500.mako", request, {'traceback': tb})
     else:
       # exc_info could be empty
       return render("500.mako", request, {})
@@ -501,22 +554,18 @@ def get_banner_message(request):
   forwarded_host = request.get_host()
 
   if hasattr(request, 'environ'):
-    message = None
     path_info = request.environ.get("PATH_INFO")
-    if path_info.find("/hue") < 0 and path_info.find("accounts/login") < 0:
+    if path_info.find("/hue") < 0 and path_info.find("accounts/login") < 0 and not request.path.startswith('/api/'):
       url = request.build_absolute_uri("/hue")
-      link = '<a href="%s" style="color: #FFF; font-weight: bold">%s</a>' % (url, url)
-      message = _('You are accessing an older version of Hue, please switch to the latest version: %s.') % link
-      LOG.warn('User %s is using Hue 3 UI' % request.user.username)
+      link = '<a href="%s">%s</a>' % (url, url)
+      banner_message = _('You are accessing an older version of Hue, please switch to the latest version: %s.') % link
+      LOG.warning('User %s is using Hue 3 UI' % request.user.username)
 
     if HUE_LOAD_BALANCER.get() and HUE_LOAD_BALANCER.get() != [''] and \
       (not forwarded_host or not any(forwarded_host in lb for lb in HUE_LOAD_BALANCER.get())):
-      message = _('You are accessing a non-optimized Hue, please switch to one of the available addresses: %s') % \
-        (", ".join(['<a href="%s" style="color: #FFF; font-weight: bold">%s</a>' % (host, host) for host in HUE_LOAD_BALANCER.get()]))
-      LOG.warn('User %s is bypassing the load balancer' % request.user.username)
-
-    if message:
-      banner_message = '<div style="padding: 4px; text-align: center; background-color: #003F6C; height: 24px; color: #DBE8F1">%s</div>' % message
+      banner_message = _('You are accessing a non-optimized Hue, please switch to one of the available addresses: %s') % \
+        (", ".join(['<a href="%s">%s</a>' % (host, host) for host in HUE_LOAD_BALANCER.get()]))
+      LOG.warning('User %s is bypassing the load balancer' % request.user.username)
 
   return banner_message
 
@@ -589,7 +638,7 @@ def _get_config_errors(request, cache=True):
         continue
 
       if not callable(validator):
-        LOG.warn("Auto config validation: %s.%s is not a function" % (module.conf.__name__, CONFIG_VALIDATOR))
+        LOG.warning("Auto config validation: %s.%s is not a function" % (module.conf.__name__, CONFIG_VALIDATOR))
         continue
 
       try:
@@ -611,7 +660,7 @@ def _get_config_errors(request, cache=True):
     _CONFIG_ERROR_LIST = error_list
 
   if _CONFIG_ERROR_LIST:
-    LOG.warn("Errors in config : %s" % _CONFIG_ERROR_LIST)
+    LOG.warning("Errors in config : %s" % _CONFIG_ERROR_LIST)
 
   return _CONFIG_ERROR_LIST
 
@@ -663,7 +712,7 @@ def collect_validation_messages(conf, error_list):
     'hadoop_mapred_home': [('hadoop', 'yarn_clusters', 'default'), ('hadoop', 'yarn_clusters', 'ha')],
     'hadoop_conf_dir': [('hadoop', 'yarn_clusters', 'default'), ('hadoop', 'yarn_clusters', 'ha')],
     'ssl_cacerts': [('beeswax', 'ssl'), ('impala', 'ssl')],
-    'remote_data_dir': [('liboozie', )],
+    'remote_data_dir': [('liboozie',)],
     'shell': [()],
   }
 
@@ -684,14 +733,14 @@ def collect_validation_messages(conf, error_list):
         hierarchy_sections_string += "[" * the_section.depth + section + "]" * the_section.depth + " "
         parent = the_section
     except KeyError as ex:
-      LOG.warn("Section %s not found: %s" % (section, str(ex)))
+      LOG.warning("Section %s not found: %s" % (section, str(ex)))
 
     the_value = ''
     try:
       # the_value may be a section or a value
       the_value = the_section[name]
     except KeyError as ex:
-      LOG.warn("Error in accessing Section or Value %s: %s" % (name, str(ex)))
+      LOG.warning("Error in accessing Section or Value %s: %s" % (name, str(ex)))
 
     section_or_value = 'keyvalue'
     if isinstance(the_value, dict):

@@ -41,14 +41,15 @@ from desktop.log.access import access_warn
 import hadoop.confparse
 from liboozie.utils import parse_timestamp, format_time, catch_unicode_time
 
-from django.utils.translation import ugettext as _
 from django.urls import reverse
 
 from desktop.auth.backend import is_admin
 
 if sys.version_info[0] > 2:
   from io import BytesIO as string_io
+  from django.utils.translation import gettext as _
 else:
+  from django.utils.translation import ugettext as _
   from cStringIO import StringIO as string_io
 
 LOG = logging.getLogger(__name__)
@@ -198,7 +199,7 @@ class WorkflowAction(Action):
   def get_absolute_log_url(self):
     url = None
     if self.externalId and (re.match('job_.*', self.externalId) or re.match('application_.*', self.externalId)):
-      url = self.externalId and reverse('jobbrowser.views.job_single_logs', kwargs={'job': self.externalId}) or ''
+      url = self.externalId and reverse('jobbrowser:jobbrowser.views.job_single_logs', kwargs={'job': self.externalId}) or ''
     return url
 
   def get_external_id_url(self):
@@ -206,7 +207,7 @@ class WorkflowAction(Action):
     if self.externalId and self.externalId.endswith('W'):
       url = reverse('oozie:list_oozie_workflow', kwargs={'job_id': self.externalId}) or ''
     elif self.externalId and re.match('job_.*', self.externalId):
-      url = reverse('jobbrowser.views.single_job', kwargs={'job': self.externalId}) or ''
+      url = reverse('jobbrowser:jobbrowser.views.single_job', kwargs={'job': self.externalId}) or ''
     return url
 
 
@@ -538,7 +539,9 @@ class Coordinator(Job):
     'total'
   ]
   ACTION = CoordinatorAction
-  RUNNING_STATUSES = set(['PREP', 'RUNNING', 'RUNNINGWITHERROR', 'PREPSUSPENDED', 'SUSPENDED', 'SUSPENDEDWITHERROR', 'PREPPAUSED', 'PAUSED', 'PAUSEDWITHERROR'])
+  RUNNING_STATUSES = set([
+    'PREP', 'RUNNING', 'RUNNINGWITHERROR', 'PREPSUSPENDED', 'SUSPENDED', 'SUSPENDEDWITHERROR', 'PREPPAUSED', 'PAUSED', 'PAUSEDWITHERROR'
+  ])
   FINISHED_STATUSES = set(['SUCCEEDED', 'DONEWITHERROR', 'KILLED', 'FAILED'])
 
   def _fixup(self):
@@ -590,7 +593,7 @@ class Coordinator(Job):
     end = mktime(self.endTime)
 
     if end != start:
-      progress = min(int((1 - math.floor((end - next) / (end - start))) * 100), 100)
+      progress = min(int((1 - (end - next) / (end - start)) * 100), 100)
     else:
       progress = 100
 
@@ -649,7 +652,9 @@ class Bundle(Job):
   ]
 
   ACTION = BundleAction
-  RUNNING_STATUSES = set(['PREP', 'RUNNING', 'RUNNINGWITHERROR', 'SUSPENDED', 'PREPSUSPENDED', 'SUSPENDEDWITHERROR', 'PAUSED', 'PAUSEDWITHERROR', 'PREPPAUSED'])
+  RUNNING_STATUSES = set([
+    'PREP', 'RUNNING', 'RUNNINGWITHERROR', 'SUSPENDED', 'PREPSUSPENDED', 'SUSPENDEDWITHERROR', 'PAUSED', 'PAUSEDWITHERROR', 'PREPPAUSED'
+  ])
   FINISHED_STATUSES = set(['SUCCEEDED', 'DONEWITHERROR', 'KILLED', 'FAILED'])
 
   def _fixup(self):

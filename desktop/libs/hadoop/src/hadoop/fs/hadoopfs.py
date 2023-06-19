@@ -27,6 +27,7 @@ from past.builtins import cmp
 from future import standard_library
 standard_library.install_aliases()
 from builtins import object
+import codecs
 import errno
 import logging
 import math
@@ -37,7 +38,6 @@ import subprocess
 import sys
 
 from django.utils.encoding import smart_str
-from django.utils.translation import ugettext as _
 
 from desktop.lib import i18n
 
@@ -46,11 +46,13 @@ from hadoop.fs import normpath, SEEK_SET, SEEK_CUR, SEEK_END
 from hadoop.fs.exceptions import PermissionDeniedException
 
 if sys.version_info[0] > 2:
-  from django.utils.encoding import force_text as force_unicode
+  from django.utils.encoding import force_str
   from urllib.parse import urlsplit as lib_urlsplit
+  from django.utils.translation import gettext as _
 else:
-  from django.utils.encoding import force_unicode
+  from django.utils.encoding import force_unicode as force_str
   from urlparse import urlsplit as lib_urlsplit
+  from django.utils.translation import ugettext as _
 
 LOG = logging.getLogger(__name__)
 
@@ -72,13 +74,17 @@ DN_THRIFT_TIMEOUT = 3
 # Encoding used by HDFS namespace
 HDFS_ENCODING = 'utf-8'
 
+# Taken from https://stackoverflow.com/questions/898669/how-can-i-detect-if-a-file-is-binary-non-text-in-python
+textchars = bytearray({7, 8, 9, 10, 12, 13, 27} | set(range(0x20, 0x100)) - {0x7f})
+is_binary_string = lambda bytes: bool(bytes.translate(None, textchars))
+
 def encode_fs_path(path):
   """encode_fs_path(path) -> byte string in utf8"""
   return smart_str(path, HDFS_ENCODING, errors='strict')
 
 def decode_fs_path(path):
   """decode_fs_path(bytestring) -> unicode path"""
-  return force_unicode(path, HDFS_ENCODING, errors='strict')
+  return force_str(path, HDFS_ENCODING, errors='strict')
 
 
 def _coerce_exceptions(function):
@@ -91,8 +97,8 @@ def _coerce_exceptions(function):
     try:
       return function(*args, **kwargs)
     except Exception as e:
-      e.msg = force_unicode(e.msg, errors='replace')
-      e.stack = force_unicode(e.stack, errors='replace')
+      e.msg = force_str(e.msg, errors='replace')
+      e.stack = force_str(e.stack, errors='replace')
       LOG.exception("Exception in Hadoop FS call " + function.__name__)
       if e.clazz == HADOOP_ACCESSCONTROLEXCEPTION:
         raise PermissionDeniedException(e.msg, e)
@@ -179,13 +185,16 @@ class Hdfs(object):
     if home_path is None:
       home_path = self.get_home_dir()
 
-    from useradmin.conf import HOME_DIR_PERMISSIONS
-    mode = int(HOME_DIR_PERMISSIONS.get(), 8)
+    from hadoop.hdfs_site import get_umask_mode
+    from useradmin.conf import HOME_DIR_PERMISSIONS, USE_HOME_DIR_PERMISSIONS
+    from desktop.conf import DEFAULT_HDFS_SUPERUSER
+    mode = int(HOME_DIR_PERMISSIONS.get(), 8) if USE_HOME_DIR_PERMISSIONS.get() else (0o777 & (0o1777 ^ get_umask_mode()))
     if not self.exists(home_path):
       user = self.user
+      LOG.debug('superuser used for home directory creation: %s' % self.superuser)
       try:
         try:
-          self.setuser(self.superuser)
+          self.setuser(DEFAULT_HDFS_SUPERUSER.get())
           self.mkdir(home_path)
           self.chmod(home_path, mode)
           self.chown(home_path, user)
@@ -223,6 +232,49 @@ class Hdfs(object):
       else:
         self._copy_file(local_src, remote_dst)
 
+  def _copy_binary_file(self, local_src, remote_dst, chunk_size):
+    src = open(local_src, mode="rb")
+    try:
+      try:
+        self.create(remote_dst, permission=0o755)
+        chunk = src.read(chunk_size)
+        while chunk:
+          self.append(remote_dst, chunk)
+          chunk = src.read(chunk_size)
+        LOG.info(_('Copied %s -> %s.') % (local_src, remote_dst))
+      except:
+        LOG.exception(_('Copying %s -> %s failed.') % (local_src, remote_dst))
+        raise
+    finally:
+      src.close()
+
+  def _copy_non_binary_file(self, local_src, remote_dst, chunk_size):
+    for data_format in ("ascii", "utf-8", "latin-1", "iso-8859"):
+      src_copied = False
+      if sys.version_info[0] > 2:
+        src = open(local_src, encoding=data_format)
+      else:
+        src = codecs.open(local_src, encoding=data_format)
+      try:
+        self.create(remote_dst, permission=0o755)
+        chunk = src.read(chunk_size)
+        while chunk:
+          self.append(remote_dst, chunk)
+          chunk = src.read(chunk_size)
+        src_copied = True
+      except:
+        LOG.exception(_('Copying %s -> %s failed with %s encoding format') % (local_src, remote_dst, data_format))
+        self.remove(remote_dst)
+      finally:
+        src.close()
+      if src_copied:
+        break
+    if src_copied:
+      LOG.info(_('Copied %s -> %s using %s encoding format') % (local_src, remote_dst, data_format))
+    else:
+      LOG.exception(_('Copying %s -> %s failed with %s encoding format') % (local_src, remote_dst, data_format))
+      raise
+
   def _copy_file(self, local_src, remote_dst, chunk_size=1024 * 1024 * 64):
     if os.path.isfile(local_src):
       if self.exists(remote_dst):
@@ -230,21 +282,16 @@ class Hdfs(object):
         return
       else:
         LOG.info(_('%(remote_dst)s does not exist. Trying to copy.') % {'remote_dst': remote_dst})
-
-      src = file(local_src)
-      try:
-        try:
-          self.create(remote_dst, permission=0o755)
-          chunk = src.read(chunk_size)
-          while chunk:
-            self.append(remote_dst, chunk)
-            chunk = src.read(chunk_size)
-          LOG.info(_('Copied %s -> %s.') % (local_src, remote_dst))
-        except:
-          LOG.exception(_('Copying %s -> %s failed.') % (local_src, remote_dst))
-          raise
-      finally:
-        src.close()
+      binary_file = False
+      with open(local_src, 'rb') as bf:
+        if is_binary_string(bf.read(1024)):
+          binary_file = True
+      if binary_file:
+        LOG.info(_('file %s is binary file.') % local_src)
+        self._copy_binary_file(local_src, remote_dst, chunk_size=chunk_size)
+      else:
+        LOG.info(_('file %s is not a binary file.') % local_src)
+        self._copy_non_binary_file(local_src, remote_dst, chunk_size=chunk_size)
     else:
       LOG.info(_('Skipping %s (not a file).') % local_src)
 
@@ -484,7 +531,7 @@ class FileUpload(object):
 
     self.closed = True
     if stderr:
-      LOG.warn("HDFS FileUpload (cmd='%s', env='%s') outputted stderr:\n%s" %
+      LOG.warning("HDFS FileUpload (cmd='%s', env='%s') outputted stderr:\n%s" %
                    (repr(self.subprocess_cmd), repr(self.subprocess_env), stderr))
     if stdout:
       LOG.info("HDFS FileUpload (cmd='%s', env='%s') outputted stdout:\n%s" %
@@ -546,7 +593,7 @@ class BlockCache(object):
     # We could do a more efficient merge here since both lists
     # are already sorted, but these data structures are small, so let's
     # do the easy thing.
-    blocks_dict = dict( (b.blockId, b) for b in self.blocks )
+    blocks_dict = dict((b.blockId, b) for b in self.blocks)
 
     # Merge in new data to dictionary
     for nb in new_blocks:
@@ -554,7 +601,7 @@ class BlockCache(object):
 
     # Convert back to sorted list
     block_list = list(blocks_dict.values())
-    block_list.sort(cmp=lambda a,b: cmp(a.startOffset, b.startOffset))
+    block_list.sort(cmp=lambda a, b: cmp(a.startOffset, b.startOffset))
 
     # Update cache with new data
     self.blocks = block_list

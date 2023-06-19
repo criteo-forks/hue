@@ -16,7 +16,7 @@
 
 <%!
 import logging
-from django.utils.translation import ugettext as _
+import sys
 
 from desktop import conf
 from desktop.lib.i18n import smart_unicode
@@ -24,6 +24,11 @@ from desktop.views import _ko
 
 from beeswax.conf import DOWNLOAD_ROW_LIMIT, DOWNLOAD_BYTES_LIMIT
 from notebook.conf import ENABLE_SQL_INDEXER
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 %>
 
 
@@ -402,8 +407,10 @@ from notebook.conf import ENABLE_SQL_INDEXER
               result += '</tr>';
               data.forEach(function (row) {
                 result += '<tr>';
-                for (var i = 1; i < row.length; i++) { // Skip the row number column
-                  result += '<td>' + hueUtils.html2text(row[i]) + '</td>';
+                for (var i = 1; i < row.length; i++) { // Skip the row number column              
+                  var htmlDecodedValue = hueUtils.html2text(row[i]);
+                  var needsToStayEncoded = hueUtils.includesComplexDBTypeDefinition(htmlDecodedValue);
+                  result += '<td>' + ( needsToStayEncoded ? row[i] : htmlDecodedValue) + '</td>';
                 }
                 result += '</tr>';
               });
@@ -479,9 +486,7 @@ from notebook.conf import ENABLE_SQL_INDEXER
       }
 
       DownloadResultsViewModel.prototype.download = function (format) {
-        if (typeof trackOnGA == 'function') {
-          trackOnGA('notebook/download/' + format);
-        }
+        window.hueAnalytics.log('notebook', 'download' + format);
 
         var self = this;
         $.cookie('download-' + self.snippet.id(), null, { expires: -1, path: '/' })
@@ -877,7 +882,10 @@ from notebook.conf import ENABLE_SQL_INDEXER
         },{
           id: 'settings',
           label: '${ _('Settings')}',
-          shortcuts: [{ shortcut: 'Ctrl - ,', macShortcut: 'Command - ,', description: '${ _('Show the settings menu where you can control autocomplete behaviour, syntax checker, dark theme and various editor settings.')}' }]
+          shortcuts: [
+            { shortcut: 'Ctrl-,', macShortcut: 'Command-,', description: '${ _('Show the settings menu where you can control autocomplete behaviour, syntax checker, dark theme and various editor settings.')}'},
+            { shortcut: 'Ctrl-.', macShortcut: 'Command-.', description: '${ _('Show or hide the assist panels.')}' }
+            ]
         }];
 
         self.query = ko.observable('');

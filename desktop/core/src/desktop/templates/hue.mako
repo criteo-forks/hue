@@ -15,13 +15,14 @@
 ## limitations under the License.
 
 <%!
-  from django.utils.translation import ugettext as _
+  import sys
 
   from desktop import conf
   from desktop.conf import IS_MULTICLUSTER_ONLY, has_multi_clusters
   from desktop.views import _ko, commonshare, login_modal
   from desktop.lib.i18n import smart_unicode
   from desktop.models import PREFERENCE_IS_WELCOME_TOUR_SEEN, hue_version, get_cluster_config
+  from desktop.webpack_utils import get_hue_bundles
 
   from dashboard.conf import IS_ENABLED as IS_DASHBOARD_ENABLED
   from filebrowser.conf import SHOW_UPLOAD_BUTTON
@@ -31,6 +32,11 @@
 
   from desktop.auth.backend import is_admin
   from webpack_loader.templatetags.webpack_loader import render_bundle
+
+  if sys.version_info[0] > 2:
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="hueIcons" file="/hue_icons.mako" />
@@ -39,6 +45,25 @@
 <!DOCTYPE html>
 <html lang="en" dir="ltr">
 <head>
+
+  % if conf.COLLECT_USAGE.get():
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=${conf.GTAG_ID.get()}"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', '${ conf.GTAG_ID.get()}', { 
+        // Prevent GA from accidentally passing client meta data present in urls
+        send_page_view: false, 
+        page_location: 'redacted',
+        page_referrer: 'redacted',
+        allow_google_signals: false
+        });
+    </script>
+  % endif
+
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta charset="utf-8">
   <title>Hue</title>
@@ -51,7 +76,6 @@
   <meta name="description" content="Open source SQL Query Assistant for Databases/Warehouses.">
   <meta name="author" content="Hue Team">
 
-  <%include file="/google_analytics.mako" />
 
   <link href="${ static('desktop/css/roboto.css') }" rel="stylesheet">
   <link href="${ static('desktop/ext/css/font-awesome.min.css') }" rel="stylesheet">
@@ -84,6 +108,8 @@
 </head>
 
 <body>
+
+<hue-icons-web-component></hue-icons-web-component>
 
 % if is_demo:
   <ul class="side-labels unstyled">
@@ -118,14 +144,10 @@ ${ hueIcons.symbols() }
 <input style="display:none" readonly autocomplete="false" type="password" name="fakepasswordremembered"/>
 
 <div class="hue-page">
-  <div class="hue-sidebar collapsed" data-bind="component: { name: 'hue-sidebar', params: {  } }"></div>
+  <hue-sidebar-web-component style="flex: 1 1 auto"></hue-sidebar-web-component>
 
   <div class="main-page">
-    % if banner_message or conf.CUSTOM.BANNER_TOP_HTML.get():
-      <div class="banner">
-        ${ banner_message or conf.CUSTOM.BANNER_TOP_HTML.get() | n,unicode }
-      </div>
-    % endif
+    <AppBanner data-reactcomponent='AppBanner'></AppBanner>
 
     <nav class="navbar navbar-default">
       <div class="navbar-inner top-nav">
@@ -140,9 +162,6 @@ ${ hueIcons.symbols() }
             <select data-bind="options: clusters, optionsText: 'name', value: 'id'" class="input-small" style="margin-top:8px">
             </select>
           % endif
-          <!-- ko if: window.ENABLE_NOTEBOOK_2 -->
-            <!-- ko component: 'quick-query-action' --><!-- /ko -->
-          <!-- /ko -->
           <!-- ko component: 'hue-history-panel' --><!-- /ko -->
           <!-- ko if: hasJobBrowser -->
             <!-- ko component: { name: 'hue-job-browser-links', params: { onePageViewModel: onePageViewModel }} --><!-- /ko -->
@@ -166,6 +185,12 @@ ${ hueIcons.symbols() }
       <div class="left-panel" data-bind="css: { 'side-panel-closed': !leftAssistVisible() }, visibleOnHover: { selector: '.hide-left-side-panel' }">
         <a href="javascript:void(0);" style="z-index: 1002; display: none;" title="${_('Show Assist')}" class="pointer side-panel-toggle show-left-side-panel" data-bind="visible: !leftAssistVisible(), toggle: leftAssistVisible"><i class="fa fa-chevron-right"></i></a>
         <a href="javascript:void(0);" style="display: none; opacity: 0;" title="${_('Hide Assist')}" class="pointer side-panel-toggle hide-left-side-panel" data-bind="visible: leftAssistVisible, toggle: leftAssistVisible"><i class="fa fa-chevron-left"></i></a>
+        <!-- ko if: window.USE_NEW_ASSIST_PANEL -->
+% if conf.USE_NEW_ASSIST_PANEL.get():
+          <assist-panel-web-component></assist-panel-web-component>
+% endif
+        <!-- /ko -->
+        <!-- ko ifnot: window.USE_NEW_ASSIST_PANEL -->
         <div class="assist" data-bind="component: {
             name: 'assist-panel',
             params: {
@@ -179,6 +204,7 @@ ${ hueIcons.symbols() }
               visibleAssistPanels: ['sql']
             }
           }, visible: leftAssistVisible" style="display:none;"></div>
+        <!-- /ko -->
       </div>
 
       <div id="leftResizer" class="resizer" data-bind="visible: leftAssistVisible(), splitFlexDraggable : {
@@ -279,13 +305,9 @@ ${ hueIcons.symbols() }
 </div>
 ${ commonshare() | n,unicode }
 
-${ render_bundle('vendors~hue~notebook~tableBrowser') | n,unicode }
-${ render_bundle('vendors~hue~notebook') | n,unicode }
-${ render_bundle('vendors~hue') | n,unicode }
-${ render_bundle('hue~notebook') | n,unicode }
-${ render_bundle('hue~notebook~tableBrowser') | n,unicode }
-${ render_bundle('hue~tableBrowser') | n,unicode }
-${ render_bundle('hue') | n,unicode }
+% for bundle in get_hue_bundles('hue'):
+  ${ render_bundle(bundle) | n,unicode }
+% endfor
 
 <script src="${ static('desktop/js/polyfills.js') }"></script>
 <script src="${ static('desktop/ext/js/tether.js') }"></script>
@@ -298,13 +320,6 @@ ${ render_bundle('hue') | n,unicode }
 <script src="${ static('desktop/js/bootstrap-tooltip.js') }"></script>
 <script src="${ static('desktop/js/bootstrap-typeahead-touchscreen.js') }"></script>
 <script src="${ static('desktop/ext/js/bootstrap-better-typeahead.min.js') }"></script>
-
-<script src="${ static('desktop/js/ace/ace.js') }"></script>
-<script src="${ static('desktop/js/ace/mode-impala.js') }"></script>
-<script src="${ static('desktop/js/ace/mode-hive.js') }"></script>
-<script src="${ static('desktop/js/ace/ext-language_tools.js') }"></script>
-<script src="${ static('desktop/js/ace.extended.js') }"></script>
-<script>ace.config.set("basePath", "${ static('desktop/js/ace') }");</script>
 
 <script src="${ static('desktop/js/share2.vm.js') }"></script>
 
@@ -327,7 +342,6 @@ ${ commonHeaderFooterComponents.header_pollers(user, is_s3_enabled, apps) }
 ${ smart_unicode(login_modal(request).content) | n,unicode }
 % endif
 
-<div class="shepherd-backdrop"></div>
 
 <iframe id="zoomDetectFrame" style="width: 250px; display: none" ></iframe>
 
@@ -442,7 +456,7 @@ ${ smart_unicode(login_modal(request).content) | n,unicode }
     %if is_admin(user):
       tour.addStep('admin', {
         text: '${ _ko('As a superuser, you can check system configuration from the user menu and install sample data and jobs for your users.') }',
-        attachTo: '.hue-sidebar .shepherd-user-menu right'
+        attachTo: '.server-position-pointer-welcome-tour left'
       });
     %endif
 
@@ -471,7 +485,7 @@ ${ smart_unicode(login_modal(request).content) | n,unicode }
       }
     };
 
-    % if is_demo or not user_preferences.get(PREFERENCE_IS_WELCOME_TOUR_SEEN):
+    % if False and (is_demo or not user_preferences.get(PREFERENCE_IS_WELCOME_TOUR_SEEN)):
       $(document).on('keyup', closeTourOnEsc);
       $(document).on('click', '.shepherd-backdrop', tour.cancel);
       tour.start();

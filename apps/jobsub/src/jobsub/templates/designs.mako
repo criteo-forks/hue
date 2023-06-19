@@ -15,9 +15,13 @@
 
 <%!
 import cgi
+import sys
 import time
 from desktop.views import commonheader, commonfooter
-from django.utils.translation import ugettext as _
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="actionbar" file="actionbar.mako" />
@@ -26,7 +30,6 @@ ${ commonheader(None, "jobsub", user, request) | n,unicode }
 
 <link rel="stylesheet" href="${ static('jobsub/css/jobsub.css') }">
 
-<script src="${ static('desktop/ext/js/mustache.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/js/hue.routie.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('desktop/ext/js/datatables-paging-0.1.js') }" type="text/javascript" charset="utf-8"></script>
 <script src="${ static('oozie/js/workflow.models.js') }" type="text/javascript" charset="utf-8"></script>

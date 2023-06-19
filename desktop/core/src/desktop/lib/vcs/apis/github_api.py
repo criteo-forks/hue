@@ -16,15 +16,21 @@
 # limitations under the License.
 
 import json
+import sys
 
 from django.http import HttpResponseBadRequest, HttpResponseRedirect
-from django.utils.translation import ugettext as _
 from django.views.decorators.http import require_GET
 
 from desktop.lib.django_util import JsonResponse
 
 from desktop.lib.vcs.github_client import GithubClient
 from desktop.lib.vcs.apis.base_api import Api
+from desktop.lib.view_util import is_ajax
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 class GithubApi(Api):
@@ -70,7 +76,7 @@ class GithubApi(Api):
         'status': -1,
         'auth_url':auth_url
       }
-      if (request.is_ajax()):
+      if is_ajax(request):
         return JsonResponse(response)
 
       return HttpResponseRedirect(auth_url)

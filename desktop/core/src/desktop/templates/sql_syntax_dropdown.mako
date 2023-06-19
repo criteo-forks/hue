@@ -15,8 +15,12 @@
 ## limitations under the License.
 
 <%!
+import sys
 from desktop.lib.i18n import smart_unicode
-from django.utils.translation import ugettext as _
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 %>
 
 <%def name="sqlSyntaxDropdown()">
@@ -66,10 +70,10 @@ from django.utils.translation import ugettext as _
 
         var selectedSub = self.selected.subscribe(function (newValue) {
           if (typeof newValue.suppressRule !== 'undefined') {
-            var suppressedRules = window.apiHelper.getFromTotalStorage('hue.syntax.checker', 'suppressedRules', {});
+            var suppressedRules = window.hueUtils.hueLocalStorage('hue.syntax.checker.suppressedRules') || {};
             suppressedRules[newValue.suppressRule] = true;
-            window.apiHelper.setInTotalStorage('hue.syntax.checker', 'suppressedRules', suppressedRules);
-            huePubSub.publish('editor.refresh.statement.locations', params.snippet);
+            window.hueUtils.hueLocalStorage('hue.syntax.checker.suppressedRules', suppressedRules);
+            huePubSub.publish('editor.refresh.statement.locations', params.editorId);
           } else {
             params.editor.session.replace(params.range, newValue);
           }

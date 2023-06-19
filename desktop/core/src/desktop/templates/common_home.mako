@@ -14,11 +14,16 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
-  from django.utils.translation import ugettext as _
+  import sys 
 
   from desktop.views import commonheader, commonfooter, _ko
   from desktop import conf
   from desktop.auth.backend import is_admin
+
+  if sys.version_info[0] > 2:
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="docBrowser" file="/document_browser.mako" />
@@ -83,10 +88,10 @@
 
       var loadUrlParam = function () {
         if (window.location.pathname.indexOf('/home') > -1) {
-          if (location.getParameter('uuid')) {
-            viewModel.openUuid(location.getParameter('uuid'));
-          } else if (location.getParameter('path')) {
-            viewModel.openPath(location.getParameter('path'));
+          if (hueUtils.getParameter('uuid')) {
+            viewModel.openUuid(hueUtils.getParameter('uuid'));
+          } else if (hueUtils.getParameter('path')) {
+            viewModel.openPath(hueUtils.getParameter('path'));
           } else if (viewModel.activeEntry() && viewModel.activeEntry().loaded()) {
             var rootEntry = viewModel.activeEntry();
             while (rootEntry && !rootEntry.isRoot()) {
@@ -107,9 +112,9 @@
       loadUrlParam();
 
       viewModel.activeEntry.subscribe(function (newEntry) {
-        var filterType = window.location.pathname.indexOf('/home') > -1 && window.location.getParameter('type') != '' ? 'type=' + window.location.getParameter('type') : '';
+        var filterType = window.location.pathname.indexOf('/home') > -1 && hueUtils.getParameter('type') != '' ? 'type=' + hueUtils.getParameter('type') : '';
         if (typeof newEntry !== 'undefined' && newEntry.definition().uuid && !newEntry.isRoot()) {
-          if (window.location.getParameter('uuid') === '' || window.location.getParameter('uuid') !== newEntry.definition().uuid){
+          if (hueUtils.getParameter('uuid') === '' || hueUtils.getParameter('uuid') !== newEntry.definition().uuid){
             hueUtils.changeURL('${ is_embeddable and '/hue' or ''}/home/?uuid=' + newEntry.definition().uuid + '&' + filterType);
           }
         } else if (typeof newEntry === 'undefined' || newEntry.isRoot()) {

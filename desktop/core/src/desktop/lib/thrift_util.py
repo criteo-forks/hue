@@ -30,7 +30,6 @@ import socket
 import threading
 import time
 import re
-import sasl
 import struct
 import sys
 
@@ -41,8 +40,7 @@ from thrift.protocol.TBinaryProtocol import TBinaryProtocol
 from thrift.protocol.TMultiplexedProtocol import TMultiplexedProtocol
 
 from django.conf import settings
-from django.utils.translation import ugettext as _
-from desktop.conf import SASL_MAX_BUFFER, CHERRYPY_SERVER_THREADS, ENABLE_SMART_THRIFT_POOL
+from desktop.conf import SASL_MAX_BUFFER, CHERRYPY_SERVER_THREADS, ENABLE_SMART_THRIFT_POOL, USE_THRIFT_HTTP_JWT, ENABLE_ORGANIZATIONS
 
 from desktop.lib.apputil import WARN_LEVEL_CALL_DURATION_MS, INFO_LEVEL_CALL_DURATION_MS
 from desktop.lib.python_util import create_synchronous_io_multiplexer
@@ -53,8 +51,19 @@ from desktop.lib.exceptions import StructuredException, StructuredThriftTranspor
 
 if sys.version_info[0] > 2:
   from past.builtins import long
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
+
 
 LOG = logging.getLogger(__name__)
+
+
+try:
+  import sasl
+except Exception as e:
+  # Workaround potential version `GLIBCXX_3.4.26' not found
+  LOG.warn('Could not import sasl: %s' % e)
 
 
 # The maximum depth that we will recurse through a "jsonable" structure
@@ -64,25 +73,25 @@ MAX_RECURSION_DEPTH = 50
 
 
 class LifoQueue(queue.Queue):
-    '''
-    Variant of Queue that retrieves most recently added entries first.
+  '''
+  Variant of Queue that retrieves most recently added entries first.
 
-    This LIFO Queue is included in python2.7 (or 2.6) and later,
-    but it's a simple subclass, so we "backport" it here.
-    '''
+  This LIFO Queue is included in python2.7 (or 2.6) and later,
+  but it's a simple subclass, so we "backport" it here.
+  '''
 
-    def _init(self, maxsize):
-        self.queue = []
-        self.maxsize = maxsize
+  def _init(self, maxsize):
+    self.queue = []
+    self.maxsize = maxsize
 
-    def _qsize(self, len=len):
-        return len(self.queue)
+  def _qsize(self, len=len):
+    return len(self.queue)
 
-    def _put(self, item):
-        self.queue.append(item)
+  def _put(self, item):
+    self.queue.append(item)
 
-    def _get(self):
-        return self.queue.pop()
+  def _get(self):
+    return self.queue.pop()
 
 
 class ConnectionConfig(object):
@@ -261,7 +270,8 @@ class ConnectionPooler(object):
           raise socket.timeout(
             ("Timed out after %.2f seconds waiting to retrieve a %s client from the pool.") % (has_waited_for, conf.service_name))
         else:
-          message = "Waited %d seconds for a Thrift client to %s:%d %s" % (has_waited_for, conf.host, conf.port, conf.get_coordinator_host())
+          message = "Waited %d seconds for a Thrift client to %s:%d %s" % (has_waited_for,
+                                                                           conf.host, conf.port, conf.get_coordinator_host())
           log_if_slow_call(duration=has_waited_for, message=message)
 
     return connection
@@ -307,7 +317,17 @@ def connect_to_thrift(conf):
     mode.set_verify(conf.validate)
   else:
     if conf.use_ssl:
-      mode = TSSLSocketWithWildcardSAN(conf.host, conf.port, validate=conf.validate, ca_certs=conf.ca_certs, keyfile=conf.keyfile, certfile=conf.certfile)
+      try:
+        from ssl import PROTOCOL_TLS
+        PROTOCOL_SSLv23 = PROTOCOL_TLS
+      except ImportError:
+        try:
+          from ssl import PROTOCOL_SSLv23 as PROTOCOL_TLS
+          PROTOCOL_SSLv23 = PROTOCOL_TLS
+        except ImportError:
+          PROTOCOL_SSLv23 = PROTOCOL_TLS = 2
+      mode = TSSLSocketWithWildcardSAN(conf.host, conf.port, validate=conf.validate, ca_certs=conf.ca_certs,
+                                       keyfile=conf.keyfile, certfile=conf.certfile, ssl_version=PROTOCOL_SSLv23)
     else:
       mode = TSocket(conf.host, conf.port)
 
@@ -319,6 +339,22 @@ def connect_to_thrift(conf):
   if conf.transport_mode == 'http':
     if conf.use_sasl and conf.mechanism != 'PLAIN':
       mode.set_kerberos_auth(service=conf.kerberos_principal)
+
+    elif USE_THRIFT_HTTP_JWT.get():
+      from desktop.auth.backend import find_user, rewrite_user # Cyclic dependency
+      user = rewrite_user(find_user(conf.username))
+
+      if user is None:
+        raise Exception("JWT: User not found.")
+
+      if ENABLE_ORGANIZATIONS.get() and user.token:
+        token = user.token
+      elif user.profile.data.get('jwt_access_token'):
+        token = user.profile.data['jwt_access_token']
+      else:
+        raise Exception("JWT: Could not retrive saved token from user.")
+
+      mode.set_bearer_auth(token)
     else:
       mode.set_basic_auth(conf.username, conf.password)
 
@@ -327,7 +363,6 @@ def connect_to_thrift(conf):
       saslc = sasl.Client()
       saslc.setAttr("host", str(conf.kerberos_principal_instance))
       saslc.setAttr("service", str(conf.kerberos_principal))
-
       if conf.mechanism == 'PLAIN':
         saslc.setAttr("username", str(conf.username))
         saslc.setAttr("password", str(conf.password)) # Defaults to 'hue' for a non-empty string unless using LDAP
@@ -571,7 +606,8 @@ def unpack_guid(guid):
   return "%016x:%016x" % struct.unpack(b"QQ", guid)
 
 def unpack_guid_base64(guid):
-  return "%016x:%016x" % struct.unpack(b"QQ", base64.decodestring(guid))
+  decoded_guid = base64.b64decode(guid) if sys.version_info[0] > 2 else base64.decodestring(guid)
+  return "%016x:%016x" % struct.unpack(b"QQ", decoded_guid)
 
 def simpler_string(thrift_obj):
   """
@@ -626,26 +662,26 @@ def thrift2json(tft):
       JSON protocol only supports key types that are base types.
   I believe this ought to be true for sets, as well.
   """
-  if isinstance(tft,type(None)):
+  if isinstance(tft, type(None)):
     return None
-  if isinstance(tft,(float,int,complex,basestring)):
+  if isinstance(tft, (float, int, complex, basestring)):
     return tft
-  if isinstance(tft,dict):
+  if isinstance(tft, dict):
     d = {}
     for key, val in tft.items():
       d[key] = thrift2json(val)
     return d
-  if isinstance(tft,list):
+  if isinstance(tft, list):
     return [thrift2json(x) for x in tft]
   if isinstance(tft, set):
-    return dict( (x, True) for x in tft )
+    return dict((x, True) for x in tft)
 
   json = {}
   d = {}
-  if hasattr(tft,"__dict__"):
+  if hasattr(tft, "__dict__"):
     d = tft.__dict__
   else:
-    if hasattr(tft,"__slots__"):
+    if hasattr(tft, "__slots__"):
       d = tft.__slots__
     else:
       return {}
@@ -799,8 +835,7 @@ def enum_as_sequence(enum):
   Arguments:
   - `enum`: The class of a Thrift-generated enum
   """
-  return [x for x in dir(enum) if not x.startswith("__")
-                and  x not in ["_VALUES_TO_NAMES", "_NAMES_TO_VALUES", "next"]]
+  return [x for x in dir(enum) if not x.startswith("__") and x not in ["_VALUES_TO_NAMES", "_NAMES_TO_VALUES", "next"]]
 
 def fixup_enums(obj, name_class_map, suffix="AsString"):
   """
@@ -814,7 +849,7 @@ def fixup_enums(obj, name_class_map, suffix="AsString"):
   """
   for n in list(name_class_map.keys()):
     c = name_class_map[n]
-    setattr(obj, n + suffix, c._VALUES_TO_NAMES[getattr(obj,n)])
+    setattr(obj, n + suffix, c._VALUES_TO_NAMES[getattr(obj, n)])
   return obj
 
 def is_thrift_struct(o):
@@ -824,7 +859,7 @@ def is_thrift_struct(o):
 # Same in resource.py for not losing the trace class
 def log_if_slow_call(duration, message):
   if duration >= math.floor(WARN_LEVEL_CALL_DURATION_MS / 1000):
-    LOG.warn('SLOW: %.2f - %s' % (duration, message))
+    LOG.warning('SLOW: %.2f - %s' % (duration, message))
   elif duration >= math.floor(INFO_LEVEL_CALL_DURATION_MS / 1000):
     LOG.info('SLOW: %.2f - %s' % (duration, message))
   else:

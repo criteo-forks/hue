@@ -37,8 +37,8 @@ sf_caption_position:
 ampforwp-amp-on-off:
   - default
 categories:
-  - Administration
-  - Version 4.6
+  - Version 4
+# - Version 4.6
 
 ---
 [docs.gethue.com][1] are getting some refreshed content continuously. In addition, a series of links not working (returning a 404) have been fixed. Here is how it was done.
@@ -58,7 +58,7 @@ And here is the output:
 <pre><code class="bash">$ muffet http://localhost:35741/ --exclude ".*releases.*" -f
 http://localhost:35741/user/
 404 http://localhost:35741/administrator/configuration/editor/#connectors
-http://localhost:35741/developer/parsers/
+http://localhost:35741/developer/development/#sql-parsers
 404 http://localhost:35741/administrator/configuration/editor/#postgresql
 http://localhost:35741/administrator/administration/reference/
 dial tcp4 127.0.0.1:5555: connect: connection refused http://localhost:5555/tasks

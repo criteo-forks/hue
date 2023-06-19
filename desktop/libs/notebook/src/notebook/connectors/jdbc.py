@@ -19,17 +19,18 @@ from builtins import object
 import logging
 import sys
 
-from django.utils.translation import ugettext as _
-
 from beeswax import data_export
 from desktop.lib.i18n import force_unicode, smart_str
 from librdbms.jdbc import Jdbc, query_and_fetch
 
 from notebook.connectors.base import Api, QueryError, AuthenticationRequired, _get_snippet_name
 
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 LOG = logging.getLogger(__name__)
-
 
 # Cache one JDBC connection by user for not saving user credentials
 API_CACHE = {}
@@ -44,11 +45,15 @@ def query_error_handler(func):
     except Exception as e:
       message = force_unicode(smart_str(e))
       if 'error occurred while trying to connect to the Java server' in message:
-        raise QueryError, _('%s: is the DB Proxy server running?') % message, sys.exc_info()[2]
+        if sys.version_info[0] > 2:
+          raise QueryError(_('%s: is the DB Proxy server running?') % message).with_traceback(sys.exc_info()[2])
+        else:
+          raise QueryError, _('%s: is the DB Proxy server running?') % message, sys.exc_info()[2]
       elif 'Access denied' in message:
         raise AuthenticationRequired, '', sys.exc_info()[2]
       else:
         raise QueryError, message, sys.exc_info()[2]
+
   return decorator
 
 
@@ -65,14 +70,15 @@ class JdbcApi(Api):
     elif 'password' in self.options:
       username = self.options.get('user') or user.username
       impersonation_property = self.options.get('impersonation_property')
-      self.db = API_CACHE[self.cache_key] = Jdbc(self.options['driver'], self.options['url'], username, self.options['password'], impersonation_property=impersonation_property, impersonation_user=user.username)
+      self.db = API_CACHE[self.cache_key] = Jdbc(self.options['driver'], self.options['url'], username, self.options['password'],
+        impersonation_property=impersonation_property, impersonation_user=user.username)
 
   def create_session(self, lang=None, properties=None):
     global API_CACHE
     props = super(JdbcApi, self).create_session(lang, properties)
 
     properties = dict([(p['name'], p['value']) for p in properties]) if properties is not None else {}
-    props['properties'] = {} # We don't store passwords
+    props['properties'] = {}  # We don't store passwords
 
     if self.db is None or not self.db.test_connection(throw_exception='password' not in properties):
       if ('password' not in properties) and ('password' in self.request.session):
@@ -144,7 +150,7 @@ class JdbcApi(Api):
     return {'status': -1}
 
   @query_error_handler
-  def autocomplete(self, snippet, database=None, table=None, column=None, nested=None):
+  def autocomplete(self, snippet, database=None, table=None, column=None, nested=None, operation=None):
     if self.db is None:
       raise AuthenticationRequired()
 
@@ -211,23 +217,48 @@ class Assist(object):
     return [table['name'] for table in tables]
 
   def get_tables_full(self, database, table_names=[]):
-    tables, description = query_and_fetch(self.db, "SELECT TABLE_NAME, TABLE_COMMENT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='%s'" % database)
-    return [{"comment": table[1] and table[1].strip(), "type": "Table", "name": table[0] and table[0].strip()} for table in tables]
+    try:
+      tables, description = query_and_fetch(self.db,
+        "SELECT TABLE_NAME, TABLE_COMMENT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='%s'" % database)
+      return [{"comment": table[1] and table[1].strip(), "type": "Table", "name": table[0] and table[0].strip()} for table in tables]
+    except Exception as e:
+      if 'SQLServerException' in str(e) and 'TABLE_COMMENT' in str(e):
+        LOG.warn('Seems like SQLServer is use, TABLE_COMMENT field does not exist in INFORMATION_SCHEMA.TABLES')
+        tables, description = query_and_fetch(self.db,
+          "SELECT TABLE_NAME, NULL as TABLE_COMMENT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='%s'" % database)
+        return [{"comment": table[1] and table[1].strip(), "type": "Table", "name": table[0] and table[0].strip()} for table in tables]
 
   def get_columns(self, database, table):
     columns = self.get_columns_full(database, table)
     return [col['name'] for col in columns]
 
   def get_columns_full(self, database, table):
-    columns, description = query_and_fetch(self.db, "SELECT COLUMN_NAME, DATA_TYPE, COLUMN_COMMENT FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA='%s' AND TABLE_NAME='%s'" % (database, table))
-    return [{"comment": col[2] and col[2].strip(), "type": col[1], "name": col[0] and col[0].strip()} for col in columns]
+    try:
+      columns, description = query_and_fetch(self.db,
+        "SELECT COLUMN_NAME, DATA_TYPE, COLUMN_COMMENT FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA='%s' AND TABLE_NAME='%s'" % (
+          database, table))
+      return [{"comment": col[2] and col[2].strip(), "type": col[1], "name": col[0] and col[0].strip()} for col in columns]
+    except Exception as e:
+      if 'SQLServerException' in str(e) and 'COLUMN_COMMENT' in str(e):
+        LOG.warn('Seems like SQLServer is use, COLUMN_COMMENT field does not exist in INFORMATION_SCHEMA.COLUMNS')
+        columns, description = query_and_fetch(self.db,
+          "SELECT COLUMN_NAME, DATA_TYPE, NULL as COLUMN_COMMENT FROM INFORMATION_SCHEMA.COLUMNS "
+          "WHERE TABLE_SCHEMA='%s' AND TABLE_NAME='%s'" % (
+            database, table))
+        return [{"comment": col[2] and col[2].strip(), "type": col[1], "name": col[0] and col[0].strip()} for col in columns]
 
   def get_sample_data(self, database, table, column=None):
     column = column or '*'
-    #data, description =  query_and_fetch(self.db, 'SELECT %s FROM %s.%s limit 100' % (column, database, table))
-    #response['rows'] = data
-    #response['columns'] = []
-    return query_and_fetch(self.db, 'SELECT %s FROM %s.%s limit 100' % (column, database, table))
+    # data, description =  query_and_fetch(self.db, 'SELECT %s FROM %s.%s limit 100' % (column, database, table))
+    # response['rows'] = data
+    # response['columns'] = []
+    try:
+      return query_and_fetch(self.db, 'SELECT %s FROM %s.%s limit 100' % (column, database, table))
+    except Exception as e:
+      if 'SQLServerException' in str(e) and '100' in str(e):
+        LOG.warn('Seems like SQLServer is use, LIMIT condition does not exist')
+        return query_and_fetch(self.db, 'SELECT TOP 100 %s FROM %s.%s' % (column, database, table))
+
 
 class FixedResultSet(object):
 
@@ -241,6 +272,7 @@ class FixedResultSet(object):
 
   def rows(self):
     return self.data if self.data is not None else []
+
 
 class FixedResult(object):
 

@@ -24,12 +24,11 @@ import logging
 import math
 import os
 import re
+import sys
 import time
 import urllib.parse
 
 from lxml import html
-
-from django.utils.translation import ugettext as _
 
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.rest.http_client import HttpClient
@@ -39,10 +38,12 @@ from desktop.lib.view_util import big_filesizeformat, format_duration_in_millis
 from hadoop import cluster
 from hadoop.yarn.clients import get_log_client
 
-
-
 from jobbrowser.models import format_unixtime_ms
 
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 LOG = logging.getLogger(__name__)
 
@@ -152,7 +153,7 @@ class SparkJob(Application):
       self.trackingUrl = actual_url
       LOG.debug("SparkJob tracking URL: %s" % self.trackingUrl)
     except Exception as e:
-      LOG.warn("Failed to resolve Spark Job's actual tracking URL: %s" % e)
+      LOG.warning("Failed to resolve Spark Job's actual tracking URL: %s" % e)
     finally:
       if resp is not None:
         resp.close()
@@ -162,7 +163,7 @@ class SparkJob(Application):
     try:
       response = function(*args, **kwargs)
     except Exception as e:
-      LOG.warn('Spark resolve tracking URL returned a failed response: %s' % e)
+      LOG.warning('Spark resolve tracking URL returned a failed response: %s' % e)
     return response
 
   def _get_metrics(self):
@@ -226,7 +227,7 @@ class Job(object):
     for attr in list(attrs.keys()):
       if attr == 'acls':
         # 'acls' are actually not available in the API
-        LOG.warn('Not using attribute: %s' % attrs[attr])
+        LOG.warning('Not using attribute: %s' % attrs[attr])
       else:
         setattr(self, attr, attrs[attr])
 
@@ -348,7 +349,7 @@ class YarnV2Job(Job):
     for attr in list(attrs.keys()):
       if attr == 'acls':
         # 'acls' are actually not available in the API
-        LOG.warn('Not using attribute: %s' % attrs[attr])
+        LOG.warning('Not using attribute: %s' % attrs[attr])
       else:
         setattr(self, attr, attrs[attr])
 
@@ -715,4 +716,3 @@ class Container(object):
     setattr(self, 'maxMapTasks', None)
     setattr(self, 'maxReduceTasks', None)
     setattr(self, 'taskReports', None)
-

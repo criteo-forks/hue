@@ -17,16 +17,21 @@
 
 import logging
 import re
+import sys
 import time
 
 from django.urls import reverse
 from django.http import QueryDict
-from django.utils.translation import ugettext as _
 
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.models import Document2
 
 from notebook.connectors.base import Api, QueryError
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -38,7 +43,7 @@ try:
   from oozie.views.dashboard import check_job_access_permission, check_job_edition_permission
   from oozie.views.editor2 import _submit_workflow
 except Exception as e:
-  LOG.warn('Oozie application is not enabled: %s' % e)
+  LOG.warning('Oozie application is not enabled: %s' % e)
 
 
 class OozieApi(Api):
@@ -48,6 +53,7 @@ class OozieApi(Api):
   RESULTS_PATTERN = "(?P<results>>>> Invoking Beeline command line now >>>.+<<< Invocation of Beeline command completed <<<)"
   RESULTS_PATTERN_GENERIC = "(?P<results>>>> Invoking Main class now >>>.+<<< Invocation of Main class completed <<<)"
   RESULTS_PATTERN_MAPREDUCE = "(?P<results>.+)"
+  RESULTS_PATTERN_SQOOP = "(?P<results>>>> Invoking Main class now >>>.+<<< Invocation of Sqoop command completed <<<)"
   RESULTS_PATTERN_PIG = "(?P<results>>>> Invoking Pig command line now >>>.+<<< Invocation of Pig command completed <<<)"
   BATCH_JOB_PREFIX = 'Batch'
   SCHEDULE_JOB_PREFIX = 'Schedule'
@@ -66,12 +72,14 @@ class OozieApi(Api):
 
     if notebook['type'] == 'notebook' or notebook['type'] == 'query-java':
       # Convert notebook to workflow
-      workflow_doc = WorkflowBuilder().create_notebook_workflow(notebook=notebook, user=self.user, managed=True, name=_("%s for %s") % (OozieApi.BATCH_JOB_PREFIX, notebook['name'] or notebook['type']))
+      workflow_doc = WorkflowBuilder().create_notebook_workflow(notebook=notebook, user=self.user, managed=True,
+                                                  name=_("%s for %s") % (OozieApi.BATCH_JOB_PREFIX, notebook['name'] or notebook['type']))
       workflow = Workflow(document=workflow_doc, user=self.user)
     else:
       notebook_doc = Document2.objects.get_by_uuid(user=self.user, uuid=notebook['uuid'], perm_type='read')
       # Create a managed workflow from the notebook doc
-      workflow_doc = WorkflowBuilder().create_workflow(document=notebook_doc, user=self.user, managed=True, name=_("Batch job for %s") % (notebook_doc.name or notebook_doc.type))
+      workflow_doc = WorkflowBuilder().create_workflow(document=notebook_doc, user=self.user,
+                                                       managed=True, name=_("Batch job for %s") % (notebook_doc.name or notebook_doc.type))
       workflow = Workflow(document=workflow_doc, user=self.user)
 
     # Submit workflow
@@ -101,7 +109,7 @@ class OozieApi(Api):
         if results:
           response['status'] = 'available'
         else:
-          LOG.warn('No log result could be matched for %s' % job_id)
+          LOG.warning('No log result could be matched for %s' % job_id)
       else:
         response['status'] = 'failed'
 
@@ -113,7 +121,7 @@ class OozieApi(Api):
     results = self._get_results(log_output, snippet['type'])
 
     return {
-        'data':  [[line] for line in results.split('\n')],  # hdfs_link()
+        'data': [[line] for line in results.split('\n')],  # hdfs_link()
         'meta': [{'name': 'Header', 'type': 'STRING_TYPE', 'comment': ''}],
         'type': 'table',
         'has_more': False,
@@ -157,7 +165,7 @@ class OozieApi(Api):
       if action.externalId is not None:
         jobs.append({
           'name': action.externalId,
-          'url': reverse('jobbrowser.views.single_job', kwargs={'job': action.externalId}),
+          'url': reverse('jobbrowser:jobbrowser.views.single_job', kwargs={'job': action.externalId}),
           'started': action.startTime is not None,
           'finished': action.endTime is not None
         })
@@ -206,6 +214,8 @@ class OozieApi(Api):
       pattern = self.RESULTS_PATTERN_PIG
     elif action_type == 'mapreduce':
       pattern = self.RESULTS_PATTERN_MAPREDUCE
+    elif action_type == 'sqoop1':
+      pattern = self.RESULTS_PATTERN_SQOOP
     else:
       pattern = self.RESULTS_PATTERN_GENERIC
 

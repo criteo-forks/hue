@@ -16,21 +16,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
 import json
 import logging
-
-from django.http import Http404
-from django.utils.html import escape
-from django.utils.translation import ugettext as _
-from django.views.decorators.http import require_POST
+import sys
 
 from desktop.lib.django_util import JsonResponse
 from desktop.lib.i18n import force_unicode
 from metadata.manager_client import ManagerApi
+from notebook.models import _get_notebook_api
 
 from kafka.conf import has_kafka_api
-from kafka.kafka_client import KafkaApi, KafkaApiException
+from kafka.kafka_client import KafkaApi, KafkaApiException, SchemaRegistryApi
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -63,7 +64,9 @@ def error_handler(view_fn):
 def list_topics(request):
   return JsonResponse({
     'status': 0,
-    'topics': [{'name': topic} for topic in get_topics()]
+    'topics': [
+      {'name': topic} for topic in get_topics(request.user)
+    ]
   })
 
 
@@ -99,17 +102,52 @@ def create_topic(request):
   })
 
 
-def get_topics():
+def get_topics(user):
   if has_kafka_api():
     return KafkaApi().topics()
   else:
-    try:
-      manager = ManagerApi()
-      broker_host = manager.get_kafka_brokers().split(',')[0].split(':')[0]
-      return [name for name in list(manager.get_kafka_topics(broker_host).keys()) if not name.startswith('__')]
-    except Exception as e:
-      print(e)
-      return ["traffic", "hueAccessLogs"]
+    data = {
+      'snippet': {},
+      'database': 'topics'
+    }
+
+    from desktop.api_public import _get_interpreter_from_dialect  # Avoid circular import
+    interpreter = _get_interpreter_from_dialect('ksql', user)
+    api = _get_notebook_api(user, connector_id=interpreter['type'])
+
+    return [
+      topic['name']
+      for topic in api.autocomplete(**data)['tables_meta']
+      if not topic['name'].startswith('__')
+    ]
+
+
+def get_topic_data(user, name):
+  if has_kafka_api():
+    print(
+      SchemaRegistryApi().subjects()
+    )
+    print(
+      SchemaRegistryApi().subject(name='Kafka-value')
+    )
+    data = {
+      'full_headers': [{'name': 'message', 'type': 'string'}],
+      'rows': [
+        ['This is rider 894 and I am at 38.1952, -123.1723'],
+        ['This is rider 98 and I am at 39.2531, -121.9547'],
+        ['This is rider 564 and I am at 22.3431, -111.7670']
+      ]
+    }
+  else:
+    from desktop.api_public import _get_interpreter_from_dialect  # Avoid circular import
+    interpreter = _get_interpreter_from_dialect('ksql', user)
+    api = _get_notebook_api(user, connector_id=interpreter['type'])
+
+    data = api.get_sample_data(snippet={})
+
+  print(data)
+
+  return data
 
 
 def get_topic(name):

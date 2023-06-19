@@ -18,11 +18,11 @@
 from builtins import object
 import json
 import logging
+import sys
 
 from django.urls import reverse
 from django.db.models import Q
 from django.shortcuts import redirect
-from django.utils.translation import ugettext as _
 from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.http import require_POST
 
@@ -39,12 +39,17 @@ from desktop.models import Document2, Document, FilesystemException, _get_gist_d
 from desktop.views import serve_403_error
 from metadata.conf import has_optimizer, has_catalog, has_workload_analytics
 
-from notebook.conf import get_ordered_interpreters, SHOW_NOTEBOOKS
+from notebook.conf import get_ordered_interpreters, ENABLE_NOTEBOOK_2, SHOW_NOTEBOOKS, EXAMPLES
 from notebook.connectors.base import Notebook, _get_snippet_name, get_interpreter
 from notebook.connectors.spark_shell import SparkApi
 from notebook.decorators import check_editor_access_permission, check_document_access_permission, check_document_modify_permission
 from notebook.management.commands.notebook_setup import Command
-from notebook.models import make_notebook, _get_editor_type, get_api
+from notebook.models import make_notebook, _get_editor_type, get_api, _get_dialect_example
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -55,7 +60,8 @@ def notebooks(request):
 
   if editor_type != 'notebook':
     if USE_NEW_EDITOR.get():
-      notebooks = [doc.to_dict() for doc in Document2.objects.documents(user=request.user).search_documents(types=['query-%s' % editor_type])]
+      notebooks = [doc.to_dict() for doc in Document2.objects.documents(
+          user=request.user).search_documents(types=['query-%s' % editor_type])]
     else:
       notebooks = [
         d.content_object.to_dict()
@@ -98,7 +104,7 @@ def notebook(request, is_embeddable=False):
       'is_embeddable': request.GET.get('is_embeddable', False),
       'options_json': json.dumps({
           'languages': get_ordered_interpreters(request.user),
-          'session_properties': SparkApi.get_properties(),
+          'session_properties': SparkApi.to_properties(),
           'is_optimizer_enabled': has_optimizer(),
           'is_wa_enabled': has_workload_analytics(),
           'is_navigator_enabled': has_catalog(request.user),
@@ -127,11 +133,18 @@ def editor(request, is_mobile=False, is_embeddable=False):
     gist_doc = _get_gist_document(uuid=gist_id)
     editor_type = gist_doc.extra
 
+  if EXAMPLES.AUTO_OPEN.get() and not editor_id:
+    sample_query = _get_dialect_example(dialect=editor_type)
+    if sample_query:
+      editor_id = sample_query.id
+
   if editor_id and not gist_id:  # Open existing saved editor document
     editor_type = _get_editor_type(editor_id)
 
   template = 'editor.mako'
-  if is_mobile:
+  if ENABLE_NOTEBOOK_2.get():
+    template = 'editor2.mako'
+  elif is_mobile:
     template = 'editor_m.mako'
 
   return render(template, request, {
@@ -178,6 +191,7 @@ def browse(request, database, table, partition_spec=None):
         name='Execute and watch',
         editor_type=editor_type,
         statement=statement,
+        database=database,
         status='ready-execute',
         is_task=True,
         namespace=namespace,
@@ -193,7 +207,7 @@ def browse(request, database, table, partition_spec=None):
         namespace=namespace,
         compute=compute
     )
-    return render('editor.mako', request, {
+    return render('editor2.mako' if ENABLE_NOTEBOOK_2.get() else 'editor.mako', request, {
         'notebooks_json': json.dumps([editor.get_data()]),
         'options_json': json.dumps({
             'languages': get_ordered_interpreters(request.user),
@@ -268,7 +282,8 @@ def execute_and_watch(request):
 
     if live_indexing:
       file_format['inputFormat'] = 'hs2_handle'
-      file_format['fetch_handle'] = lambda rows, start_over: get_api(request, snippet).fetch_result(notebook, snippet, rows=rows, start_over=start_over)
+      file_format['fetch_handle'] = lambda rows, start_over: get_api(
+          request, snippet).fetch_result(notebook, snippet, rows=rows, start_over=start_over)
 
     job_handle = _index(request, file_format, destination, query=notebook['uuid'])
 
@@ -279,7 +294,7 @@ def execute_and_watch(request):
   else:
     raise PopupException(_('Action %s is unknown') % action)
 
-  return render('editor.mako', request, {
+  return render('editor2.mako' if ENABLE_NOTEBOOK_2.get() else 'editor.mako', request, {
       'notebooks_json': json.dumps([editor.get_data()]),
       'options_json': json.dumps({
           'languages': [{"name": "%s SQL" % editor_type.title(), "type": editor_type}],
@@ -311,7 +326,8 @@ def delete(request):
         ctr += 1
       except FilesystemException as e:
         failures.append(notebook['uuid'])
-        LOG.exception("Failed to delete document with UUID %s that is writable by user %s, skipping." % (notebook['uuid'], request.user.username))
+        LOG.exception("Failed to delete document with UUID %s that is writable by user %s, skipping." % (
+            notebook['uuid'], request.user.username))
 
     response['status'] = 0
     if failures:
@@ -408,7 +424,7 @@ def install_examples(request):
       response['errorMessage'] = ' '.join(errors)
       response['status'] = len(errors)
     else:
-      Command().handle(user=request.user)
+      Command().handle(user=request.user, dialect=request.POST.get('dialect', 'hive'))
       response['status'] = 0
       response['message'] = _('Examples refreshed')
   except Exception as e:

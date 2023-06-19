@@ -18,12 +18,14 @@
 <%!
   import sys
   from desktop.views import commonheader, commonfooter
-  from django.utils.translation import ugettext as _
   from oozie.forms import ParameterForm
   from six import iteritems
 
   if sys.version_info[0] > 2:
     unicode = str
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="layout" file="../navigation-bar.mako" />
@@ -547,7 +549,7 @@ ${ dashboard.import_layout() }
       readOnly: true,
       maxLines: Infinity
     });
-    editor.setTheme($.totalStorage("hue.ace.theme") || "ace/theme/hue");
+    editor.setTheme(hueUtils.hueLocalStorage("hue.ace.theme") || "ace/theme/hue");
     editor.getSession().setMode("ace/mode/xml");
 
     // force refresh on tab change

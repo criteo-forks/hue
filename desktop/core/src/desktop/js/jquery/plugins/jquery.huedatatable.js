@@ -16,19 +16,19 @@
 
 import $ from 'jquery';
 
+import deXSS from 'utils/html/deXSS';
 import huePubSub from 'utils/huePubSub';
-import hueUtils from 'utils/hueUtils';
 
 /*
  * Extension to datatable to programmatically switch off datatable in case of huge tables
  *
  */
 
-$.fn.hueDataTable = function(oInit) {
+$.fn.hueDataTable = function (oInit) {
   const self = this;
   self.$table = null;
 
-  self.fnSetColumnVis = function(index, visible) {
+  self.fnSetColumnVis = function (index, visible) {
     const aoColumns = self.$table.data('aoColumns');
     const change = aoColumns[index].bVisible !== visible;
     aoColumns[index].bVisible = visible;
@@ -53,7 +53,7 @@ $.fn.hueDataTable = function(oInit) {
     }
   };
 
-  self.fnToggleAllCols = function(visible) {
+  self.fnToggleAllCols = function (visible) {
     const aoColumns = self.$table.data('aoColumns');
     aoColumns.forEach((col, idx) => {
       if (idx > 0) {
@@ -62,10 +62,7 @@ $.fn.hueDataTable = function(oInit) {
     });
     if (!visible) {
       self.$table.find('th, td').hide();
-      self.$table
-        .find('tr')
-        .find('td:eq(0),th:eq(0)')
-        .show();
+      self.$table.find('tr').find('td:eq(0),th:eq(0)').show();
     } else {
       self.$table.find('th, td').show();
     }
@@ -76,7 +73,7 @@ $.fn.hueDataTable = function(oInit) {
     }
   };
 
-  self.fnSortColumn = function(obj, way) {
+  self.fnSortColumn = function (obj, way) {
     const data = self.$table.data('data');
 
     let idx = obj.originalIndex;
@@ -191,7 +188,7 @@ $.fn.hueDataTable = function(oInit) {
     self.fnDraw(true);
   };
 
-  self.fnShowSearch = function() {
+  self.fnShowSearch = function () {
     if ($('.hue-datatable-search').length == 0) {
       const search = $('<div>')
         .css({
@@ -255,9 +252,7 @@ $.fn.hueDataTable = function(oInit) {
       });
     } else {
       $('.hue-datatable-search').show();
-      $('.hue-datatable-search')
-        .find('input')
-        .focus();
+      $('.hue-datatable-search').find('input').focus();
     }
     let right = -30;
     const adjustRight =
@@ -265,11 +260,8 @@ $.fn.hueDataTable = function(oInit) {
     if (adjustRight > 0) {
       right = adjustRight;
     }
-    $('.hueAnchorScroller:visible').each(function() {
-      const visibleRight =
-        $(this)
-          .css('right')
-          .replace(/px/gi, '') * 1;
+    $('.hueAnchorScroller:visible').each(function () {
+      const visibleRight = $(this).css('right').replace(/px/gi, '') * 1;
       if (!isNaN(visibleRight) && visibleRight > right) {
         right = visibleRight;
       }
@@ -277,7 +269,7 @@ $.fn.hueDataTable = function(oInit) {
     $('.hue-datatable-search').css('right', right + 50 + 'px');
   };
 
-  self.fnSearch = function(what, avoidScroll) {
+  self.fnSearch = function (what, avoidScroll) {
     const $t = self.$table;
     if ($t) {
       if (typeof avoidScroll === 'undefined' || !avoidScroll) {
@@ -287,9 +279,7 @@ $.fn.hueDataTable = function(oInit) {
       }
 
       if (what !== '') {
-        $('.hue-datatable-search')
-          .find('span')
-          .text('');
+        $('.hue-datatable-search').find('span').text('');
         $('.hue-datatable-search')
           .find('.fa-chevron-down')
           .addClass('muted')
@@ -319,11 +309,7 @@ $.fn.hueDataTable = function(oInit) {
         });
         $t.data('searchCoords', coords);
         if (coords.length > 0) {
-          if (
-            $('.hue-datatable-search')
-              .find('input')
-              .val() !== ''
-          ) {
+          if ($('.hue-datatable-search').find('input').val() !== '') {
             $('.hue-datatable-search')
               .find('.fa-chevron-down')
               .removeClass('muted')
@@ -348,15 +334,13 @@ $.fn.hueDataTable = function(oInit) {
               );
           }
         } else {
-          $('.hue-datatable-search')
-            .find('span')
-            .text($t.data('oInit')['i18n'].NO_RESULTS);
+          $('.hue-datatable-search').find('span').text($t.data('oInit')['i18n'].NO_RESULTS);
         }
       }
     }
   };
 
-  self.fnScrollToPreviousResult = function() {
+  self.fnScrollToPreviousResult = function () {
     const $t = self.$table;
     if ($t && $t.data('searchCoords') && $t.data('searchCoords').length > 0) {
       let high = $t.data('searchCoordHighlighted');
@@ -366,7 +350,7 @@ $.fn.hueDataTable = function(oInit) {
     }
   };
 
-  self.fnScrollToNextResult = function() {
+  self.fnScrollToNextResult = function () {
     const $t = self.$table;
     if ($t && $t.data('searchCoords') && $t.data('searchCoords').length > 0) {
       let high = $t.data('searchCoordHighlighted');
@@ -377,7 +361,7 @@ $.fn.hueDataTable = function(oInit) {
   };
 
   self.isScrolling = false;
-  self.fnScrollTo = function(row, col) {
+  self.fnScrollTo = function (row, col) {
     const $t = self.$table;
     if ($t) {
       self.isScrolling = true;
@@ -408,7 +392,7 @@ $.fn.hueDataTable = function(oInit) {
             $t
               .find('tbody tr')
               .find('td:eq(0)')
-              .filter(function() {
+              .filter(function () {
                 return $(this).text() - 1 == row;
               })
               .position().top + 73
@@ -426,7 +410,9 @@ $.fn.hueDataTable = function(oInit) {
 
   self.isDrawing = false;
 
-  self.fnDraw = function(force) {
+  this.lowerCaseFilter = '';
+
+  self.fnDraw = function (force) {
     const aoColumns = self.$table.data('aoColumns');
     if (!self.isDrawing && aoColumns) {
       const $t = self.$table;
@@ -436,7 +422,7 @@ $.fn.hueDataTable = function(oInit) {
         const appendable = $t.children('tbody').length > 0 ? $t.children('tbody') : $t;
         let startCol = -1;
         let endCol = -1;
-        $t.find('thead>tr th').each(function(i) {
+        $t.find('thead>tr th').each(function (i) {
           if ($(this).position().left > 0 && startCol == -1) {
             startCol = i;
           }
@@ -497,7 +483,7 @@ $.fn.hueDataTable = function(oInit) {
                 '<tr class="ht-visible-row ht-visible-row-' +
                 i +
                 '"><td>' +
-                hueUtils.deXSS(data[i][0]) +
+                deXSS(data[i][0]) +
                 '</td><td colspan="' +
                 (aoColumns.length - 1) +
                 '" class="stripe"></td></tr>';
@@ -516,7 +502,7 @@ $.fn.hueDataTable = function(oInit) {
                 '<tr class="ht-visible-row ht-visible-row-' +
                 i +
                 '"><td>' +
-                hueUtils.deXSS(data[i][0]) +
+                deXSS(data[i][0]) +
                 '</td><td colspan="' +
                 (aoColumns.length - 1) +
                 '" class="stripe"></td></tr>';
@@ -534,7 +520,7 @@ $.fn.hueDataTable = function(oInit) {
                     '<td ' +
                     (!aoColumns[j].bVisible ? 'style="display: none"' : '') +
                     '>' +
-                    hueUtils.deXSS(row[j]) +
+                    deXSS(row[j]) +
                     '</td>';
                 }
 
@@ -545,15 +531,12 @@ $.fn.hueDataTable = function(oInit) {
             } else {
               html =
                 '<td>' +
-                hueUtils.deXSS(data[i][0]) +
+                deXSS(data[i][0]) +
                 '</td><td colspan="' +
                 (aoColumns.length - 1) +
                 '" class="stripe"></td>';
             }
-            appendable
-              .children()
-              .eq(i)
-              .html(html);
+            appendable.children().eq(i).html(html);
           }
 
           if (force) {
@@ -640,18 +623,48 @@ $.fn.hueDataTable = function(oInit) {
     }
   };
 
-  self.fnAddData = function(mData, bRedraw, streaming, streamRecordLimit) {
+  const applyFilter = () => {
+    const data = this.$table.data('originalData');
+
+    if (!this.lowerCaseFilter || !data.length) {
+      this.$table.data('data', data);
+    } else {
+      this.$table.data(
+        'data',
+        data.filter(row =>
+          row.some(
+            (col, idx) => idx > 0 && ('' + col).toLowerCase().indexOf(this.lowerCaseFilter) !== -1
+          )
+        )
+      );
+    }
+  };
+
+  this.setFilter = filter => {
+    this.lowerCaseFilter = filter.toLowerCase();
+    if (this.$table.children('tbody').length > 0) {
+      this.$table.children('tbody').empty();
+    }
+
+    applyFilter();
+
+    this.fnDraw(true);
+  };
+
+  self.fnAddData = function (mData, bRedraw, streaming, streamRecordLimit) {
     const $t = self.$table;
 
     if ($t) {
       const aoColumns = $t.data('aoColumns') || [];
       const newData = streaming
-        ? mData.reverse().concat($t.data('data'))
-        : $t.data('data').concat(mData);
+        ? mData.reverse().concat($t.data('originalData'))
+        : $t.data('originalData').concat(mData);
       if (streaming && streamRecordLimit) {
         newData.splice(streamRecordLimit);
       }
-      $t.data('data', newData);
+      $t.data('originalData', newData);
+
+      applyFilter();
 
       if (mData.length === 0) {
         return;
@@ -667,24 +680,19 @@ $.fn.hueDataTable = function(oInit) {
       self.fnDraw(true);
 
       if ($('.hue-datatable-search').is(':visible')) {
-        self.fnSearch(
-          $('.hue-datatable-search')
-            .find('input')
-            .val(),
-          true
-        );
+        self.fnSearch($('.hue-datatable-search').find('input').val(), true);
       }
     }
   };
 
-  self.fnSettings = function() {
+  self.fnSettings = function () {
     const aoColumns = self.$table.data('aoColumns');
     return {
       aoColumns: aoColumns
     };
   };
 
-  self.fnClearTable = function(bRedraw) {
+  self.fnClearTable = function (bRedraw) {
     const $t = self.$table;
     if ($t) {
       if ($t.children('tbody').length > 0) {
@@ -693,13 +701,14 @@ $.fn.hueDataTable = function(oInit) {
         $t.children('tr').remove();
       }
       $t.data('data', []);
+      $t.data('originalData', []);
       $t.data('aoRows', []);
       $t.data('aoColumns', []);
       $t.data('fnDraws', 0);
     }
   };
 
-  self.fnDestroy = function() {
+  self.fnDestroy = function () {
     self.fnClearTable();
     self.$table.unwrap();
     self.$table.data('isScrollAttached', null);
@@ -714,7 +723,7 @@ $.fn.hueDataTable = function(oInit) {
     }
   };
 
-  return self.each(function() {
+  return self.each(function () {
     self.$table = $(this);
     const parent = self.$table.parent();
     if (parent.hasClass('dataTables_wrapper')) {
@@ -722,6 +731,7 @@ $.fn.hueDataTable = function(oInit) {
     }
     $('.hue-datatable-search').remove();
     self.$table.data('data', []);
+    self.$table.data('originalData', []);
     self.$table.data('aoRows', []);
     self.$table.data('aoColumns', []);
     self.$table.data('fnDraws', 0);
@@ -757,7 +767,7 @@ $.fn.hueDataTable = function(oInit) {
       let drawTimeout = -1;
       if (self.$table.data('oInit')['scrollable'] && !self.$table.data('isScrollAttached')) {
         self.$table.data('isScrollAttached', true);
-        const scrollFn = function() {
+        const scrollFn = function () {
           window.clearTimeout(drawTimeout);
           drawTimeout = window.setTimeout(
             self.fnDraw,

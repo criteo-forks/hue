@@ -15,7 +15,11 @@
 ## limitations under the License.
 
 <%!
-  from django.utils.translation import ugettext as _
+  import sys
+  if sys.version_info[0] > 2:
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="utils" file="../utils.inc.mako" />
@@ -39,7 +43,7 @@
           % endfor
           <div class="fieldWrapper">
             <div class="row-fluid
-              % if form['name'].form.initial.get('name') == 'oozie.use.system.libpath':
+              % if form['name'].form.initial.get('name').startswith('oozie.') or form['name'].form.initial.get('name') in form.RERUN_HIDE_PARAMETERS:
                 hide
               % endif
               ">

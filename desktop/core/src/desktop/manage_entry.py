@@ -34,7 +34,7 @@ def _deprecation_check(arg0):
     to_use = os.path.join(os.path.dirname(arg0), 'hue')
     msg = "Warning: '%s' has been deprecated. Please use '%s' instead." % (arg0, to_use)
     print(msg, file=sys.stderr)
-    LOG.warn(msg)
+    LOG.warning(msg)
 
 def reload_with_cm_env(cm_managed):
   try:
@@ -45,7 +45,7 @@ def reload_with_cm_env(cm_managed):
       try:
         if cm_managed:
           sys.argv.append("--cm-managed")
- 
+
         sys.argv.append("--skip-reload")
         os.execv(sys.argv[0], sys.argv)
       except Exception as exc:
@@ -85,16 +85,21 @@ def entry():
 
   if len(sys.argv) > 1:
     subcommand = sys.argv[1]
-  parser = CommandParser(None, usage="%(prog)s subcommand [options] [args]", add_help=False)
+
+  if sys.version_info[0] < 3:
+    args = [None]
+  else:
+    args = []
+  parser = CommandParser(*args, usage="%(prog)s subcommand [options] [args]", add_help=False)
   parser.parse_known_args(sys.argv[2:])
 
   if len(sys.argv) > 1:
     prof_id = subcommand = sys.argv[1]
     #Check if this is a CM managed cluster
     if os.path.isfile(cm_config_file) and not cm_managed and not skip_reload:
-        print("ALERT: This appears to be a CM Managed environment")
-        print("ALERT: HUE_CONF_DIR must be set when running hue commands in CM Managed environment")
-        print("ALERT: Please run 'hue <command> --cm-managed'")
+      print("ALERT: This appears to be a CM Managed environment")
+      print("ALERT: HUE_CONF_DIR must be set when running hue commands in CM Managed environment")
+      print("ALERT: Please run 'hue <command> --cm-managed'")
   else:
     prof_id = str(os.getpid())
 
@@ -105,7 +110,7 @@ def entry():
     else:
       from ConfigParser import NoOptionError, RawConfigParser
 
-    config = RawConfigParser()
+    config = RawConfigParser(strict=False) if sys.version_info[0] > 2 else RawConfigParser()
     config.read(cm_config_file)
     try:
       cm_agent_run_dir = config.get('General', 'agent_wide_credential_cache_location')
@@ -157,7 +162,8 @@ def entry():
       print("If the above does not work, make sure Hue has been started on this server.")
 
     if not envline == None:
-      empty, environment = envline.split("environment=")
+      # spliting envline by "environment=" won't work since new key cdp_environment was added
+      environment = envline.replace("environment=", "")
       for envvar in environment.split(","):
         include_env_vars = ("HADOOP_C", "PARCEL", "SCM_DEFINES", "LD_LIBRARY")
         if any(include_env_var in envvar for include_env_var in include_env_vars):
@@ -181,9 +187,11 @@ def entry():
       JAVA_HOME = "UNKNOWN"
 
       if locate_java is not None:
-        for line in iter(locate_java.stdout.readline, ''):
-          if 'JAVA_HOME' in line:
-            JAVA_HOME = line.rstrip().split('=')[1]
+        for line in iter(locate_java.stdout.readline, b''):
+          if b'JAVA_HOME' in line:
+            JAVA_HOME = line.rstrip().split(b'=')[1]
+            if sys.version_info[0] > 2 and type(JAVA_HOME) == bytes:
+              JAVA_HOME = JAVA_HOME.decode("utf-8")
 
       if JAVA_HOME != "UNKNOWN":
         os.environ["JAVA_HOME"] = JAVA_HOME

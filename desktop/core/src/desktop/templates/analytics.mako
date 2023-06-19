@@ -14,10 +14,15 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
-from django.utils.translation import ugettext as _
+import sys
 
 from desktop import conf
 from desktop.views import commonheader, commonfooter
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 %>
 
 <%
@@ -59,10 +64,5 @@ ${ layout.menubar(section='analytics') }
 
 
 <div id="analyticsComponents" class="container-fluid">
-
-  <a href="javascript:void(0)" data-bind="click: function() { selectedConnectorCategory('All'); section('installed-connectors-page'); }">
-    ${ _('Analytics') }
-  </a>
-
-  <textarea data-bind="text: stats" readonly></textarea>
+  <textarea data-bind="text: stats" readonly rows="5" style="width: 1000px"></textarea>
 </script>

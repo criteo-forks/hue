@@ -18,7 +18,7 @@ import prestoAutocompleteParser from '../prestoAutocompleteParser';
 
 describe('prestoAutocompleteParser.js CREATE statements', () => {
   beforeAll(() => {
-    prestoAutocompleteParser.yy.parseError = function(msg) {
+    prestoAutocompleteParser.yy.parseError = function (msg) {
       throw Error(msg);
     };
   });
@@ -50,7 +50,7 @@ describe('prestoAutocompleteParser.js CREATE statements', () => {
     assertAutoComplete({
       beforeCursor: 'CREATE ROLE baaa;',
       afterCursor: '',
-      noError: true,
+      noErrors: true,
       containsKeywords: ['SELECT'],
       expectedResult: {
         lowerCase: false

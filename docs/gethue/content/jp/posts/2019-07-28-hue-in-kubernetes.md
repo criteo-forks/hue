@@ -39,9 +39,8 @@ sf_custom_excerpt:
     |
         デプロイをより自動化し、Kubernetesのようなコンテナーオーケストレーションで実行する方法を見てみましょう。
         私たちは、以前のブログで最新の Hue ウェブサーバーを「ボックス」にまとめる Hue Docker image 記事を紹介しました。
-        
+
 categories:
-  - Administration
   - Cloud
   - Hue 4.5
 
@@ -58,7 +57,7 @@ Helm をインストールした後にシェルで次の3つの手順を実行�
 
 <pre><code class="bash">helm repo add gethue https://helm.gethue.com
 helm repo update
-helm install gethue/hue
+helm install hue gethue/hue
 </pre>
 
 [<img class="aligncenter size-full wp-image-5131" src="https://cdn.gethue.com/uploads/2017/12/Screen-Shot-2017-11-15-at-3.34.20-PM.png" alt="" width="512" height="457" />][5]
@@ -73,7 +72,7 @@ Hue は [Helm catalog][7] カタログにも記載されています。: <https:
   <div>
     フィードバックやご質問はありますか？何かありましたらこちら、あるいは <a href="https://twitter.com/gethue">@gethue</a>!
   </div>
-  
+
   <p>
     までお気軽にコメントお願いします。
   </p>

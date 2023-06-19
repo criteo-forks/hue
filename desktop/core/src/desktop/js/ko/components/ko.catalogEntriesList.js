@@ -14,14 +14,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import sqlAnalyzerRepository from 'catalog/analyzer/sqlAnalyzerRepository';
 import $ from 'jquery';
 import * as ko from 'knockout';
 
+import { ASSIST_KEY_COMPONENT } from './assist/ko.assistKey';
 import componentUtils from './componentUtils';
 import huePubSub from 'utils/huePubSub';
+import noop from 'utils/timing/noop';
 import I18n from 'utils/i18n';
-
-import { ASSIST_KEY_COMPONENT } from './assist/ko.assistKey';
 
 export const NAME = 'catalog-entries-list';
 
@@ -121,7 +122,7 @@ const TEMPLATE = `
       <tbody data-bind="foreach: filteredEntries">
         <tr data-bind="click: onRowClick">
           <!-- ko template: 'entries-table-shared-columns' --><!-- /ko -->
-          <td><a href="javascript: void(0);" data-bind="text: catalogEntry().name, click: onClick, attr: { 'title': catalogEntry().getTitle() }"></a></td>
+          <td data-bind="click: onClick"><a href="javascript: void(0);" data-bind="text: catalogEntry().name, click: onClick, attr: { 'title': catalogEntry().getTitle() }"></a></td>
           <!-- ko template: 'entries-table-td-description' --><!-- /ko -->
         </tr>
       </tbody>
@@ -149,7 +150,7 @@ const TEMPLATE = `
       <tbody data-bind="foreach: filteredEntries">
       <tr data-bind="click: onRowClick">
         <!-- ko template: 'entries-table-shared-columns' --><!-- /ko -->
-        <td><a href="javascript: void(0);" data-bind="text: catalogEntry().name, click: onClick, attr: { 'title': catalogEntry().getTitle() }"></a></td>
+        <td data-bind="click: onClick"><a href="javascript: void(0);" data-bind="text: catalogEntry().name, click: onClick, attr: { 'title': catalogEntry().getTitle() }"></a></td>
         <!-- ko template: 'entries-table-td-description' --><!-- /ko -->
       </tr>
       </tbody>
@@ -290,8 +291,8 @@ class SampleEnrichedEntry {
       self
         .catalogEntry()
         .setComment(self.comment())
-        .done(self.comment)
-        .fail(() => {
+        .then(self.comment)
+        .catch(() => {
           self.comment(self.catalogEntry().getResolvedComment());
         });
     }
@@ -339,10 +340,7 @@ class CatalogEntriesList {
         // Issue with filteredEntries is that it's not updated in time when typing,
         // i.e. type:| doesn't automatically open the suggestion list.
         self.entries().forEach(entry => {
-          const type = entry
-            .catalogEntry()
-            .getType()
-            .toLowerCase();
+          const type = entry.catalogEntry().getType().toLowerCase();
           if (!typeIndex['type'][type]) {
             typeIndex['type'][type] = 1;
           } else {
@@ -369,12 +367,7 @@ class CatalogEntriesList {
 
         if (!isFacetMatch) {
           if (entry.catalogEntry().isField()) {
-            match = !!facets['type'][
-              entry
-                .catalogEntry()
-                .getType()
-                .toLowerCase()
-            ];
+            match = !!facets['type'][entry.catalogEntry().getType().toLowerCase()];
           } else if (entry.catalogEntry().isTableOrView()) {
             match =
               (facets['type']['table'] && entry.catalogEntry().isTable()) ||
@@ -386,15 +379,8 @@ class CatalogEntriesList {
           match = self.querySpec().text.every(text => {
             const textLower = text.toLowerCase();
             return (
-              entry
-                .catalogEntry()
-                .name.toLowerCase()
-                .indexOf(textLower) !== -1 ||
-              entry
-                .catalogEntry()
-                .getResolvedComment()
-                .toLowerCase()
-                .indexOf(textLower) !== -1
+              entry.catalogEntry().name.toLowerCase().indexOf(textLower) !== -1 ||
+              entry.catalogEntry().getResolvedComment().toLowerCase().indexOf(textLower) !== -1
             );
           });
         }
@@ -403,23 +389,18 @@ class CatalogEntriesList {
       });
     });
 
-    self.autocompleteFromEntries = function(nonPartial, partial) {
+    self.autocompleteFromEntries = function (nonPartial, partial) {
       const result = [];
       const partialLower = partial.toLowerCase();
       self.entries().forEach(entry => {
-        if (
-          entry
-            .catalogEntry()
-            .name.toLowerCase()
-            .indexOf(partialLower) === 0
-        ) {
+        if (entry.catalogEntry().name.toLowerCase().indexOf(partialLower) === 0) {
           result.push(nonPartial + partial + entry.catalogEntry().name.substring(partial.length));
         }
       });
       return result;
     };
 
-    const entrySort = function(a, b) {
+    const entrySort = function (a, b) {
       const aIsKey =
         a.catalogEntry().isPrimaryKey() ||
         a.catalogEntry().isPartitionKey() ||
@@ -438,7 +419,7 @@ class CatalogEntriesList {
       return b.popularity() - a.popularity() || a.index - b.index;
     };
 
-    const onClick = function(sampleEnrichedEntry, event) {
+    const onClick = function (sampleEnrichedEntry, event) {
       if (params.onClick) {
         params.onClick(sampleEnrichedEntry.catalogEntry(), event);
       } else if (self.contextPopoverEnabled) {
@@ -448,24 +429,24 @@ class CatalogEntriesList {
       }
     };
 
-    const onRowClick = function(sampleEnrichedEntry, event) {
+    const onRowClick = function (sampleEnrichedEntry, event) {
       if (self.selectedEntries && $(event.target).is('td')) {
-        $(event.currentTarget)
-          .find('.hue-checkbox')
-          .trigger('click');
+        $(event.currentTarget).find('.hue-checkbox').trigger('click');
       }
       return true;
     };
 
-    const loadEntries = function() {
+    const loadEntries = function () {
       self.loading(true);
 
       const entriesAddedDeferred = $.Deferred();
 
       const childPromise = self
         .catalogEntry()
-        .getChildren({ silenceErrors: true, cancellable: true })
-        .done(childEntries => {
+        .getChildren({ silenceErrors: true, cancellable: true });
+
+      childPromise
+        .then(childEntries => {
           const entries = $.map(childEntries, (entry, index) => {
             return new SampleEnrichedEntry(index, entry, onClick, onRowClick);
           });
@@ -473,29 +454,30 @@ class CatalogEntriesList {
           self.entries(entries);
           entriesAddedDeferred.resolve(entries);
         })
-        .fail(() => {
+        .catch(() => {
           self.hasErrors(true);
           entriesAddedDeferred.reject();
         })
-        .always(() => {
+        .finally(() => {
           self.loading(false);
         });
+
+      const sqlAnalyzer = sqlAnalyzerRepository.getSqlAnalyzer(self.catalogEntry().getConnector());
 
       if (self.catalogEntry().isTableOrView()) {
         const joinsPromise = self
           .catalogEntry()
-          .getTopJoins({ silenceErrors: true, cancellable: true })
-          .done(topJoins => {
+          .getTopJoins({ cancellable: true, silenceErrors: true, sqlAnalyzer });
+        joinsPromise
+          .then(topJoins => {
             if (topJoins && topJoins.values && topJoins.values.length) {
-              entriesAddedDeferred.done(entries => {
+              entriesAddedDeferred.then(entries => {
                 const entriesIndex = {};
                 entries.forEach(entry => {
-                  entriesIndex[
-                    entry
-                      .catalogEntry()
-                      .path.join('.')
-                      .toLowerCase()
-                  ] = { joinColumnIndex: {}, entry: entry };
+                  entriesIndex[entry.catalogEntry().path.join('.').toLowerCase()] = {
+                    joinColumnIndex: {},
+                    entry: entry
+                  };
                 });
                 topJoins.values.forEach(topJoin => {
                   topJoin.joinCols.forEach(topJoinCols => {
@@ -521,14 +503,15 @@ class CatalogEntriesList {
                 });
               });
             }
-          });
+          })
+          .catch(noop);
         self.cancellablePromises.push(joinsPromise);
       }
 
       const navMetaPromise = self
         .catalogEntry()
         .loadNavigatorMetaForChildren({ silenceErrors: true, cancellable: true })
-        .always(() => {
+        .finally(() => {
           self.loadingNav(false);
         });
 
@@ -538,45 +521,52 @@ class CatalogEntriesList {
       self.cancellablePromises.push(
         self
           .catalogEntry()
-          .loadOptimizerPopularityForChildren({ silenceErrors: true, cancellable: true })
-          .done(popularEntries => {
+          .loadSqlAnalyzerPopularityForChildren({
+            cancellable: true,
+            silenceErrors: true,
+            sqlAnalyzer
+          })
+          .then(popularEntries => {
             if (popularEntries.length) {
-              childPromise.done(() => {
-                const entryIndex = {};
-                self.entries().forEach(entry => {
-                  entryIndex[entry.catalogEntry().name] = entry;
-                });
+              childPromise
+                .then(() => {
+                  const entryIndex = {};
+                  self.entries().forEach(entry => {
+                    entryIndex[entry.catalogEntry().name] = entry;
+                  });
 
-                let totalCount = 0;
-                const popularityToApply = [];
-                popularEntries.forEach(popularEntry => {
-                  if (
-                    entryIndex[popularEntry.name] &&
-                    popularEntry.optimizerPopularity &&
-                    popularEntry.optimizerPopularity.selectColumn &&
-                    popularEntry.optimizerPopularity.selectColumn.columnCount > 0
-                  ) {
-                    totalCount += popularEntry.optimizerPopularity.selectColumn.columnCount;
-                    popularityToApply.push(() => {
-                      entryIndex[popularEntry.name].popularity(
-                        Math.round(
-                          (100 * popularEntry.optimizerPopularity.selectColumn.columnCount) /
-                            totalCount
-                        )
-                      );
-                    });
+                  let totalCount = 0;
+                  const popularityToApply = [];
+                  popularEntries.forEach(popularEntry => {
+                    if (
+                      entryIndex[popularEntry.name] &&
+                      popularEntry.sqlAnalyzerPopularity &&
+                      popularEntry.sqlAnalyzerPopularity.selectColumn &&
+                      popularEntry.sqlAnalyzerPopularity.selectColumn.columnCount > 0
+                    ) {
+                      totalCount += popularEntry.sqlAnalyzerPopularity.selectColumn.columnCount;
+                      popularityToApply.push(() => {
+                        entryIndex[popularEntry.name].popularity(
+                          Math.round(
+                            (100 * popularEntry.sqlAnalyzerPopularity.selectColumn.columnCount) /
+                              totalCount
+                          )
+                        );
+                      });
+                    }
+                  });
+                  const foundPopularEntries = popularityToApply.length !== 0;
+                  while (popularityToApply.length) {
+                    popularityToApply.pop()();
                   }
-                });
-                const foundPopularEntries = popularityToApply.length !== 0;
-                while (popularityToApply.length) {
-                  popularityToApply.pop()();
-                }
-                if (foundPopularEntries) {
-                  self.entries().sort(entrySort);
-                }
-              });
+                  if (foundPopularEntries) {
+                    self.entries().sort(entrySort);
+                  }
+                })
+                .catch(noop);
             }
           })
+          .catch(noop)
       );
 
       if (self.catalogEntry().isTableOrView() || self.catalogEntry().isComplex()) {
@@ -584,18 +574,17 @@ class CatalogEntriesList {
 
         let firstSampleFetch = true;
 
-        const fetchSamples = function() {
+        const fetchSamples = function () {
           window.clearInterval(self.fetchSampleTimeout);
-          self.lastSamplePromise = self
-            .catalogEntry()
-            .getSample({
-              silenceErrors: true,
-              cancellable: true,
-              refreshCache: !firstSampleFetch
-            })
-            .done(sample => {
+          self.lastSamplePromise = self.catalogEntry().getSample({
+            silenceErrors: true,
+            cancellable: true,
+            refreshCache: !firstSampleFetch
+          });
+          self.lastSamplePromise
+            .then(sample => {
               childPromise
-                .done(() => {
+                .then(() => {
                   if (sample.meta && sample.meta.length && sample.data && sample.data.length) {
                     const entryIndex = {};
                     self.entries().forEach(entry => {
@@ -619,7 +608,8 @@ class CatalogEntriesList {
                     }
                   }
                 })
-                .always(() => {
+                .catch(noop)
+                .finally(() => {
                   self.loadingSamples(false);
                   firstSampleFetch = false;
                   if (self.refreshSampleInterval && self.sampleRefreshEnabled()) {
@@ -630,7 +620,7 @@ class CatalogEntriesList {
                   }
                 });
             })
-            .fail(() => {
+            .catch(() => {
               self.loadingSamples(false);
             });
         };

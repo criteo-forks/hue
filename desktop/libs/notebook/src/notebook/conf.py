@@ -17,19 +17,27 @@
 
 import json
 import logging
+import sys
 
 from collections import OrderedDict
 
 from django.test.client import Client
 from django.urls import reverse
-from django.utils.translation import ugettext_lazy as _t, ugettext as _
 
 from desktop import appmanager
-from desktop.conf import is_oozie_enabled, has_connectors
+from desktop.conf import is_oozie_enabled, has_connectors, is_cm_managed, ENABLE_UNIFIED_ANALYTICS
 from desktop.lib.conf import Config, UnspecifiedConfigSection, ConfigSection, coerce_json_dict, coerce_bool, coerce_csv
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext_lazy as _t, gettext as _
+else:
+  from django.utils.translation import ugettext_lazy as _t, ugettext as _
 
 
 LOG = logging.getLogger(__name__)
+
+# Not used when connector are on
+INTERPRETERS_CACHE = None
 
 
 SHOW_NOTEBOOKS = Config(
@@ -39,10 +47,12 @@ SHOW_NOTEBOOKS = Config(
     default=True
 )
 
+
 def _remove_duplications(a_list):
   return list(OrderedDict.fromkeys(a_list))
 
-def check_permissions(user, interpreter, user_apps=None):
+
+def check_has_missing_permission(user, interpreter, user_apps=None):
   # TODO: port to cluster config
   if user_apps is None:
     user_apps = appmanager.get_apps_dict(user)  # Expensive method
@@ -54,7 +64,7 @@ def check_permissions(user, interpreter, user_apps=None):
          (interpreter in ('java', 'spark2', 'mapreduce', 'shell', 'sqoop1', 'distcp') and 'oozie' not in user_apps)
 
 
-def _connector_to_iterpreter(connector):
+def _connector_to_interpreter(connector):
   return {
       'name': connector['nice_name'],
       'type': connector['name'],  # Aka id
@@ -67,22 +77,43 @@ def _connector_to_iterpreter(connector):
   }
 
 
+def displayName(dialect, name):
+  if ENABLE_UNIFIED_ANALYTICS.get() and dialect == 'hive':
+    return 'Unified Analytics'
+  elif name.lower() == 'hplsql':
+    return 'HPL/SQL'
+  else:
+    return name
+
+
 def get_ordered_interpreters(user=None):
+  global INTERPRETERS_CACHE
+
   if has_connectors():
     from desktop.lib.connectors.api import _get_installed_connectors
     interpreters = [
-      _connector_to_iterpreter(connector)
+      _connector_to_interpreter(connector)
       for connector in _get_installed_connectors(categories=['editor', 'catalogs'], user=user)
     ]
   else:
-    if not INTERPRETERS.get():
-      _default_interpreters(user)
-    interpreters = INTERPRETERS.get()
+    if INTERPRETERS_CACHE is None:
+      none_user = None # for getting full list of interpreters
+      if is_cm_managed():
+        extra_interpreters = INTERPRETERS.get()  # Combine the other apps interpreters
+        _default_interpreters(none_user)
+      else:
+        extra_interpreters = {}
+
+      if not INTERPRETERS.get():
+        _default_interpreters(none_user)
+
+      INTERPRETERS_CACHE = INTERPRETERS.get()
+      INTERPRETERS_CACHE.update(extra_interpreters)
 
     user_apps = appmanager.get_apps_dict(user)
     user_interpreters = []
-    for interpreter in interpreters:
-      if check_permissions(user, interpreter, user_apps=user_apps):
+    for interpreter in INTERPRETERS_CACHE:
+      if check_has_missing_permission(user, interpreter, user_apps=user_apps):
         pass  # Not allowed
       else:
         user_interpreters.append(interpreter)
@@ -96,24 +127,26 @@ def get_ordered_interpreters(user=None):
     reordered_interpreters = interpreters_shown_on_wheel + [i for i in user_interpreters if i not in interpreters_shown_on_wheel]
 
     interpreters = [{
-        'name': interpreters[i].NAME.get(),
+        'name': INTERPRETERS_CACHE[i].NAME.get(),
         'type': i,
-        'interface': interpreters[i].INTERFACE.get(),
-        'options': interpreters[i].OPTIONS.get()
-      } for i in reordered_interpreters
+        'interface': INTERPRETERS_CACHE[i].INTERFACE.get(),
+        'options': INTERPRETERS_CACHE[i].OPTIONS.get()
+      }
+      for i in reordered_interpreters
     ]
 
   return [{
       "name": i.get('nice_name', i['name']),
+      'displayName': displayName(i.get('dialect', i['name']).lower(), i.get('nice_name', i['name'])),
       "type": i['type'],
       "interface": i['interface'],
       "options": i['options'],
-      'dialect': i.get('dialect', i['name']).lower(),
-      'dialect_properties': i.get('dialect_properties'),
+      'dialect': i.get('dialect', i['type']).lower(),
+      'dialect_properties': i.get('dialect_properties') or {},  # Empty when connectors off
       'category': i.get('category', 'editor'),
       "is_sql": i.get('is_sql') or \
           i['interface'] in ["hiveserver2", "rdbms", "jdbc", "solr", "sqlalchemy", "ksql", "flink"] or \
-          i['type'] == 'sql',
+          i['type'] in ["sql", "sparksql"],
       "is_catalog": i['interface'] in ["hms",],
     }
     for i in interpreters
@@ -183,7 +216,7 @@ ENABLE_QUERY_BUILDER = Config(
   key="enable_query_builder",
   help=_t("Flag to enable the SQL query builder of the table assist."),
   type=coerce_bool,
-  default=True
+  default=False
 )
 
 ENABLE_NOTEBOOK_2 = Config(
@@ -205,7 +238,7 @@ ENABLE_EXTERNAL_STATEMENT = Config(
   key="enable_external_statements",
   help=_t("Flag to enable the selection of queries from files, saved queries into the editor or as snippet."),
   type=coerce_bool,
-  default=True
+  default=False
 )
 
 ENABLE_BATCH_EXECUTE = Config(
@@ -237,13 +270,47 @@ ENABLE_QUERY_ANALYSIS = Config(
 )
 
 
+EXAMPLES = ConfigSection(
+  key='examples',
+  help=_t('Define which query and table examples can be automatically setup for the available dialects.'),
+  members=dict(
+    AUTO_LOAD=Config(
+      'auto_load',
+      help=_t('If installing the examples automatically at startup.'),
+      type=coerce_bool,
+      default=False
+    ),
+    AUTO_OPEN=Config(
+      'auto_open',
+      help=_t('If automatically loading the dialect example at Editor opening.'),
+      type=coerce_bool,
+      default=False
+    ),
+    QUERIES=Config(
+      'queries',
+      help='Names of the saved queries to install. All if empty.',
+      type=coerce_csv,
+      default=[]
+    ),
+    TABLES=Config(
+      key='tables',
+      help=_t('Names of the tables to install. All if empty.'),
+      type=coerce_csv,
+      default=[]
+    )
+  )
+)
+
 def _default_interpreters(user):
   interpreters = []
   apps = appmanager.get_apps_dict(user)
 
   if 'hive' in apps:
+    from beeswax.hive_site import get_hive_execution_engine
+    interpreter_name = 'Impala' if get_hive_execution_engine() == 'impala' else 'Hive'  # Until using a proper dialect for 'FENG'
+
     interpreters.append(('hive', {
-      'name': 'Hive', 'interface': 'hiveserver2', 'options': {}
+      'name': interpreter_name, 'interface': 'hiveserver2', 'options': {}
     }),)
 
   if 'impala' in apps:
@@ -329,7 +396,7 @@ def config_validator(user, interpreters=None):
   client = Client()
   client.force_login(user=user)
 
-  if not user.is_authenticated():
+  if not user.is_authenticated:
     res.append(('Editor', _('Could not authenticate with user %s to validate interpreters') % user))
 
   if interpreters is None:

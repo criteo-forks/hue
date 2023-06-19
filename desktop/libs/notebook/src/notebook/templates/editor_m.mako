@@ -14,10 +14,16 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
+  import sys
+
   from desktop.views import commonheader_m, commonfooter_m
   from desktop import conf
-  from django.utils.translation import ugettext as _
   from desktop.views import _ko
+
+  if sys.version_info[0] > 2:
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 
 ${ commonheader_m(editor_type, editor_type, user, request, "68px") | n,unicode }
@@ -300,7 +306,7 @@ ${ commonheader_m(editor_type, editor_type, user, request, "68px") | n,unicode }
       }
     }
 
-    viewModel = new EditorViewModel(${ editor_id or 'null' }, ${ notebooks_json | n,unicode }, VIEW_MODEL_OPTIONS);
+    viewModel = new window.NotebookViewModel(${ editor_id or 'null' }, ${ notebooks_json | n,unicode }, VIEW_MODEL_OPTIONS);
     ko.applyBindings(viewModel);
     viewModel.init();
   });

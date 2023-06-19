@@ -17,10 +17,10 @@
 import $ from 'jquery';
 import * as ko from 'knockout';
 
-import hueUtils from 'utils/hueUtils';
+import stripHtmlFromFunctions from 'utils/html/stripHtmlForFunctions';
 
 ko.bindingHandlers.codemirror = {
-  init: function(element, valueAccessor) {
+  init: function (element, valueAccessor) {
     const options = $.extend(valueAccessor(), {});
     const editor = CodeMirror.fromTextArea(element, options);
     element.editor = editor;
@@ -63,12 +63,8 @@ ko.bindingHandlers.codemirror = {
           _value = _value.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
         }
         valueAccessor().data(_value);
-        if (
-          $('.widget-html-pill')
-            .parent()
-            .hasClass('active')
-        ) {
-          $('[contenteditable=true]').html(hueUtils.stripHtmlFromFunctions(valueAccessor().data()));
+        if ($('.widget-html-pill').parent().hasClass('active')) {
+          $('[contenteditable=true]').html(stripHtmlFromFunctions(valueAccessor().data()));
         }
       }, 100);
     });
@@ -77,7 +73,7 @@ ko.bindingHandlers.codemirror = {
       wrapperElement.remove();
     });
   },
-  update: function(element) {
+  update: function (element) {
     const editor = element.editor;
     editor.refresh();
   }

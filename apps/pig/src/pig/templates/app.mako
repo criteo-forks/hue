@@ -14,8 +14,12 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
+  import sys
   from desktop.views import commonheader, commonfooter, commonshare
-  from django.utils.translation import ugettext as _
+  if sys.version_info[0] > 2:
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="actionbar" file="actionbar.mako" />
@@ -793,15 +797,15 @@ ${ commonshare() | n,unicode }
 
     $("#navigatorHide").on("click", function () {
       hideNavigator();
-      $.totalStorage("huePigNavigatorHidden", true);
+      hueUtils.hueLocalStorage("huePigNavigatorHidden", true);
     });
 
     $("#navigatorShow").on("click", function () {
       showNavigator();
-      $.totalStorage("huePigNavigatorHidden", null);
+      hueUtils.hueLocalStorage("huePigNavigatorHidden", null);
     });
 
-    if ($.totalStorage("huePigNavigatorHidden") != null && $.totalStorage("huePigNavigatorHidden")) {
+    if (hueUtils.hueLocalStorage("huePigNavigatorHidden") != null && hueUtils.hueLocalStorage("huePigNavigatorHidden")) {
       hideNavigator();
     }
 
@@ -1017,7 +1021,7 @@ ${ commonshare() | n,unicode }
     % if autocomplete_base_url != '':
       var apiHelper = window.apiHelper;
       var connector = { id: 'hive' };
-      contextCatalog.getNamespaces({ connector: connector }).done(function (context) {
+      contextCatalog.getNamespaces({ connector: connector }).then(function (context) {
         // TODO: Namespace and compute selection
         dataCatalog.getChildren({
           namespace: context.namespaces[0],
@@ -1025,10 +1029,10 @@ ${ commonshare() | n,unicode }
           connector: { id: 'hive' },
           path: ['default'],
           silenceErrors: true
-        }).done(function (childEntries) {
+        }).then(function (childEntries) {
           availableTables = $.map(childEntries, function (entry) { return entry.name }).join(' ');
-        });
-      });
+        }).catch(function() {});
+      }).catch();
     % endif
 
     function showHiveAutocomplete(databaseName) {

@@ -1,9 +1,23 @@
 ---
-title: "Cloud"
+title: "Run"
 date: 2019-03-13T18:28:08-07:00
 draft: false
 weight: 3
 ---
+
+## Process
+
+After the installation, you can start Hue on your Hue Server by doing:
+
+    build/env/bin/supervisor
+
+This will start several subprocesses, corresponding to the different Hue
+components. Your Hue installation is now running.
+
+After installation, you can use Hue by navigating to `http://myserver:8888/`.
+
+Next step is to [configure](/administrator/configuration/) the API server and point to external services.
+
 
 ## Docker
 
@@ -11,7 +25,7 @@ To start a Hue instance:
 
     docker run -it -p 8888:8888 gethue/hue:latest
 
-In addition to providing to providing a ready to use image, the [Docker Guide](https://github.com/cloudera/hue/tree/testing/tools/docker) shows how to build it.
+In addition to providing a ready to use image, the [Docker Guide](https://github.com/cloudera/hue/tree/testing/tools/docker) shows how to build it.
 
 It then details how to start the containers and parameterize them.
 
@@ -21,7 +35,7 @@ To start a full Hue service:
 
     helm repo add gethue https://helm.gethue.com
     helm repo update
-    helm install gethue/hue
+    helm install hue gethue/hue
 
 The [Kubernetes Guide](https://github.com/cloudera/hue/tree/testing/tools/kubernetes) shows how to run the services via Helm or native YAML configs.
 
@@ -132,7 +146,7 @@ This was a very basic introduction to metrics of Hue in the Kubernetes ecosystem
 
 ### Tracing
 
-Hue is getting easy to run with its Docker container and Kubernetes Helm package. Recent blog posts describes how to get access to logs and metrics. Even in a non distributed world it can get noisy to know how much time is being spent where in each user request.
+Hue is getting easy to run with its Docker container and Kubernetes Helm package. Recent blog posts describe how to get access to logs and metrics. Even in a non distributed world it can get noisy to know how much time is being spent where in each user request.
 
 Consequently, in the context of a Data Analyst, knowing why a certain query is slow can become problematic. On top of that, adding multiple tenants and users, and more than 20 external APIs and the fog about fine grain performances appears and its becomes extremely manual and time consuming to troubleshoot.
 

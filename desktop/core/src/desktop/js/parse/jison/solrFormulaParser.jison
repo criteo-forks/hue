@@ -20,7 +20,7 @@
 
 \s                                         { /* skip whitespace */ }
 '--'.*                                     { /* skip comments */ }
-[/][*][^*]*[*]+([^/*][^*]*[*]+)*[/]        { /* skip comments */ }
+[\/][*][^*]*[*]+([^\/*][^*]*[*]+)*[\/]     { /* skip comments */ }
 
 '\u2020'                                   { parser.yy.cursorFound = yylloc; return 'CURSOR'; }
 

@@ -15,8 +15,13 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
+  import sys
   from desktop.views import commonheader, commonfooter
-  from django.utils.translation import ugettext as _
+
+  if sys.version_info[0] > 2:
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="actionbar" file="actionbar.mako" />
@@ -647,7 +652,7 @@ ${ commonheader(None, "hbase", user, request) | n,unicode }
     var utils = {
       //take an element with mustache templates as content and re-render
       renderElement: function (element, data) {
-        element.html(Mustache.render(element.html(), data));
+        element.html(window.Mustache.render(element.html(), data));
       },
       renderElements: function (selector, data) {
         if (selector == null || typeof(selector) == "undefined")
@@ -705,7 +710,7 @@ ${ commonheader(None, "hbase", user, request) | n,unicode }
             editor.setOptions({
               readOnly: $('#ace_target').is(':disabled')
             });
-            editor.setTheme($.totalStorage('hue.ace.theme') || 'ace/theme/hue');
+            editor.setTheme(hueUtils.hueLocalStorage('hue.ace.theme') || 'ace/theme/hue');
             editor.getSession().setMode(aceMode);
             editor.setValue($(target).val(), -1);
 
@@ -2346,7 +2351,7 @@ ${ commonheader(None, "hbase", user, request) | n,unicode }
         },
         ':cluster/:table/query/:query': function (cluster, table, query) {
           hueAnalytics.log('hbase', 'query_table');
-          $.totalStorage('hbase_cluster', cluster);
+          hueUtils.hueLocalStorage('hbase_cluster', cluster);
           app.station('table');
           app.search.cur_input(query);
           Router.setTable(cluster, table);
@@ -2360,7 +2365,7 @@ ${ commonheader(None, "hbase", user, request) | n,unicode }
         },
         ':cluster/:table': function (cluster, table) {
           hueAnalytics.log('hbase', 'view_table');
-          $.totalStorage('hbase_cluster', cluster);
+          hueUtils.hueLocalStorage('hbase_cluster', cluster);
           Router.setTable(cluster, table);
           resetSearch();
           resetElements();
@@ -2373,7 +2378,7 @@ ${ commonheader(None, "hbase", user, request) | n,unicode }
             routie('');
           } else {
             hueAnalytics.log('hbase', 'view_cluster');
-            $.totalStorage('hbase_cluster', cluster);
+            hueUtils.hueLocalStorage('hbase_cluster', cluster);
             app.station('cluster');
             app.cluster(cluster);
             app.pageTitle(cluster);
@@ -2392,7 +2397,7 @@ ${ commonheader(None, "hbase", user, request) | n,unicode }
           routed = true;
         },
         '': function () {
-          var cluster = $.totalStorage('hbase_cluster');
+          var cluster = hueUtils.hueLocalStorage('hbase_cluster');
           if (cluster != null && $.inArray(cluster, app.clusterNames()) > -1) {
             routie(cluster);
           } else {
@@ -2565,7 +2570,6 @@ ${ commonheader(None, "hbase", user, request) | n,unicode }
 <script>
   routie.setPathname('/hbase');
 </script>
-<script src="${ static('desktop/ext/js/mustache.js') }" type="text/javascript" charset="utf-8"></script>
 
 %if not is_embeddable:
 ${ commonfooter(request, messages) | n,unicode }

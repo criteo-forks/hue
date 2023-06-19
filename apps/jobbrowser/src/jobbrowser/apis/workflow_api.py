@@ -17,12 +17,15 @@
 
 import logging
 import json
-
-from django.utils.translation import ugettext as _
+import sys
 
 from jobbrowser.apis.base_api import Api, MockDjangoRequest, _extract_query_params, is_linkable, hdfs_link_js
 from liboozie.oozie_api import get_oozie
 
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 LOG = logging.getLogger(__name__)
 
@@ -35,7 +38,7 @@ try:
   has_oozie_installed = True
   OOZIE_JOBS_COUNT_LIMIT = OOZIE_JOBS_COUNT.get()
 except Exception as e:
-  LOG.warn('Some applications are not enabled for Job Browser v2: %s' % e)
+  LOG.warning('Some applications are not enabled for Job Browser v2: %s' % e)
   has_oozie_installed = False
   OOZIE_JOBS_COUNT_LIMIT = 100
 

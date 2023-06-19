@@ -15,42 +15,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from builtins import next
-from builtins import filter
-from builtins import map
-from builtins import object
+from builtins import next, filter, map, object
 import logging
-import itertools
 import json
 import re
 import sys
 
-
 from operator import itemgetter
 
-from django.utils.translation import ugettext as _
+from TCLIService import TCLIService
+from TCLIService.ttypes import TOpenSessionReq, TGetTablesReq, TFetchResultsReq, TStatusCode, TGetResultSetMetadataReq, \
+  TGetColumnsReq, TTypeId, TExecuteStatementReq, TGetOperationStatusReq, TFetchOrientation, \
+  TCloseSessionReq, TGetSchemasReq, TGetLogReq, TCancelOperationReq, TCloseOperationReq, TFetchResultsResp, TRowSet, TGetFunctionsReq, \
+  TGetCrossReferenceReq, TGetPrimaryKeysReq
 
 from desktop.lib import python_util, thrift_util
-from desktop.conf import DEFAULT_USER
-from beeswax import conf
+from desktop.conf import DEFAULT_USER, USE_THRIFT_HTTP_JWT
 
-from TCLIService import TCLIService
-from TCLIService.ttypes import TOpenSessionReq, TGetTablesReq, TFetchResultsReq,\
-  TStatusCode, TGetResultSetMetadataReq, TGetColumnsReq, TTypeId,\
-  TExecuteStatementReq, TGetOperationStatusReq, TFetchOrientation,\
-  TCloseSessionReq, TGetSchemasReq, TGetLogReq, TCancelOperationReq,\
-  TCloseOperationReq, TFetchResultsResp, TRowSet
-
-from beeswax import conf as beeswax_conf
-from beeswax import hive_site
+from beeswax import conf as beeswax_conf, hive_site
 from beeswax.hive_site import hiveserver2_use_ssl
-from beeswax.conf import CONFIG_WHITELIST, LIST_PARTITIONS_LIMIT
-from beeswax.models import Session, HiveServerQueryHandle, HiveServerQueryHistory, QueryHistory
-from beeswax.server.dbms import Table, DataTable, QueryServerException, InvalidSessionQueryServerException
+from beeswax.conf import CONFIG_WHITELIST, LIST_PARTITIONS_LIMIT, MAX_CATALOG_SQL_ENTRIES
+from beeswax.models import Session, HiveServerQueryHandle, HiveServerQueryHistory
+from beeswax.server.dbms import Table, DataTable, QueryServerException, InvalidSessionQueryServerException, reset_ha
+from notebook.connectors.base import get_interpreter
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
-
 IMPALA_RESULTSET_CACHE_SIZE = 'impala.resultset.cache.size'
 DEFAULT_USER = DEFAULT_USER.get()
 
@@ -185,13 +180,15 @@ class HiveServerTable(Table):
     try:
       end_cols_index = list(map(itemgetter('col_name'), rows[col_row_index:])).index('')
     except ValueError as e:
-      end_cols_index = 5000
-      LOG.warn('Could not guess end column index, so defaulting to %s: %s' (end_cols_index, e))
+      end_cols_index = MAX_CATALOG_SQL_ENTRIES.get()
+      LOG.warning('Could not guess end column index, so defaulting to %s: %s' % (end_cols_index, e))
     return [{
           'col_name': prop['col_name'].strip() if prop['col_name'] else prop['col_name'],
           'data_type': prop['data_type'].strip() if prop['data_type'] else prop['data_type'],
           'comment': prop['comment'].strip() if prop['comment'] else prop['comment']
-        } for prop in rows[col_row_index + end_cols_index + 1:]
+        }
+        for prop in rows[col_row_index + end_cols_index + 1:
+      ]
     ]
 
   @property
@@ -233,6 +230,14 @@ class HiveServerTable(Table):
     if self._details is None:
       props = dict([(stat['col_name'], stat['data_type']) for stat in self.properties if stat['col_name'] != 'Table Parameters:'])
       serde = props.get('SerDe Library:', '')
+      if 'ParquetHiveSerDe' in serde:
+        details_format = 'parquet'
+      elif 'LazySimpleSerDe' in serde:
+        details_format = 'text'
+      elif self.is_impala_only:
+        details_format = 'kudu'
+      else:
+        details_format = serde.rsplit('.', 1)[-1]
 
       self._details = {
           'stats': dict([(stat['data_type'], stat['comment']) for stat in self.stats]),
@@ -240,7 +245,7 @@ class HiveServerTable(Table):
             'owner': props.get('Owner:'),
             'create_time': props.get('CreateTime:'),
             'table_type': props.get('Table Type:', 'MANAGED_TABLE'),
-            'format': 'parquet' if 'ParquetHiveSerDe' in serde else ('text' if 'LazySimpleSerDe' in serde else ('kudu' if self.is_impala_only else serde.rsplit('.', 1)[-1])),
+            'format': details_format,
         }
       }
 
@@ -285,7 +290,11 @@ class HiveServerTRow2(object):
 
   def col(self, colName):
     pos = self._get_col_position(colName)
-    return HiveServerTColumnValue2(self.cols[pos]).val[0] # Return only first element
+    try:
+      return HiveServerTColumnValue2(self.cols[pos]).val[0] # Return only first element
+    except:
+      # Bug with SparkSql
+      return ''
 
   def full_col(self, colName):
     pos = self._get_col_position(colName)
@@ -392,7 +401,13 @@ class HiveServerDataTable(DataTable):
 
   def rows(self):
     for row in self.row_set:
-      yield row.fields()
+      try:
+        yield row.fields()
+      except StopIteration as e:
+        if sys.version_info[0] > 2:
+          return  # pep-0479: expected Py3.8 generator raised StopIteration
+        else:
+          raise e
 
 
 
@@ -577,7 +592,7 @@ class HiveServerClient(object):
       validate = beeswax_conf.SSL.VALIDATE.get()
       timeout = beeswax_conf.SERVER_CONN_TIMEOUT.get()
 
-    if auth_username:
+    if auth_username and not USE_THRIFT_HTTP_JWT.get():
       username = auth_username
       password = auth_password
     else:
@@ -651,6 +666,8 @@ class HiveServerClient(object):
         'username': user.username,  # If SASL or LDAP, it gets the username from the authentication mechanism since it dependents on it.
         'configuration': {},
     }
+    connector_type = 'hive' if self.query_server['server_name'] == 'beeswax' else self.query_server['server_name']
+    interpreter = get_interpreter(connector_type=connector_type, user=self.user)
 
     if self.impersonation_enabled:
       kwargs.update({'username': DEFAULT_USER})
@@ -661,6 +678,9 @@ class HiveServerClient(object):
     if self.query_server['server_name'] == 'beeswax': # All the time
       kwargs['configuration'].update({'hive.server2.proxy.user': user.username})
       kwargs['configuration'].update({'com.criteo.hive.client': 'hue'})
+
+    if self.query_server['server_name'] == 'hplsql' or interpreter['dialect'] == 'hplsql': # All the time
+      kwargs['configuration'].update({'hive.server2.proxy.user': user.username, 'set:hivevar:mode': 'HPLSQL'})
 
     if self.query_server['server_name'] == 'llap': # All the time
       kwargs['configuration'].update({'hive.server2.proxy.user': user.username})
@@ -673,7 +693,11 @@ class HiveServerClient(object):
 
     LOG.info('Opening %s thrift session for user %s' % (self.query_server['server_name'], user.username))
 
-    req = TOpenSessionReq(**kwargs)
+    try:
+      req = TOpenSessionReq(**kwargs)
+    except Exception as e:
+      if 'Connection refused' in str(e):
+        reset_ha()
     res = self._client.OpenSession(req)
     self.coordinator_host = self._client.get_coordinator_host()
     if self.coordinator_host:
@@ -705,7 +729,7 @@ class HiveServerClient(object):
 
     # HS2 does not return properties in TOpenSessionResp
     # TEZ returns properties, but we need the configuration to detect engine
-    properties = session.get_properties()
+    properties = session.get_properties() or {}
     if not properties or self.query_server['server_name'] == 'beeswax':
       configuration = self.get_configuration(session=session)
       properties.update(configuration)
@@ -801,12 +825,14 @@ class HiveServerClient(object):
     req = TGetSchemasReq()
     if schemaName is not None:
       req.schemaName = schemaName
-    if self.query_server.get('dialect') == 'impala':
+    if self.query_server.get('dialect') in ['impala', 'sparksql']:
       req.schemaName = None
 
     (res, session) = self.call(self._client.GetSchemas, req)
 
-    results, schema = self.fetch_result(res.operationHandle, orientation=TFetchOrientation.FETCH_NEXT, max_rows=5000)
+    results, schema = self.fetch_result(
+      res.operationHandle, orientation=TFetchOrientation.FETCH_NEXT, max_rows=MAX_CATALOG_SQL_ENTRIES.get()
+    )
     self._close(res.operationHandle, session)
 
     col = 'TABLE_SCHEM'
@@ -816,7 +842,9 @@ class HiveServerClient(object):
   def get_database(self, database):
     query = 'DESCRIBE DATABASE EXTENDED `%s`' % (database)
 
-    desc_results, desc_schema, operation_handle, session = self.execute_statement(query, max_rows=5000, orientation=TFetchOrientation.FETCH_NEXT)
+    desc_results, desc_schema, operation_handle, session = self.execute_statement(
+      query, max_rows=MAX_CATALOG_SQL_ENTRIES.get(), orientation=TFetchOrientation.FETCH_NEXT
+    )
     self._close(operation_handle, session)
 
     if self.query_server.get('dialect') == 'impala':
@@ -839,7 +867,9 @@ class HiveServerClient(object):
     req = TGetTablesReq(schemaName=database, tableName=table_names, tableTypes=table_types)
     (res, session) = self.call(self._client.GetTables, req)
 
-    results, schema = self.fetch_result(res.operationHandle, orientation=TFetchOrientation.FETCH_NEXT, max_rows=5000)
+    results, schema = self.fetch_result(
+      res.operationHandle, orientation=TFetchOrientation.FETCH_NEXT, max_rows=MAX_CATALOG_SQL_ENTRIES.get()
+    )
     self._close(res.operationHandle, session)
 
     cols = ('TABLE_NAME', 'TABLE_TYPE', 'REMARKS')
@@ -852,7 +882,9 @@ class HiveServerClient(object):
     req = TGetTablesReq(schemaName=database, tableName=table_names, tableTypes=table_types)
     (res, session) = self.call(self._client.GetTables, req)
 
-    results, schema = self.fetch_result(res.operationHandle, orientation=TFetchOrientation.FETCH_NEXT, max_rows=5000)
+    results, schema = self.fetch_result(
+      res.operationHandle, orientation=TFetchOrientation.FETCH_NEXT, max_rows=MAX_CATALOG_SQL_ENTRIES.get()
+    )
     self._close(res.operationHandle, session)
 
     return HiveServerTRowSet(results.results, schema.schema).cols(('TABLE_NAME',))
@@ -913,7 +945,8 @@ class HiveServerClient(object):
         desc_results.results.columns[2].stringVal.values.insert(1, None)
         try:
           part_index = desc_results.results.columns[0].stringVal.values.index('# Partition Information')
-          desc_results.results.columns[0].stringVal.values = desc_results.results.columns[0].stringVal.values[:part_index] # Strip duplicate columns of partitioned tables
+          # Strip duplicate columns of partitioned tables
+          desc_results.results.columns[0].stringVal.values = desc_results.results.columns[0].stringVal.values[:part_index]
           desc_results.results.columns[1].stringVal.values = desc_results.results.columns[1].stringVal.values[:part_index]
           desc_results.results.columns[2].stringVal.values = desc_results.results.columns[2].stringVal.values[:part_index]
 
@@ -939,11 +972,18 @@ class HiveServerClient(object):
     return self.execute_query_statement(statement=query.query['query'], max_rows=max_rows, configuration=configuration, session=session)
 
 
-  def execute_query_statement(self, statement, max_rows=1000, configuration=None, orientation=TFetchOrientation.FETCH_FIRST, close_operation=False, session=None):
+  def execute_query_statement(self, statement, max_rows=1000, configuration=None, orientation=TFetchOrientation.FETCH_FIRST,
+      close_operation=False, session=None):
     if configuration is None:
       configuration = {}
 
-    results, schema, operation_handle, session = self.execute_statement(statement=statement, max_rows=max_rows, configuration=configuration, orientation=orientation, session=session)
+    results, schema, operation_handle, session = self.execute_statement(
+        statement=statement,
+        max_rows=max_rows,
+        configuration=configuration,
+        orientation=orientation,
+        session=session
+    )
 
     if close_operation:
       self.close_operation(operation_handle)
@@ -967,7 +1007,7 @@ class HiveServerClient(object):
     configuration.update(self._get_query_configuration(query))
     query_statement = query.get_query_statement(statement)
 
-    return self.execute_async_statement(statement=query_statement, confOverlay=configuration, session=session)
+    return self.execute_async_statement(statement=query_statement, conf_overlay=configuration, session=session)
 
 
   def execute_statement(self, statement, max_rows=1000, configuration=None, orientation=TFetchOrientation.FETCH_NEXT, session=None):
@@ -986,15 +1026,21 @@ class HiveServerClient(object):
     return results, schema, res.operationHandle, session
 
 
-  def execute_async_statement(self, statement, confOverlay, session=None):
+  def execute_async_statement(self, statement=None, thrift_function=None, thrift_request=None, conf_overlay=None, session=None):
+    if conf_overlay is None:
+      conf_overlay = {}
+    if thrift_function is None:
+      thrift_function = self._client.ExecuteStatement
+    if thrift_request is None:
+      thrift_request = TExecuteStatementReq(statement=statement, confOverlay=conf_overlay, runAsync=True)
+
     if self.query_server.get('dialect') == 'impala' and self.query_server['QUERY_TIMEOUT_S'] > 0:
-      confOverlay['QUERY_TIMEOUT_S'] = str(self.query_server['QUERY_TIMEOUT_S'])
+      conf_overlay['QUERY_TIMEOUT_S'] = str(self.query_server['QUERY_TIMEOUT_S'])
 
     if sys.version_info[0] == 2:
       statement = statement.encode('utf-8')
 
-    req = TExecuteStatementReq(statement=statement, confOverlay=confOverlay, runAsync=True)
-    (res, session) = self.call_return_result_and_session(self._client.ExecuteStatement, req, session=session)
+    (res, session) = self.call_return_result_and_session(thrift_function, thrift_request, session=session)
 
     return HiveServerQueryHandle(
         secret=res.operationHandle.operationId.secret,
@@ -1006,7 +1052,8 @@ class HiveServerClient(object):
         session_id=session.id
     )
 
-  # Note: An operation_handle is attached to a session. All operations that require operation_handle cannot recover if the session is closed. Passing the session is not required
+  # Note: An operation_handle is attached to a session. All operations that require operation_handle cannot recover if the session is
+  # closed. Passing the session is not required
   def fetch_data(self, operation_handle, orientation=TFetchOrientation.FETCH_NEXT, max_rows=1000):
     # Fetch until the result is empty dues to a HS2 bug instead of looking at hasMoreRows
     results, schema = self.fetch_result(operation_handle, orientation, max_rows)
@@ -1095,9 +1142,12 @@ class HiveServerClient(object):
   def explain(self, query):
     query_statement = query.get_query_statement(0)
     configuration = self._get_query_configuration(query)
-    return self.execute_query_statement(statement='EXPLAIN %s' % query_statement, configuration=configuration, orientation=TFetchOrientation.FETCH_NEXT)
+    return self.execute_query_statement(statement='EXPLAIN %s' % query_statement, configuration=configuration,
+                                        orientation=TFetchOrientation.FETCH_NEXT)
 
-  def get_partitions(self, database, table_name, partition_spec=None, max_parts=None, reverse_sort=True): #TODO execute both requests in same session
+
+  # TODO execute both requests in same session
+  def get_partitions(self, database, table_name, partition_spec=None, max_parts=None, reverse_sort=True):
     table = self.get_table(database, table_name)
 
     query = 'SHOW PARTITIONS `%s`.`%s`' % (database, table_name)
@@ -1159,7 +1209,13 @@ class HiveServerClient(object):
       configuration = dict((row[0], row[1]) for row in results.rows())
     else:  # For Hive, only return white-listed configurations
       query = 'SET -v'
-      results = self.execute_query_statement(query, orientation=TFetchOrientation.FETCH_FIRST, max_rows=-1, close_operation=True, session=session)
+      results = self.execute_query_statement(
+          query,
+          orientation=TFetchOrientation.FETCH_FIRST,
+          max_rows=-1,
+          close_operation=True,
+          session=session
+      )
       config_whitelist = [config.lower() for config in CONFIG_WHITELIST.get()]
       properties = [(row[0].split('=')[0], row[0].split('=')[1]) for row in results.rows() if '=' in row[0]]
       configuration = dict((prop, value) for prop, value in properties if prop.lower() in config_whitelist)
@@ -1169,6 +1225,104 @@ class HiveServerClient(object):
 
   def _get_query_configuration(self, query):
     return dict([(setting['key'], setting['value']) for setting in query.settings])
+
+
+  def get_functions(self):
+    '''
+    Could support parameters.
+
+    Result data is pretty limited, e.g.
+    [None, None, 'histogram_numeric', '', 1, 'org.apache.hadoop.hive.ql.exec.WindowFunctionInfo']
+
+    GetAllFunctionsResponse get_all_functions() would also be nice as more detailed it seems, but this would be a call to HMS.
+    '''
+    req = TGetFunctionsReq(functionName='.*')
+    thrift_function = self._client.GetFunctions
+
+    return self.execute_async_statement(thrift_function=thrift_function, thrift_request=req)
+
+
+  def get_primary_keys(self, database_name, table_name, catalog_name=None):
+    '''
+    Get the Primary Keys of a Table entity (seems like database name is required).
+
+    e.g. Primary Keys of the sales.order table: schema_name='sales' table_name='orders'
+
+    Example of result:
+    [
+      {
+        'TABLE_CAT': None, 'TABLE_SCHEM': 'default', 'TABLE_NAME': 'business_unit', 'COLUMN_NAME': 'id',
+        'KEQ_SEQ': 1, 'PK_NAME': 'pk_245553536_1595688608351_0'
+      }
+    ]
+    '''
+    req = TGetPrimaryKeysReq(
+      catalogName=catalog_name,
+      schemaName=database_name,
+      tableName=table_name
+    )
+
+    (res, session) = self.call(self._client.GetPrimaryKeys, req)
+    results, schema = self.fetch_result(res.operationHandle, max_rows=100)
+
+    self._close(res.operationHandle, session)
+
+    results = HiveServerTRowSet(results.results, schema.schema).cols(
+      (
+        'TABLE_CAT', 'TABLE_SCHEM', 'TABLE_NAME', 'COLUMN_NAME', 'KEQ_SEQ', 'PK_NAME'
+      )
+    )
+
+    return results
+
+
+  def get_foreign_keys(self, parent_catalog_name=None, parent_database_name=None, parent_table_name=None, foreign_catalog_name=None,
+      foreign_database_name=None, foreign_table_name=None):
+    '''
+    Get the Foreign Keys between two entities (e.g. Catalog, DB, Tables).
+
+    e.g. Foreign Keys between the two tables people.customers and sales.orders:
+      parent_database_name='people', parent_table_name='customers'
+      foreign_database_name='sales', foreign_table_name='orders'
+
+    Table names are also optional.
+
+    Example of result:
+    [
+      {
+        'PKTABLE_CAT': None, 'PKTABLE_SCHEM': 'default', 'PKTABLE_NAME': 'person', 'PKCOLUMN_NAME': 'id',
+        'FKTABLE_CAT': None, 'FKTABLE_SCHEM': 'default', 'FKTABLE_NAME': 'business_unit', 'FKCOLUMN_NAME': 'head',
+        'KEQ_SEQ': 1, 'UPDATE_RULE': 0, 'DELETE_RULE': 0,
+        'FK_NAME': 'fk',
+        'PK_NAME': 'pk_146568770_1595688607640_0',
+        'DEFERRABILITY': 0
+      }
+    ]
+    '''
+    req = TGetCrossReferenceReq(
+      parentCatalogName=parent_catalog_name,
+      parentSchemaName=parent_database_name,
+      parentTableName=parent_table_name,
+      foreignCatalogName=foreign_catalog_name,
+      foreignSchemaName=foreign_database_name,
+      foreignTableName=foreign_table_name
+    )
+
+    (res, session) = self.call(self._client.GetCrossReference, req)
+    results, schema = self.fetch_result(res.operationHandle, max_rows=100)
+
+    self._close(res.operationHandle, session)
+
+    results = HiveServerTRowSet(results.results, schema.schema).cols(
+      (
+        'PKTABLE_CAT', 'PKTABLE_SCHEM', 'PKTABLE_NAME', 'PKCOLUMN_NAME',
+        'FKTABLE_CAT', 'FKTABLE_SCHEM', 'FKTABLE_NAME', 'FKCOLUMN_NAME',
+        'KEQ_SEQ', 'UPDATE_RULE', 'DELETE_RULE', 'FK_NAME', 'PK_NAME', 'DEFERRABILITY'
+      )
+    )
+
+    return results
+
 
 class HiveServerTableCompatible(HiveServerTable):
   """Same API as Beeswax"""
@@ -1185,7 +1339,7 @@ class HiveServerTableCompatible(HiveServerTable):
       self.is_impala_only = 'org.apache.hadoop.hive.kudu.KuduSerDe' in str(hive_table.properties) or \
         'org.apache.kudu.mapreduce.KuduTableOutputFormat' in str(hive_table.properties) # Deprecated since CDP
     except Exception as e:
-      LOG.warn('Autocomplete data fetching error: %s' % e)
+      LOG.warning('Autocomplete data fetching error: %s' % e)
       self.is_impala_only = False
 
   @property
@@ -1195,8 +1349,9 @@ class HiveServerTableCompatible(HiveServerTable):
           'name': col.get('col_name', '').strip() if col.get('col_name') else '',
           'type': col.get('data_type', '').strip() if col.get('data_type') else '',
           'comment': col.get('comment', '').strip() if col.get('comment') else ''
-        }) for col in HiveServerTable.cols.fget(self)
-  ]
+        })
+        for col in HiveServerTable.cols.fget(self)
+    ]
 
 
 class ResultCompatible(object):
@@ -1316,8 +1471,8 @@ class HiveServerClientCompatible(object):
     if max_rows is None:
       max_rows = 1000
 
-    if start_over and not (self.query_server.get('dialect') == 'impala' and self.query_server['querycache_rows'] == 0): # Backward compatibility for impala
-      orientation = TFetchOrientation.FETCH_FIRST
+    if start_over and not (self.query_server.get('dialect') == 'impala' and self.query_server['querycache_rows'] == 0):
+      orientation = TFetchOrientation.FETCH_FIRST  # Backward compatibility for impala
     else:
       orientation = TFetchOrientation.FETCH_NEXT
 
@@ -1376,10 +1531,12 @@ class HiveServerClientCompatible(object):
     massaged_tables = []
     for table in tables:
       massaged_tables.append({
-        'name': table['TABLE_NAME'],
-        'comment': table['REMARKS'],
-        'type': table['TABLE_TYPE'].capitalize()}
+          'name': table['TABLE_NAME'],
+          'comment': table['REMARKS'],
+          'type': table['TABLE_TYPE'].capitalize()
+        }
       )
+    massaged_tables = sorted(massaged_tables, key=lambda table_: table_['name'])
     return massaged_tables
 
 
@@ -1429,5 +1586,10 @@ class HiveServerClientCompatible(object):
 
   def alter_partition(self, db_name, tbl_name, new_part): raise NotImplementedError()
 
+
   def get_configuration(self):
     return self._client.get_configuration()
+
+
+  def get_functions(self):
+    return self._client.get_functions()

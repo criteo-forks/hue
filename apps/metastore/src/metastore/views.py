@@ -20,15 +20,16 @@ standard_library.install_aliases()
 from builtins import str
 import json
 import logging
+import sys
 import urllib.request, urllib.parse, urllib.error
 
 from django.db.models import Q
 from django.urls import reverse
 from django.shortcuts import redirect
 from django.utils.functional import wraps
-from django.utils.translation import ugettext as _
 from django.views.decorators.http import require_http_methods
 
+from desktop.conf import has_connectors
 from desktop.context_processors import get_app_name
 from desktop.lib.django_util import JsonResponse, render
 from desktop.lib.exceptions_renderable import PopupException
@@ -49,6 +50,11 @@ from metastore.settings import DJANGO_APPS
 
 from desktop.auth.backend import is_admin
 
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
+
 
 LOG = logging.getLogger(__name__)
 SAVE_RESULTS_CTAS_TIMEOUT = 300         # seconds
@@ -60,7 +66,10 @@ def check_has_write_access_permission(view_func):
   """
   def decorate(request, *args, **kwargs):
     if not has_write_access(request.user):
-      raise PopupException(_('You are not allowed to modify the metastore.'), detail=_('You have must have metastore:write permissions'), error_code=301)
+      raise PopupException(
+        _('You are not allowed to modify the metastore.'),
+        detail=_('You have must have metastore:write permissions'), error_code=301
+      )
 
     return view_func(request, *args, **kwargs)
   return wraps(view_func)(decorate)
@@ -110,8 +119,12 @@ def drop_database(request):
 
     try:
       if request.POST.get('is_embeddable'):
-        design = SavedQuery.create_empty(app_name=source_type if source_type != 'hive' else 'beeswax', owner=request.user, data=hql_query('').dumps())
-        last_executed = json.loads(request.POST.get('start_time'), '-1')
+        design = SavedQuery.create_empty(
+            app_name=source_type if source_type != 'hive' else 'beeswax',
+            owner=request.user,
+            data=hql_query('').dumps()
+        )
+        last_executed = json.loads(request.POST.get('start_time', '-1'))
         cluster = json.loads(request.POST.get('cluster', '{}'))
         namespace = json.loads(request.POST.get('namespace', '{}'))
         sql = db.drop_databases(databases, design, generate_ddl_only=True)
@@ -131,7 +144,10 @@ def drop_database(request):
       else:
         design = SavedQuery.create_empty(app_name='beeswax', owner=request.user, data=hql_query('').dumps())
         query_history = db.drop_databases(databases, design)
-        url = reverse('beeswax:watch_query_history', kwargs={'query_history_id': query_history.id}) + '?on_success_url=' + reverse('metastore:databases')
+        url = reverse(
+            'beeswax:watch_query_history',
+            kwargs={'query_history_id': query_history.id}
+        ) + '?on_success_url=' + reverse('metastore:databases')
         return redirect(url)
     except Exception as ex:
       error_message, log = dbms.expand_exception(ex, db)
@@ -300,7 +316,8 @@ def get_table_metadata(request, database, table):
 def describe_table(request, database, table):
   app_name = get_app_name(request)
   cluster = json.loads(request.POST.get('cluster', '{}'))
-  source_type = request.POST.get('source_type', request.GET.get('source_type', 'hive'))
+  source_type = request.POST.get('source_type', request.GET.get('connector_id', request.GET.get('source_type', 'hive')))
+
   db = _get_db(user=request.user, source_type=source_type, cluster=cluster)
 
   try:
@@ -380,7 +397,7 @@ def alter_table(request, database, table):
 
     # Cannot modify both name and comment at same time, name will get precedence
     if new_table_name and comment:
-      LOG.warn('Cannot alter both table name and comment at the same time, will perform rename.')
+      LOG.warning('Cannot alter both table name and comment at the same time, will perform rename.')
 
     table_obj = db.alter_table(database, table, new_table_name=new_table_name, comment=comment)
 
@@ -422,7 +439,15 @@ def alter_column(request, database, table):
       comment = request.POST.get('comment', None)
       partition_spec = request.POST.get('partition_spec', None)
 
-      column_obj = db.alter_column(database, table, column, new_column_name, new_column_type, comment=comment, partition_spec=partition_spec)
+      column_obj = db.alter_column(
+          database,
+          table,
+          column,
+          new_column_name,
+          new_column_type,
+          comment=comment,
+          partition_spec=partition_spec
+      )
 
       response['status'] = 0
       response['data'] = {
@@ -455,7 +480,7 @@ def drop_table(request, database):
       namespace = json.loads(request.POST.get('namespace', '{}'))
 
       if request.POST.get('is_embeddable'):
-        last_executed = json.loads(request.POST.get('start_time'), '-1')
+        last_executed = json.loads(request.POST.get('start_time', '-1'))
         sql = db.drop_tables(database, tables_objects, design=None, skip_trash=skip_trash, generate_ddl_only=True)
         job = make_notebook(
             name=_('Drop table %s') % ', '.join([table.name for table in tables_objects])[:100],
@@ -474,7 +499,10 @@ def drop_table(request, database):
         # Can't be simpler without an important refactoring
         design = SavedQuery.create_empty(app_name='beeswax', owner=request.user, data=hql_query('').dumps())
         query_history = db.drop_tables(database, tables_objects, design, skip_trash=skip_trash)
-        url = reverse('beeswax:watch_query_history', kwargs={'query_history_id': query_history.id}) + '?on_success_url=' + reverse('metastore:show_tables', kwargs={'database': database})
+        url = reverse(
+            'beeswax:watch_query_history',
+            kwargs={'query_history_id': query_history.id}
+        ) + '?on_success_url=' + reverse('metastore:show_tables', kwargs={'database': database})
         return redirect(url)
     except Exception as ex:
       error_message, log = dbms.expand_exception(ex, db)
@@ -494,7 +522,10 @@ def read_table(request, database, table):
 
   try:
     query_history = db.select_star_from(database, table)
-    url = reverse('beeswax:watch_query_history', kwargs={'query_history_id': query_history.id}) + '?on_success_url=&context=table:%s:%s' % (table.name, database)
+    url = reverse(
+        'beeswax:watch_query_history',
+        kwargs={'query_history_id': query_history.id}
+    ) + '?on_success_url=&context=table:%s:%s' % (table.name, database)
     return redirect(url)
   except Exception as e:
     raise PopupException(_('Cannot read table'), detail=e)
@@ -517,7 +548,11 @@ def load_table(request, database, table):
       on_success_url = reverse('metastore:describe_table', kwargs={'database': database, 'table': table.name})
       generate_ddl_only = request.POST.get('is_embeddable', 'false') == 'true'
       try:
-        design = SavedQuery.create_empty(app_name=source_type if source_type != 'hive' else 'beeswax', owner=request.user, data=hql_query('').dumps())
+        design = SavedQuery.create_empty(
+            app_name=source_type if source_type != 'hive' else 'beeswax',
+            owner=request.user,
+            data=hql_query('').dumps()
+        )
         form_data = {
           'path': load_form.cleaned_data['path'],
           'overwrite': load_form.cleaned_data['overwrite'],
@@ -525,7 +560,10 @@ def load_table(request, database, table):
         }
         query_history = db.load_data(database, table.name, form_data, design, generate_ddl_only=generate_ddl_only)
         if generate_ddl_only:
-          last_executed = json.loads(request.POST.get('start_time'), '-1')
+          if sys.version_info[0] > 2:
+            last_executed = json.loads(request.POST.get('start_time'))
+          else:
+            last_executed = json.loads(request.POST.get('start_time'), '-1')
           job = make_notebook(
             name=_('Load data in %s.%s') % (database, table.name),
             editor_type=source_type,
@@ -538,7 +576,10 @@ def load_table(request, database, table):
           )
           response = job.execute(request)
         else:
-          url = reverse('beeswax:watch_query_history', kwargs={'query_history_id': query_history.id}) + '?on_success_url=' + on_success_url
+          url = reverse(
+              'beeswax:watch_query_history',
+              kwargs={'query_history_id': query_history.id}
+          ) + '?on_success_url=' + on_success_url
           response['status'] = 0
           response['data'] = url
           response['query_history_id'] = query_history.id
@@ -559,7 +600,10 @@ def load_table(request, database, table):
            'database': database,
            'app_name': 'beeswax'
        }, force_template=True).content
-    response['data'] = popup
+    if sys.version_info[0] > 2:
+      response['data'] = popup.decode()
+    else:
+      response['data'] = popup
 
   return JsonResponse(response)
 
@@ -606,7 +650,7 @@ def describe_partitions(request, database, table):
           }, {
             'name': table,
             'url': reverse('metastore:describe_table', kwargs={'database': database, 'table': table})
-          },{
+          }, {
             'name': 'partitions',
             'url': reverse('metastore:describe_partitions', kwargs={'database': database, 'table': table})
           },
@@ -673,7 +717,10 @@ def read_partition(request, database, table, partition_spec):
   try:
     decoded_spec = urllib.parse.unquote(partition_spec)
     query = db.get_partition(database, table, decoded_spec)
-    url = reverse('beeswax:watch_query_history', kwargs={'query_history_id': query.id}) + '?on_success_url=&context=table:%s:%s' % (table, database)
+    url = reverse(
+        'beeswax:watch_query_history',
+        kwargs={'query_history_id': query.id}
+    ) + '?on_success_url=&context=table:%s:%s' % (table, database)
     return redirect(url)
   except Exception as e:
     raise PopupException(_('Cannot read partition'), detail=e.message)
@@ -728,7 +775,8 @@ def has_write_access(user):
 def _get_db(user, source_type=None, cluster=None):
   if source_type is None:
     cluster_config = get_cluster_config(user)
-    if FORCE_HS2_METADATA.get() and cluster_config['app_config'].get('editor') and 'hive' in cluster_config['app_config'].get('editor')['interpreter_names']:
+    if FORCE_HS2_METADATA.get() and cluster_config['app_config'].get('editor') and \
+        'hive' in cluster_config['app_config'].get('editor')['interpreter_names']:
       source_type = 'hive'
     else:
       source_type = cluster_config['default_sql_interpreter']
@@ -740,7 +788,10 @@ def _get_db(user, source_type=None, cluster=None):
 
 
 def _get_servername(db):
-  return 'hive' if db.server_name == 'beeswax' else db.server_name
+  if has_connectors():
+    return db.client.query_server['server_name']
+  else:
+    return 'hive' if db.server_name == 'beeswax' else db.server_name
 
 
 class NotebookApiTable(object):

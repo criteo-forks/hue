@@ -28,7 +28,6 @@ import struct
 import sys
 
 from django.urls import reverse
-from django.utils.translation import ugettext as _
 
 from desktop.auth.backend import is_admin
 from desktop.conf import USE_DEFAULT_CONFIGURATION, has_connectors
@@ -46,7 +45,9 @@ from notebook.connectors.base import Api, QueryError, QueryExpired, OperationTim
 
 if sys.version_info[0] > 2:
   from urllib.parse import quote as urllib_quote, unquote as urllib_unquote
+  from django.utils.translation import gettext as _
 else:
+  from django.utils.translation import ugettext as _
   from urllib import quote as urllib_quote, unquote as urllib_unquote
 
 LOG = logging.getLogger(__name__)
@@ -61,10 +62,10 @@ try:
   from beeswax.design import hql_query
   from beeswax.models import QUERY_TYPES, HiveServerQueryHandle, HiveServerQueryHistory, QueryHistory, Session
   from beeswax.server import dbms
-  from beeswax.server.dbms import get_query_server_config, QueryServerException
+  from beeswax.server.dbms import get_query_server_config, QueryServerException, reset_ha
   from beeswax.views import parse_out_jobs, parse_out_queries
 except ImportError as e:
-  LOG.warn('Hive and HiveServer2 interfaces are not enabled: %s' % e)
+  LOG.warning('Hive and HiveServer2 interfaces are not enabled: %s' % e)
   hive_settings = None
 
 try:
@@ -72,18 +73,18 @@ try:
   from impala.conf import CONFIG_WHITELIST as impala_settings
   from impala.server import get_api as get_impalad_api, ImpalaDaemonApiException, _get_impala_server_url
 except ImportError as e:
-  LOG.warn("Impala app is not enabled")
+  LOG.warning("Impala app is not enabled")
   impala_settings = None
 
 try:
-  from jobbrowser.views import get_job
-  from jobbrowser.conf import ENABLE_QUERY_BROWSER, ENABLE_HIVE_QUERY_BROWSER
   from jobbrowser.apis.query_api import _get_api
+  from jobbrowser.conf import ENABLE_QUERY_BROWSER, ENABLE_HIVE_QUERY_BROWSER
+  from jobbrowser.views import get_job
   has_query_browser = ENABLE_QUERY_BROWSER.get()
   has_hive_query_browser = ENABLE_HIVE_QUERY_BROWSER.get()
   has_jobbrowser = True
-except (AttributeError, ImportError) as e:
-  LOG.warn("Job Browser app is not enabled")
+except (AttributeError, ImportError, RuntimeError) as e:
+  LOG.warning("Job Browser app is not enabled")
   has_jobbrowser = False
   has_query_browser = False
   has_hive_query_browser = False
@@ -100,6 +101,8 @@ def query_error_handler(func):
       message = force_unicode(str(e))
       if 'timed out' in message:
         raise OperationTimeout(e)
+      elif 'Connection refused' in message or 'Name or service not known' in message or 'Could not connect to any' in message:
+        reset_ha()
       else:
         raise QueryError(message)
     except QueryServerException as e:
@@ -178,19 +181,37 @@ class HS2Api(Api):
 
   @query_error_handler
   def create_session(self, lang='hive', properties=None):
-    application = 'beeswax' if lang == 'hive' or lang =='llap' else lang
+    application = 'beeswax' if lang == 'hive' or lang == 'llap' else lang
 
-    if has_session_pool():
-      session = Session.objects.get_tez_session(self.user, application, MAX_NUMBER_OF_SESSIONS.get())
-    elif not has_multiple_sessions():
-      session = Session.objects.get_session(self.user, application=application)
-    else:
-      session = None
+    uses_session_pool = has_session_pool()
+    uses_multiple_sessions = has_multiple_sessions()
+
+    if lang == 'impala':
+      uses_session_pool = False
+      uses_multiple_sessions = False
+
+    try:
+      if uses_session_pool:
+        session = Session.objects.get_tez_session(self.user, application, MAX_NUMBER_OF_SESSIONS.get())
+      elif not uses_multiple_sessions:
+        session = Session.objects.get_session(self.user, application=application)
+      else:
+        session = None
+    except Exception as e:
+      if 'Connection refused' in str(e) or 'Name or service not known' in str(e):
+        LOG.exception('Connection being refused or service is not available in either session or in multiple sessions'
+                      '- HA failover')
+        reset_ha()
 
     reuse_session = session is not None
     if not reuse_session:
       db = dbms.get(self.user, query_server=get_query_server_config(name=lang, connector=self.interpreter))
-      session = db.open_session(self.user)
+      try:
+        session = db.open_session(self.user)
+      except Exception as e:
+        if 'Connection refused' in str(e) or 'Name or service not known' in str(e):
+          LOG.exception('Connection being refused or service is not available in reuse session - HA failover')
+          reset_ha()
 
     response = {
       'type': lang,
@@ -216,7 +237,7 @@ class HS2Api(Api):
       decoded_guid = session.get_handle().sessionId.guid
       response['session_id'] = unpack_guid(decoded_guid)
     except Exception as e:
-      LOG.warn('Failed to decode session handle: %s' % e)
+      LOG.warning('Failed to decode session handle: %s' % e)
 
     if lang == 'impala' and session:
       http_addr = _get_impala_server_url(session)
@@ -275,8 +296,13 @@ class HS2Api(Api):
       except Exception as e:
         LOG.exception('Error closing statement %s' % str(e))
 
+    close_sessions = CLOSE_SESSIONS.get()
+
+    if session['type'] == 'impala':
+      close_sessions = False
+
     try:
-      if idle and CLOSE_SESSIONS.get():
+      if idle and close_sessions:
         response['result'].append(self.close_session(session))
     except QueryExpired:
       pass
@@ -339,14 +365,18 @@ class HS2Api(Api):
     if status.value in (QueryHistory.STATE.failed.value, QueryHistory.STATE.expired.value):
       if operation.errorMessage and 'transition from CANCELED to ERROR' in operation.errorMessage:  # Hive case on canceled query
         raise QueryExpired()
-      elif operation.errorMessage and re.search('Cannot validate serde: org.apache.hive.hcatalog.data.JsonSerDe', str(operation.errorMessage)):
+      elif operation.errorMessage and re.search(
+          'Cannot validate serde: org.apache.hive.hcatalog.data.JsonSerDe', str(operation.errorMessage)
+          ):
         raise QueryError(message=operation.errorMessage + _('. Is hive-hcatalog-core.jar registered?'))
       else:
         raise QueryError(operation.errorMessage)
 
-    response['status'] = 'running' if status.value in (QueryHistory.STATE.running.value, QueryHistory.STATE.submitted.value) else 'available'
+    response['status'] = 'running' if status.value in (
+        QueryHistory.STATE.running.value, QueryHistory.STATE.submitted.value
+      ) else 'available'
     if operation.hasResultSet is not None:
-      response['has_result_set']= operation.hasResultSet  # HIVE-12442 - With LLAP & HIVE_CLI_SERVICE_PROTOCOL_V8, hasResultSet can change after get_operation_status
+      response['has_result_set'] = operation.hasResultSet  # HIVE-12442 - With LLAP hasResultSet can change after get_operation_status
 
     return response
 
@@ -369,10 +399,11 @@ class HS2Api(Api):
         'has_more': results.has_more,
         'data': results.rows(),
         'meta': [{
-          'name': column.name,
-          'type': column.type,
-          'comment': column.comment
-        } for column in results.data_table.cols()],
+            'name': column.name,
+            'type': column.type,
+            'comment': column.comment
+          } for column in results.data_table.cols()
+        ],
         'type': 'table'
     }
 
@@ -484,7 +515,7 @@ class HS2Api(Api):
 
       jobs = [{
           'name': job.get('job_id', ''),
-          'url': reverse('jobbrowser.views.single_job', kwargs={'job': job.get('job_id', '')}) if has_jobbrowser else '',
+          'url': reverse('jobbrowser:jobbrowser.views.single_job', kwargs={'job': job.get('job_id', '')}) if has_jobbrowser else '',
           'started': job.get('started', False),
           'finished': job.get('finished', False)
         }
@@ -504,7 +535,9 @@ class HS2Api(Api):
       if isinstance(guid, str):
         guid = guid.encode('utf-8')
       query_id = unpack_guid_base64(guid)
-      progress = min(self.progress(notebook, snippet, logs), 99) if snippet['status'] != 'available' and snippet['status'] != 'success' else 100
+      progress = min(
+          self.progress(notebook, snippet, logs), 99
+        ) if snippet['status'] != 'available' and snippet['status'] != 'success' else 100
       jobs = [{
         'name': query_id,
         'url': '/hue/jobbrowser#!id=%s' % query_id,
@@ -517,7 +550,7 @@ class HS2Api(Api):
 
 
   @query_error_handler
-  def autocomplete(self, snippet, database=None, table=None, column=None, nested=None):
+  def autocomplete(self, snippet, database=None, table=None, column=None, nested=None, operation=None):
     db = self._get_db(snippet, interpreter=self.interpreter)
     query = None
 
@@ -531,7 +564,7 @@ class HS2Api(Api):
       query = self._get_current_statement(notebook, snippet)['statement']
       database, table = '', ''
 
-    resp = _autocomplete(db, database, table, column, nested, query=query, cluster=self.interpreter)
+    resp = _autocomplete(db, database, table, column, nested, query=query, cluster=self.interpreter, operation=operation)
 
     if resp.get('error'):
       resp['message'] = resp.pop('error')
@@ -556,19 +589,24 @@ class HS2Api(Api):
     response = self._get_current_statement(notebook, snippet)
     session = self._get_session(notebook, snippet['type'])
 
-    query = self._prepare_hql_query(snippet, response.pop('statement'), session)
+    statement = response.pop('statement')
+    explanation = ''
 
-    try:
-      db.use(query.database)
+    query = self._prepare_hql_query(snippet, statement, session)
 
-      explanation = db.explain(query)
-    except QueryServerException as ex:
-      raise QueryError(ex.message)
+    if statement:
+      try:
+        db.use(query.database)
+
+        explanation = db.explain(query).textual
+        statement = query.get_query_statement(0)
+      except QueryServerException as ex:
+        explanation = str(ex.message)
 
     return {
       'status': 0,
-      'explanation': explanation.textual,
-      'statement': query.get_query_statement(0),
+      'explanation': explanation,
+      'statement': statement,
     }
 
 
@@ -582,7 +620,9 @@ class HS2Api(Api):
 
     upload(target_file, handle, self.request.user, db, self.request.fs, max_rows=max_rows, max_bytes=max_bytes)
 
-    return '/filebrowser/view=%s' % urllib_quote(urllib_quote(target_file.encode('utf-8'), safe=SAFE_CHARACTERS_URI_COMPONENTS)) # Quote twice, because of issue in the routing on client
+    return '/filebrowser/view=%s' % urllib_quote(
+        urllib_quote(target_file.encode('utf-8'), safe=SAFE_CHARACTERS_URI_COMPONENTS)
+    ) # Quote twice, because of issue in the routing on client
 
 
   def export_data_as_table(self, notebook, snippet, destination, is_temporary=False, location=None):
@@ -603,7 +643,9 @@ class HS2Api(Api):
 
     db.use(query.database)
 
-    hql = 'CREATE %sTABLE `%s`.`%s` %sAS %s' % ('TEMPORARY ' if is_temporary else '', database, table, "LOCATION '%s' " % location if location else '', query.hql_query)
+    hql = 'CREATE %sTABLE `%s`.`%s` %sAS %s' % (
+        'TEMPORARY ' if is_temporary else '', database, table, "LOCATION '%s' " % location if location else '', query.hql_query
+    )
     success_url = reverse('metastore:describe_table', kwargs={'database': database, 'table': table})
 
     return hql, success_url
@@ -620,15 +662,13 @@ class HS2Api(Api):
     hql = '''
 DROP TABLE IF EXISTS `%(table)s`;
 
-CREATE TABLE `%(table)s` ROW FORMAT DELIMITED
+CREATE EXTERNAL TABLE `%(table)s` ROW FORMAT DELIMITED
      FIELDS TERMINATED BY '\\t'
      ESCAPED BY '\\\\'
      LINES TERMINATED BY '\\n'
      STORED AS TEXTFILE LOCATION '%(location)s'
      AS
 %(hql)s;
-
-ALTER TABLE `%(table)s` SET TBLPROPERTIES('EXTERNAL'='TRUE');
 
 DROP TABLE IF EXISTS `%(table)s`;
     ''' % {
@@ -648,7 +688,7 @@ DROP TABLE IF EXISTS `%(table)s`;
     if not isinstance(properties, list) or \
       not all(isinstance(prop, dict) for prop in properties) or \
       not all('key' in prop for prop in properties) or not all('value' in prop for prop in properties):
-      LOG.warn('Current properties are not formatted correctly, will replace with defaults.')
+      LOG.warning('Current properties are not formatted correctly, will replace with defaults.')
       return upgraded_properties
 
     valid_props_dict = dict((prop["key"], prop) for prop in upgraded_properties)
@@ -688,7 +728,7 @@ DROP TABLE IF EXISTS `%(table)s`;
     if not settings:
       session = self._get_session(notebook, 'hive')
       if not session:
-        LOG.warn('Cannot get jobs, failed to find active HS2 session for user: %s' % self.user.username)
+        LOG.warning('Cannot get jobs, failed to find active HS2 session for user: %s' % self.user.username)
       elif session.get('configuration') and session['configuration'].get('hive.execution.engine'):
         return session['configuration'].get('hive.execution.engine')
       else:
@@ -720,10 +760,11 @@ DROP TABLE IF EXISTS `%(table)s`;
       functions = next((prop['value'] for prop in properties if prop['key'] == 'functions'), None)
 
     database = snippet.get('database') or 'default'
+    query_type = QUERY_TYPES[4] if 'dialect' in snippet and snippet['dialect'] == 'hplsql' else QUERY_TYPES[0]
 
     return hql_query(
       statement,
-      query_type=QUERY_TYPES[0],
+      query_type=query_type,
       settings=settings,
       file_resources=file_resources,
       functions=functions,
@@ -752,7 +793,7 @@ DROP TABLE IF EXISTS `%(table)s`;
     except KeyError:
       raise Exception('Operation has no valid handle attached')
     except binascii.Error:
-      LOG.warn('Handle already base 64 decoded')
+      LOG.warning('Handle already base 64 decoded')
 
     for key in list(handle.keys()):
       if key not in ('log_context', 'secret', 'has_result_set', 'operation_type', 'modified_row_count', 'guid'):
@@ -775,6 +816,8 @@ DROP TABLE IF EXISTS `%(table)s`;
       name = 'llap'
     elif dialect == 'impala':
       name = 'impala'
+    elif dialect == 'hplsql':
+      name = 'hplsql'
     else:
       name = 'sparksql'
 
@@ -856,7 +899,8 @@ DROP TABLE IF EXISTS `%(table)s`;
       LOG.debug("Attempting to get Impala query profile at server_url %s for query ID: %s" % (server_url, query_id))
 
       fragment = self._get_impala_query_profile(server_url, query_id=query_id)
-      total_records_re = "Coordinator Fragment F\d\d.+?RowsReturned: \d+(?:.\d+[KMB])? \((?P<total_records>\d+)\).*?(Averaged Fragment F\d\d)"
+      total_records_re = \
+          "Coordinator Fragment F\d\d.+?RowsReturned: \d+(?:.\d+[KMB])? \((?P<total_records>\d+)\).*?(Averaged Fragment F\d\d)"
       total_records_match = re.search(total_records_re, fragment, re.MULTILINE | re.DOTALL)
 
     if total_records_match:
@@ -876,9 +920,9 @@ DROP TABLE IF EXISTS `%(table)s`;
       try:
         guid = unpack_guid_base64(snippet['result']['handle']['guid'])
       except Exception as e:
-        LOG.warn('Failed to decode operation handle guid: %s' % e)
+        LOG.warning('Failed to decode operation handle guid: %s' % e)
     else:
-      LOG.warn('Snippet does not contain a valid result handle, cannot extract Impala query ID.')
+      LOG.warning('Snippet does not contain a valid result handle, cannot extract Impala query ID.')
     return guid
 
 
@@ -904,12 +948,12 @@ DROP TABLE IF EXISTS `%(table)s`;
 
 
   def describe_column(self, notebook, snippet, database=None, table=None, column=None):
-    db = self._get_db(snippet, self.interpreter)
+    db = self._get_db(snippet, interpreter=self.interpreter)
     return db.get_table_columns_stats(database, table, column)
 
 
   def describe_table(self, notebook, snippet, database=None, table=None):
-    db = self._get_db(snippet, self.interpreter)
+    db = self._get_db(snippet, interpreter=self.interpreter)
     tb = db.get_table(database, table)
 
     return {

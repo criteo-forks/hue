@@ -22,11 +22,12 @@ from azure.abfs.__init__ import strip_path, abfsdatetime_to_timestamp
 from django.utils.encoding import smart_str
 
 LOG = logging.getLogger(__name__)
-CHAR_TO_OCT = {"---": 0, "--x" : 1, "-w-": 2, "-wx": 3, "r--" : 4, "r-x" : 5, "rw-" : 6,"rwx": 7}
+CHAR_TO_OCT = {"---": 0, "--x": 1, "-w-": 2, "-wx": 3, "r--": 4, "r-x": 5, "rw-": 6, "rwx": 7}
+
 
 class ABFSStat(object):
 
-  def __init__(self, isDir, atime, mtime, size, path, owner = '', group = '', mode = None):
+  def __init__(self, isDir, atime, mtime, size, path, owner='', group='', mode=None):
     self.name = strip_path(path)
     self.path = path
     self.isDir = isDir
@@ -45,34 +46,34 @@ class ABFSStat(object):
       self.mode |= stat.S_IFDIR
     else:
       self.mode |= stat.S_IFREG
-    
+
   def __getitem__(self, key):
     try:
       return getattr(self, key)
     except AttributeError:
       raise KeyError(key)
-  
+
   def __setitem__(self, key, value):
     # What about derivable values?
     setattr(self, key, value)
-    
+
   def __repr__(self):
     return smart_str("<abfsStat %s>" % (self.path,))
-  
+
   @property
   def aclBit(self):
     return False
-  
+
   @classmethod
-  def for_root(cls,path):
+  def for_root(cls, path):
     return cls(True, 0, 0, 0, path)
-  
+
   @classmethod
-  def for_filesystems(cls,headers,resp, scheme):
+  def for_filesystems(cls, headers, resp, scheme):
     return cls(True, headers['date'], resp['lastModified'], 0, scheme + resp['name'])
 
   @classmethod
-  def for_directory(cls,headers,resp, path):
+  def for_directory(cls, headers, resp, path):
     try:
       size = int(resp['contentLength'])
     except:
@@ -85,17 +86,17 @@ class ABFSStat(object):
       permissions = ABFSStat.char_permissions_to_oct_permissions(resp['permissions'])
     except:
       permissions = None
-    return cls(isDir, headers['date'], resp['lastModified'], size, path, resp.get('owner'), resp.get('group'), mode = permissions)
+    return cls(isDir, headers['date'], resp.get('lastModified'), size, path, resp.get('owner'), resp.get('group'), mode=permissions)
 
   @classmethod
-  def for_single(cls,resp, path):
+  def for_single(cls, resp, path):
     size = int(resp['Content-Length'])
     isDir = resp['x-ms-resource-type'] == 'directory'
     try:
       permissions = ABFSStat.char_permissions_to_oct_permissions(resp['x-ms-permissions'])
     except:
       permissions = None
-    return cls(isDir, resp['date'],resp['Last-Modified'], size, path, resp.get('x-ms-owner'), resp.get('x-ms-group'), mode = permissions)
+    return cls(isDir, resp['date'], resp['Last-Modified'], size, path, resp.get('x-ms-owner'), resp.get('x-ms-group'), mode=permissions)
 
   @classmethod
   def for_filesystem(cls, resp, path):
@@ -108,7 +109,7 @@ class ABFSStat(object):
     except:
       return None
     return octal_permissions
-    
+
   def to_json_dict(self):
     """
     Returns a dictionary for easy serialization
@@ -118,4 +119,3 @@ class ABFSStat(object):
     for k in keys:
       res[k] = self[k]
     return res
-    

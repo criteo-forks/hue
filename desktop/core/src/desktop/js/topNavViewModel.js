@@ -16,14 +16,14 @@
 
 import * as ko from 'knockout';
 
-import apiHelper from 'api/apiHelper';
 import huePubSub from 'utils/huePubSub';
 import {
-  CONFIG_REFRESHED_EVENT,
-  findEditorConnector,
-  GET_KNOWN_CONFIG_EVENT,
-  REFRESH_CONFIG_EVENT
-} from 'utils/hueConfig';
+  CONFIG_REFRESHED_TOPIC,
+  GET_KNOWN_CONFIG_TOPIC,
+  REFRESH_CONFIG_TOPIC
+} from 'config/events';
+import { findEditorConnector } from 'config/hueConfig';
+import { withLocalStorage } from 'utils/storageUtils';
 
 class TopNavViewModel {
   constructor(onePageViewModel) {
@@ -32,7 +32,7 @@ class TopNavViewModel {
 
     // TODO: Drop. Just for PoC
     self.pocClusterMode = ko.observable();
-    apiHelper.withTotalStorage('topNav', 'multiCluster', self.pocClusterMode, 'dw');
+    withLocalStorage('topNav.multiCluster', self.pocClusterMode, 'dw');
     huePubSub.subscribe('set.multi.cluster.mode', self.pocClusterMode);
 
     self.hasJobBrowser = ko.observable(window.HAS_JOB_BROWSER);
@@ -54,11 +54,11 @@ class TopNavViewModel {
       );
     };
 
-    huePubSub.publish(GET_KNOWN_CONFIG_EVENT, configUpdated);
-    huePubSub.subscribe(CONFIG_REFRESHED_EVENT, configUpdated);
+    huePubSub.publish(GET_KNOWN_CONFIG_TOPIC, configUpdated);
+    huePubSub.subscribe(CONFIG_REFRESHED_TOPIC, configUpdated);
 
     huePubSub.subscribe('hue.new.default.app', () => {
-      huePubSub.publish(REFRESH_CONFIG_EVENT);
+      huePubSub.publish(REFRESH_CONFIG_TOPIC);
     });
   }
 }

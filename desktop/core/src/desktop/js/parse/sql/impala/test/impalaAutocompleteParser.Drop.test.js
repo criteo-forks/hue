@@ -18,7 +18,7 @@ import impalaAutocompleteParser from '../impalaAutocompleteParser';
 
 describe('impalaAutocompleteParser.js DROP statements', () => {
   beforeAll(() => {
-    impalaAutocompleteParser.yy.parseError = function(msg) {
+    impalaAutocompleteParser.yy.parseError = function (msg) {
       throw Error(msg);
     };
   });
@@ -238,42 +238,6 @@ describe('impalaAutocompleteParser.js DROP statements', () => {
           suggestFunctions: {},
           suggestColumns: { tables: [{ identifierChain: [{ name: 'boo' }, { name: 'baa' }] }] },
           suggestFilters: { tables: [{ identifierChain: [{ name: 'boo' }, { name: 'baa' }] }] }
-        }
-      });
-    });
-  });
-
-  describe('DROP DATABASE', () => {
-    it('should suggest databases for "DROP SCHEMA |"', () => {
-      assertAutoComplete({
-        beforeCursor: 'DROP SCHEMA ',
-        afterCursor: '',
-        expectedResult: {
-          lowerCase: false,
-          suggestDatabases: {},
-          suggestKeywords: ['IF EXISTS']
-        }
-      });
-    });
-
-    it('should suggest keywords for "DROP DATABASE IF |"', () => {
-      assertAutoComplete({
-        beforeCursor: 'DROP DATABASE IF ',
-        afterCursor: '',
-        expectedResult: {
-          lowerCase: false,
-          suggestKeywords: ['EXISTS']
-        }
-      });
-    });
-
-    it('should suggest keywords for "DROP DATABASE foo |"', () => {
-      assertAutoComplete({
-        beforeCursor: 'DROP DATABASE foo ',
-        afterCursor: '',
-        expectedResult: {
-          lowerCase: false,
-          suggestKeywords: ['CASCADE', 'RESTRICT']
         }
       });
     });

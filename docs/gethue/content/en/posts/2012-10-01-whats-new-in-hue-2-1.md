@@ -39,7 +39,6 @@ sf_caption_position:
 slide_template:
   - default
 categories:
-  - Scheduling
 
 ---
 [Hue][1] is a Web-based interface that makes it easier to use [Apache Hadoop][2]. [Hue 2.1][3] (included in [CDH4.1][4]) provides a new application on top of [Apache Oozie][5] (a workflow scheduler system for Apache Hadoop) for creating workflows and scheduling them repetitively. For example, Hue makes it easy to group a set of MapReduce jobs and Hive scripts and run them every day of the week.
@@ -94,9 +93,9 @@ The next version of the Oozie application will focus on improving the general ex
 
 In the meantime, feel free to report feedback and wishes to [hue-user][11]!
 
- [1]: http://cloudera.github.com/hue/
+ [1]: https://gethue.com
  [2]: http://hadoop.apache.org/
- [3]: http://cloudera.github.com/hue/index.html#releases-2.1.0
+ [3]: https://gethue.comindex.html#releases-2.1.0
  [4]: https://ccp.cloudera.com/display/CDH4DOC/CDH4+Installation+Guide
  [5]: http://incubator.apache.org/oozie/
  [6]: http://www.cloudera.com/wp-content/uploads/2012/10/hue13.png

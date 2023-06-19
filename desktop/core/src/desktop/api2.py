@@ -32,12 +32,12 @@ from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.utils.html import escape
-from django.utils.translation import ugettext as _
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 
 from metadata.conf import has_catalog
-from metadata.catalog_api import search_entities as metadata_search_entities, _highlight, search_entities_interactive as metadata_search_entities_interactive
+from metadata.catalog_api import search_entities as metadata_search_entities, _highlight, \
+  search_entities_interactive as metadata_search_entities_interactive
 from notebook.connectors.altus import SdxApi, AnalyticDbApi, DataEngApi, DataWarehouse2Api
 from notebook.connectors.base import Notebook, get_interpreter
 from notebook.models import Analytics
@@ -45,7 +45,7 @@ from useradmin.models import User, Group
 
 from desktop import appmanager
 from desktop.auth.backend import is_admin
-from desktop.conf import ENABLE_CONNECTORS, ENABLE_GIST_PREVIEW, get_clusters, IS_K8S_ONLY
+from desktop.conf import ENABLE_CONNECTORS, ENABLE_GIST_PREVIEW, CUSTOM, get_clusters, IS_K8S_ONLY, ENABLE_SHARING
 from desktop.lib.conf import BoundContainer, GLOBAL_CONFIG, is_anonymous
 from desktop.lib.django_util import JsonResponse, login_notrequired, render
 from desktop.lib.exceptions_renderable import PopupException
@@ -54,11 +54,16 @@ from desktop.lib.i18n import smart_str, force_unicode
 from desktop.lib.paths import get_desktop_root
 from desktop.models import Document2, Document, Directory, FilesystemException, uuid_default, \
   UserPreferences, get_user_preferences, set_user_preferences, get_cluster_config, __paginate, _get_gist_document
+from desktop.views import get_banner_message, serve_403_error
+
+from hadoop.cluster import is_yarn
 
 if sys.version_info[0] > 2:
   from io import StringIO as string_io
+  from django.utils.translation import gettext as _
 else:
   from StringIO import StringIO as string_io
+  from django.utils.translation import ugettext as _
 
 LOG = logging.getLogger(__name__)
 
@@ -79,10 +84,19 @@ def api_error_handler(func):
 
   return decorator
 
+@api_error_handler
+def get_banners(request):
+  banners = {
+    'system': get_banner_message(request),
+    'configured': CUSTOM.BANNER_TOP_HTML.get()
+  }
+  return JsonResponse(banners)
 
 @api_error_handler
 def get_config(request):
   config = get_cluster_config(request.user)
+  config['hue_config']['is_admin'] = is_admin(request.user)
+  config['hue_config']['is_yarn_enabled'] = is_yarn()
   config['clusters'] = list(get_clusters(request.user).values())
   config['documents'] = {
     'types': list(Document2.objects.documents(user=request.user).order_by().values_list('type', flat=True).distinct())
@@ -186,7 +200,8 @@ def get_context_namespaces(request, interface):
         sdx_namespaces = SdxApi(request.user).list_namespaces()
 
       # Adding "fake" namespace for cluster without one
-      sdx_namespaces.extend([_cluster for _cluster in adb_clusters if not _cluster.get('namespaceCrn') or (IS_K8S_ONLY.get() and 'TERMINAT' not in _cluster['status'])])
+      sdx_namespaces.extend([_cluster for _cluster in adb_clusters if not _cluster.get('namespaceCrn') or \
+        (IS_K8S_ONLY.get() and 'TERMINAT' not in _cluster['status'])])
 
       namespaces.extend([{
           'id': namespace.get('crn', 'None'),
@@ -677,6 +692,9 @@ def share_document(request):
 
   Example of input: {'read': {'user_ids': [1, 2, 3], 'group_ids': [1, 2, 3]}}
   """
+  if not is_admin(request.user) and not ENABLE_SHARING.get():
+    return serve_403_error(request)
+
   uuid = request.POST.get('uuid')
   perms_dict = request.POST.get('data')
 
@@ -712,10 +730,13 @@ def share_document(request):
 @require_POST
 def share_document_link(request):
   """
-  Globally activate of de-activate access to a document for logged-in users.
+  Globally activate or de-activate access to a document for logged-in users.
 
   Example of input: {"uuid": "xxxx", "perm": "read" / "write" / "off"}
   """
+  if not is_admin(request.user) and not ENABLE_SHARING.get():
+    return serve_403_error(request)
+
   uuid = request.POST.get('uuid')
   perm = request.POST.get('perm')
 
@@ -766,7 +787,9 @@ def export_documents(request):
 
   if doc_ids:
     doc_ids = ','.join(map(str, doc_ids))
-    management.call_command('dumpdata', 'desktop.Document2', primary_keys=doc_ids, indent=2, use_natural_foreign_keys=True, verbosity=2, stdout=f)
+    management.call_command(
+      'dumpdata', 'desktop.Document2', primary_keys=doc_ids, indent=2, use_natural_foreign_keys=True, verbosity=2, stdout=f
+    )
 
   if request.GET.get('format') == 'json':
     return JsonResponse(f.getvalue(), safe=False)
@@ -838,7 +861,7 @@ def import_documents(request):
       # Replace illegal characters
       if '/' in doc['fields']['name']:
         new_name = doc['fields']['name'].replace('/', '-')
-        LOG.warn("Found illegal slash in document named: %s, renaming to: %s." % (doc['fields']['name'], new_name))
+        LOG.warning("Found illegal slash in document named: %s, renaming to: %s." % (doc['fields']['name'], new_name))
         doc['fields']['name'] = new_name
 
       # Set last modified date to now
@@ -852,7 +875,7 @@ def import_documents(request):
   stdout = string_io()
   try:
     with transaction.atomic(): # We wrap both commands to commit loaddata & sync
-      management.call_command('loaddata', f.name, verbosity=3, traceback=True, stdout=stdout, commit=False) # We need to use commit=False because commit=True will close the connection and make Document.objects.sync fail.
+      management.call_command('loaddata', f.name, verbosity=3, traceback=True, stdout=stdout)
       Document.objects.sync()
 
     if request.POST.get('redirect'):
@@ -911,37 +934,45 @@ def gist_create(request):
   '''
   Only supporting Editor App currently.
   '''
-  response = {'status': 0}
 
   statement = request.POST.get('statement', '')
   gist_type = request.POST.get('doc_type', 'hive')
   name = request.POST.get('name', '')
   description = request.POST.get('description', '')
 
-  if not name:
-    name = _('%s Query') % gist_type.capitalize()
+  response = _gist_create(request.get_host(), request.is_secure(), request.user, statement, gist_type, name)
+
+  return JsonResponse(response)
+
+
+def _gist_create(host_domain, is_http_secure, user, statement, gist_type, name=''):
+  response = {'status': 0}
+
   statement_raw = statement
   if not statement.strip().startswith('--'):
-    statement = '-- Created by %s\n\n%s' % (request.user.get_full_name() or request.user.username, statement)
+    statement = '-- Created by %s\n\n%s' % (user.get_full_name() or user.username, statement)
+
+  if not name:
+    name = _('%s Query') % gist_type.capitalize()
 
   gist_doc = Document2.objects.create(
     name=name,
     type='gist',
-    owner=request.user,
+    owner=user,
     data=json.dumps({'statement': statement, 'statement_raw': statement_raw}),
     extra=gist_type,
-    parent_directory=Document2.objects.get_gist_directory(request.user)
+    parent_directory=Document2.objects.get_gist_directory(user)
   )
 
   response['id'] = gist_doc.id
   response['uuid'] = gist_doc.uuid
   response['link'] = '%(scheme)s://%(host)s/hue/gist?uuid=%(uuid)s' % {
-    'scheme': 'https' if request.is_secure() else 'http',
-    'host': request.get_host(),
+    'scheme': 'https' if is_http_secure else 'http',
+    'host': host_domain,
     'uuid': gist_doc.uuid,
   }
 
-  return JsonResponse(response)
+  return response
 
 
 @login_notrequired
@@ -1099,7 +1130,7 @@ def _copy_document_with_owner(doc, owner, uuids_map):
     doc['fields']['parent_directory'] = [uuids_map[parent_uuid], 1, False]
   else:
     if parent_uuid is not None:
-      LOG.warn('Could not find parent directory with UUID: %s in JSON import, will set parent to home directory' %
+      LOG.warning('Could not find parent directory with UUID: %s in JSON import, will set parent to home directory' %
                 parent_uuid)
     doc['fields']['parent_directory'] = [home_dir.uuid, home_dir.version, home_dir.is_history]
 
@@ -1107,7 +1138,7 @@ def _copy_document_with_owner(doc, owner, uuids_map):
   idx = 0
   for dep_uuid, dep_version, dep_is_history in doc['fields']['dependencies']:
     if dep_uuid not in list(uuids_map.keys()):
-      LOG.warn('Could not find dependency UUID: %s in JSON import, may cause integrity errors if not found.' % dep_uuid)
+      LOG.warning('Could not find dependency UUID: %s in JSON import, may cause integrity errors if not found.' % dep_uuid)
     else:
       if uuids_map[dep_uuid] is None:
         uuids_map[dep_uuid] = uuid_default()
@@ -1132,7 +1163,7 @@ def _create_or_update_document_with_owner(doc, owner, uuids_map):
     create_new = True
 
   if create_new:
-    LOG.warn('Could not find document with UUID: %s, will create a new document on import.', doc['fields']['uuid'])
+    LOG.warning('Could not find document with UUID: %s, will create a new document on import.', doc['fields']['uuid'])
     doc['pk'] = None
     doc['fields']['version'] = 1
 
@@ -1141,7 +1172,7 @@ def _create_or_update_document_with_owner(doc, owner, uuids_map):
     uuid, version, is_history = doc['fields']['parent_directory']
     if uuid not in list(uuids_map.keys()) and \
             not Document2.objects.filter(uuid=uuid, version=version, is_history=is_history).exists():
-      LOG.warn('Could not find parent document with UUID: %s, will set parent to home directory' % uuid)
+      LOG.warning('Could not find parent document with UUID: %s, will set parent to home directory' % uuid)
       doc['fields']['parent_directory'] = [home_dir.uuid, home_dir.version, home_dir.is_history]
 
   # Verify that dependencies exist, raise critical error if any dependency not found
@@ -1150,11 +1181,11 @@ def _create_or_update_document_with_owner(doc, owner, uuids_map):
     history_deps_list = []
     for index, (uuid, version, is_history) in enumerate(doc['fields']['dependencies']):
       if not uuid in list(uuids_map.keys()) and not is_history and \
-              not Document2.objects.filter(uuid=uuid, version=version).exists():
-          raise PopupException(_('Cannot import document, dependency with UUID: %s not found.') % uuid)
+      not Document2.objects.filter(uuid=uuid, version=version).exists():
+        raise PopupException(_('Cannot import document, dependency with UUID: %s not found.') % uuid)
       elif is_history:
         history_deps_list.insert(0, index) # Insert in decreasing order to facilitate delete
-        LOG.warn('History dependency with UUID: %s ignored while importing document %s' % (uuid, doc['fields']['name']))
+        LOG.warning('History dependency with UUID: %s ignored while importing document %s' % (uuid, doc['fields']['name']))
 
     # Delete history dependencies not found in the DB
     for index in history_deps_list:

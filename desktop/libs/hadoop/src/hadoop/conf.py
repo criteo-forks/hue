@@ -18,11 +18,15 @@
 import fnmatch
 import logging
 import os
-
-from django.utils.translation import ugettext_lazy as _t
+import sys
 
 from desktop.conf import default_ssl_validate, has_connectors
 from desktop.lib.conf import Config, UnspecifiedConfigSection, ConfigSection, coerce_bool
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext_lazy as _t
+else:
+  from django.utils.translation import ugettext_lazy as _t
 
 
 LOG = logging.getLogger(__name__)
@@ -76,7 +80,7 @@ HDFS_CLUSTERS = UnspecifiedConfigSection(
           help="The equivalent of fs.defaultFS (aka fs.default.name)",
           default="hdfs://localhost:8020"
       ),
-      LOGICAL_NAME = Config(
+      LOGICAL_NAME=Config(
           "logical_name",
           default="",
           type=str,
@@ -117,11 +121,20 @@ HDFS_CLUSTERS = UnspecifiedConfigSection(
           default='/tmp',
           type=str
       ),
-      HADOOP_CONF_DIR = Config(
-        key="hadoop_conf_dir",
-        dynamic_default=get_hadoop_conf_dir_default,
-        help=_t("Directory of the Hadoop configuration) Defaults to the environment variable HADOOP_CONF_DIR when set, or '/etc/hadoop/conf'.")
-      )
+      HADOOP_CONF_DIR=Config(
+          key="hadoop_conf_dir",
+          dynamic_default=get_hadoop_conf_dir_default,
+          help=
+            "Directory of the Hadoop configuration. Defaults to the environment variable HADOOP_CONF_DIR when set, "
+            "or '/etc/hadoop/conf'.",
+          type=str
+      ),
+      IS_ENABLED=Config(
+          'is_enabled',
+          help="Whether Hue should list this HDFS cluster. For historical reason there is no way to disable HDFS.",
+          default=True,  # True here for backward compatibility
+          type=coerce_bool
+      ),
     )
   )
 )
@@ -308,7 +321,7 @@ def test_yarn_configurations(user):
   try:
     from jobbrowser.api import get_api # Required for cluster HA testing
   except Exception as e:
-    LOG.warn('Jobbrowser is disabled, skipping test_yarn_configurations')
+    LOG.warning('Jobbrowser is disabled, skipping test_yarn_configurations')
     return result
 
   try:

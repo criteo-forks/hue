@@ -14,8 +14,12 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
+  import sys
   from desktop.views import commonheader, commonfooter
-  from django.utils.translation import ugettext as _
+  if sys.version_info[0] > 2:
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="comps" file="jobbrowser_components.mako" />
@@ -37,7 +41,7 @@ ${ comps.menubar() }
     <div class="span10">
       <div class="card card-small">
         <h1 class="card-heading simple">
-          ${ _('Job') } <a href="${url('jobbrowser.views.single_job', job=job.jobId)}" title="${_('View this job')}">${ job.jobId_short }</a>
+          ${ _('Job') } <a href="${url('jobbrowser:jobbrowser.views.single_job', job=job.jobId)}" title="${_('View this job')}">${ job.jobId_short }</a>
           ${ _('Attempt: %(attempt_index)s') % {'attempt_index': attempt_index} }
         </h1>
         <div class="card-body">
@@ -113,7 +117,7 @@ ${ comps.menubar() }
     initLogsElement($("#stderr-container"));
 
     function refreshSyslogs() {
-      $.getJSON("${ url("job_attempt_logs_json", job=job.jobId, attempt_index=attempt_index, name='syslog', offset=log_offset) }", function (data) {
+      $.getJSON("${ url("jobbrowser:job_attempt_logs_json", job=job.jobId, attempt_index=attempt_index, name='syslog', offset=log_offset) }", function (data) {
         if (data && data.log) {
           appendAndScroll($("#syslog-container"), data.log);
           window.setTimeout(refreshSyslogs, 5000);
@@ -122,7 +126,7 @@ ${ comps.menubar() }
     }
 
     function refreshStdout() {
-      $.getJSON("${ url("job_attempt_logs_json", job=job.jobId, attempt_index=attempt_index, name='stdout', offset=log_offset) }", function (data) {
+      $.getJSON("${ url("jobbrowser:job_attempt_logs_json", job=job.jobId, attempt_index=attempt_index, name='stdout', offset=log_offset) }", function (data) {
         if (data && data.log) {
           appendAndScroll($("#stdout-container"), data.log);
           window.setTimeout(refreshStdout, 5000);
@@ -131,7 +135,7 @@ ${ comps.menubar() }
     }
 
     function refreshStderr() {
-      $.getJSON("${ url("job_attempt_logs_json", job=job.jobId, attempt_index=attempt_index, name='stderr', offset=log_offset) }", function (data) {
+      $.getJSON("${ url("jobbrowser:job_attempt_logs_json", job=job.jobId, attempt_index=attempt_index, name='stderr', offset=log_offset) }", function (data) {
         if (data && data.log) {
           appendAndScroll($("#stderr-container"), data.log);
           window.setTimeout(refreshStderr, 5000);

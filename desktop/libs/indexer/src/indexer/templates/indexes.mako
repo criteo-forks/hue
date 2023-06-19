@@ -15,10 +15,16 @@
 ## limitations under the License.
 
 <%!
-  from django.utils.translation import ugettext as _
+  import sys
+
   from desktop import conf
 
   from desktop.views import commonheader, commonfooter, commonshare, commonimportexport, _ko
+
+  if sys.version_info[0] > 2:
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="actionbar" file="actionbar.mako" />
@@ -645,16 +651,19 @@ ${ commonheader(_("Index Browser"), "search", user, request, "60px") | n,unicode
       self.activeCompute = ko.observable();
 
       // TODO: Use connectors in indexes
-      contextCatalog.getNamespaces({ connector: { id: 'solr' }}).done(function (context) {
+      contextCatalog.getNamespaces({ connector: { id: 'solr' }}).then(function (context) {
         // TODO: Namespace selection
         self.activeNamespace(context.namespaces[0]);
         self.activeCompute(context.namespaces[0].computes[0]);
-      });
+      }).catch();
 
       self.assistAvailable = ko.observable(true);
       self.apiHelper = window.apiHelper;
       self.isLeftPanelVisible = ko.observable();
-      self.apiHelper.withTotalStorage('assist', 'assist_panel_visible', self.isLeftPanelVisible, true);
+      window.hueUtils.withLocalStorage('assist.assist_panel_visible', self.isLeftPanelVisible, true);
+      self.isLeftPanelVisible.subscribe(function () {
+        huePubSub.publish('assist.forceRender');
+      });
 
       self.section = ko.observable('list-indexes');
       self.tab = ko.observable('');

@@ -14,7 +14,11 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
-from django.utils.translation import ugettext as _
+import sys
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 from desktop.views import commonheader, commonfooter, commonshare, _ko
 %>
 
@@ -73,11 +77,13 @@ ${ commonheader(_("Coordinator Editor"), "Oozie", user, request) | n,unicode }
             <i class="fa fa-fw fa-cog"></i> ${ _('Settings') }
           </a>
         </li>
+        <!-- ko if: sharingEnabled -->
         <li data-bind="visible: coordinator.id() != null && canEdit()">
           <a class="pointer share-link" rel="tooltip" data-placement="bottom" data-bind="click: openShareModal, css: {'isShared': isShared()}">
             <i class="fa fa-fw fa-users"></i> ${ _("Share") }
           </a>
         </li>
+        <!-- /ko -->
       </ul>
     </div>
 

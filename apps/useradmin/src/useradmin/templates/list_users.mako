@@ -14,13 +14,18 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
+import sys
 from django.template.defaultfilters import date, time
-from django.utils.translation import ugettext as _
 
 from desktop.auth.backend import is_admin
 from desktop.conf import ENABLE_ORGANIZATIONS
 from desktop.lib.django_util import USERNAME_RE_RULE
 from desktop.views import commonheader, commonfooter, antixss
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="actionbar" file="actionbar.mako" />
@@ -55,15 +60,15 @@ ${layout.menubar(section='users')}
       <%def name="creation()">
         % if is_admin(user):
           % if is_ldap_setup:
-            <a href="${ url('useradmin.views.add_ldap_users') }" class="btn">
+            <a href="${ url('useradmin:useradmin.views.add_ldap_users') }" class="btn">
               <i class="fa fa-plus-circle"></i> ${_('Add/Sync LDAP user')}
             </a>
             <a href="javascript:void(0)" class="btn confirmationModal"
-                data-confirmation-url="${ url('useradmin_views_sync_ldap_users_groups') }${ is_embeddable and '?is_embeddable=true' or ''}">
+                data-confirmation-url="${ url('useradmin:useradmin_views_sync_ldap_users_groups') }${ is_embeddable and '?is_embeddable=true' or ''}">
                 <i class="fa fa-refresh"></i> ${_('Sync LDAP users/groups')}
             </a>
           % else:
-            <a href="${ url('useradmin.views.edit_user') }" class="btn">
+            <a href="${ url('useradmin:useradmin.views.edit_user') }" class="btn">
               <i class="fa fa-plus-circle"></i> ${_('Add user')}
             </a>
           % endif
@@ -107,7 +112,7 @@ ${layout.menubar(section='users')}
             % if is_admin(user) or user.username == listed_user.username:
               <strong>
                 <a title="${_('Edit %(username)s') % dict(username=listed_user.username)}"
-                    href="${ url('useradmin.views.edit_user', username=listed_user.username) }"
+                    href="${ url('useradmin:useradmin.views.edit_user', username=listed_user.username) }"
                     data-row-selector="true">
                   ${ listed_user.username }
                 </a>
@@ -149,7 +154,7 @@ ${layout.menubar(section='users')}
   <div id="syncLdap" class="modal hide fade"></div>
 
   <div class="modal hide fade delete-user">
-    <form action="${ url('useradmin.views.delete_user') }" method="POST">
+    <form action="${ url('useradmin:useradmin.views.delete_user') }" method="POST">
       ${ csrf_token(request) | n,unicode }
       % if is_embeddable:
         <input type="hidden" value="true" name="is_embeddable" />

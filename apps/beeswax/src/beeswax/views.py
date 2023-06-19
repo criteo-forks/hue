@@ -29,7 +29,6 @@ from django.db.models import Q
 from django.http import HttpResponse, QueryDict
 from django.shortcuts import redirect
 from django.utils.html import escape
-from django.utils.translation import ugettext as _
 from django.urls import reverse
 
 from desktop.appmanager import get_apps_dict
@@ -56,6 +55,11 @@ from beeswax.server import dbms
 from beeswax.server.dbms import expand_exception, get_query_server_config, QueryServerException
 
 from desktop.auth.backend import is_admin
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -229,11 +233,11 @@ def list_designs(request):
   prefix = 'q-'
   querydict_query = _copy_prefix(prefix, request.GET)
   # Manually limit up the user filter.
-  querydict_query[ prefix + 'type' ] = app_name
+  querydict_query[prefix + 'type'] = app_name
   # Get search filter input if any
   search_filter = request.GET.get('text', None)
   if search_filter is not None:
-    querydict_query[ prefix + 'text' ] = search_filter
+    querydict_query[prefix + 'text'] = search_filter
 
   paginator, page, filter_params = _list_designs(request.user, querydict_query, DEFAULT_PAGE_SIZE, prefix)
   designs_json = []
@@ -252,7 +256,7 @@ def list_designs(request):
 
 def list_trashed_designs(request):
   DEFAULT_PAGE_SIZE = 20
-  app_name= get_app_name(request)
+  app_name = get_app_name(request)
 
   user = request.user
 
@@ -260,11 +264,11 @@ def list_trashed_designs(request):
   prefix = 'q-'
   querydict_query = _copy_prefix(prefix, request.GET)
   # Manually limit up the user filter.
-  querydict_query[ prefix + 'type' ] = app_name
+  querydict_query[prefix + 'type'] = app_name
   # Get search filter input if any
   search_filter = request.GET.get('text', None)
   if search_filter is not None:
-    querydict_query[ prefix + 'text' ] = search_filter
+    querydict_query[prefix + 'text'] = search_filter
 
   paginator, page, filter_params = _list_designs(user, querydict_query, DEFAULT_PAGE_SIZE, prefix, is_trashed=True)
   designs_json = []
@@ -289,25 +293,27 @@ def my_queries(request):
   is the ``user`` filter, since this view only shows what belongs to the user.
   """
   DEFAULT_PAGE_SIZE = 30
-  app_name= get_app_name(request)
+  app_name = get_app_name(request)
 
   # Extract the history list.
   prefix = 'h-'
   querydict_history = _copy_prefix(prefix, request.GET)
   # Manually limit up the user filter.
-  querydict_history[ prefix + 'user' ] = request.user
-  querydict_history[ prefix + 'type' ] = app_name
+  querydict_history[prefix + 'user'] = request.user
+  querydict_history[prefix + 'type'] = app_name
 
-  hist_paginator, hist_page, hist_filter = _list_query_history(request.user,
-                                               querydict_history,
-                                               DEFAULT_PAGE_SIZE,
-                                               prefix)
+  hist_paginator, hist_page, hist_filter = _list_query_history(
+      request.user,
+      querydict_history,
+      DEFAULT_PAGE_SIZE,
+      prefix
+  )
   # Extract the saved query list.
   prefix = 'q-'
   querydict_query = _copy_prefix(prefix, request.GET)
   # Manually limit up the user filter.
-  querydict_query[ prefix + 'user' ] = request.user
-  querydict_query[ prefix + 'type' ] = app_name
+  querydict_query[prefix + 'user'] = request.user
+  querydict_query[prefix + 'type'] = app_name
 
   query_paginator, query_page, query_filter = _list_designs(request.user, querydict_query, DEFAULT_PAGE_SIZE, prefix)
   designs_json = []
@@ -385,7 +391,9 @@ def massage_query_history_for_json(app_name, query_history):
     'timeInMs': time.mktime(query_history.submission_date.timetuple()),
     'timeFormatted': query_history.submission_date.strftime("%x %X"),
     'designUrl': reverse(app_name + ':execute_design', kwargs={'design_id': query_history.design.id}),
-    'resultsUrl': not query_history.is_failure() and reverse(app_name + ':watch_query_history', kwargs={'query_history_id': query_history.id}) or ""
+    'resultsUrl': not query_history.is_failure() and reverse(
+        app_name + ':watch_query_history', kwargs={'query_history_id': query_history.id}
+    ) or ""
   }
 
 
@@ -425,7 +433,9 @@ def execute_query(request, design_id=None, query_history_id=None):
         handle, state = _get_query_handle_and_state(query_history)
 
       if 'on_success_url' in request.GET:
-        if request.GET.get('on_success_url') and any([regexp.match(request.GET.get('on_success_url')) for regexp in REDIRECT_WHITELIST.get()]):
+        if request.GET.get('on_success_url') and any(
+            [regexp.match(request.GET.get('on_success_url')) for regexp in REDIRECT_WHITELIST.get()]
+          ):
           action = 'watch-redirect'
         else:
           action = 'watch-results'
@@ -434,7 +444,7 @@ def execute_query(request, design_id=None, query_history_id=None):
     except QueryServerException as e:
       if 'Invalid query handle' in e.message or 'Invalid OperationHandle' in e.message:
         query_history.save_state(QueryHistory.STATE.expired)
-        LOG.warn("Invalid query handle", exc_info=sys.exc_info())
+        LOG.warning("Invalid query handle", exc_info=sys.exc_info())
         action = 'editor-expired-results'
       else:
         raise e
@@ -868,7 +878,7 @@ def _list_designs(user, querydict, page_size, prefix="", is_trashed=False):
       sort_dir, sort_attr = '', sort_key
 
     if sort_attr not in SORT_ATTR_TRANSLATION:
-      LOG.warn('Bad parameter to list_designs: sort=%s' % (sort_key,))
+      LOG.warning('Bad parameter to list_designs: sort=%s' % (sort_key,))
       sort_dir, sort_attr = DEFAULT_SORT
   else:
     sort_dir, sort_attr = DEFAULT_SORT
@@ -884,7 +894,7 @@ def _list_designs(user, querydict, page_size, prefix="", is_trashed=False):
     page = None
 
   # We need to pass the parameters back to the template to generate links
-  keys_to_copy = [ prefix + key for key in ('user', 'type', 'sort', 'text') ]
+  keys_to_copy = [prefix + key for key in ('user', 'type', 'sort', 'text')]
   filter_params = copy_query_dict(querydict, keys_to_copy)
 
   return paginator, page, filter_params
@@ -917,7 +927,7 @@ def parse_query_context(context):
     LOG.error("Invalid query context data: %s" % (context,))
     return None
 
-  if pair[0] == 'design':       # Translate design id to design obj
+  if pair[0] == 'design':  # Translate design id to design obj
     pair[1] = models.SavedQuery.get(int(pair[1]))
   return pair
 
@@ -936,6 +946,8 @@ def parse_out_jobs(log, engine='mr', with_state=False):
     start_pattern = SPARK_APPLICATION_RE
   elif engine.lower() == 'tez':
     start_pattern = TEZ_APPLICATION_RE
+  elif engine.lower() == 'impala':
+    return ret
   else:
     raise ValueError(_('Cannot parse job IDs for execution engine %(engine)s') % {'engine': engine})
 
@@ -1050,13 +1062,17 @@ def _list_query_history(user, querydict, page_size, prefix=""):
   # Search
   search_filter = querydict.get(prefix + 'search')
   if search_filter:
-    db_queryset = db_queryset.filter(Q(design__name__icontains=search_filter) | Q(query__icontains=search_filter) | Q(owner__username__icontains=search_filter))
+    db_queryset = db_queryset.filter(
+        Q(design__name__icontains=search_filter) |
+        Q(query__icontains=search_filter) |
+        Q(owner__username__icontains=search_filter)
+    )
 
   # Design type
   d_type = querydict.get(prefix + 'type')
   if d_type:
     if d_type not in list(SavedQuery.TYPES_MAPPING.keys()):
-      LOG.warn('Bad parameter to list_query_history: type=%s' % (d_type,))
+      LOG.warning('Bad parameter to list_query_history: type=%s' % (d_type,))
     else:
       db_queryset = db_queryset.filter(design__type=SavedQuery.TYPES_MAPPING[d_type])
 
@@ -1073,7 +1089,7 @@ def _list_query_history(user, querydict, page_size, prefix=""):
       sort_dir, sort_attr = '-', sort_key[1:]
 
     if sort_attr not in SORT_ATTR_TRANSLATION:
-      LOG.warn('Bad parameter to list_query_history: sort=%s' % (sort_key,))
+      LOG.warning('Bad parameter to list_query_history: sort=%s' % (sort_key,))
       sort_dir, sort_attr = DEFAULT_SORT
   else:
     sort_dir, sort_attr = DEFAULT_SORT
@@ -1086,7 +1102,7 @@ def _list_query_history(user, querydict, page_size, prefix=""):
   pagenum = int(querydict.get(prefix + 'page', 1))
   if pagenum < 1:
     pagenum = 1
-  db_queryset = db_queryset[ page_size * (pagenum - 1) : page_size * pagenum ]
+  db_queryset = db_queryset[page_size * (pagenum - 1) : page_size * pagenum]
   paginator = Paginator(db_queryset, page_size, allow_empty_first_page=True)
 
   try:
@@ -1101,7 +1117,7 @@ def _list_query_history(user, querydict, page_size, prefix=""):
       _update_query_state(history.get_full_object())
 
   # We need to pass the parameters back to the template to generate links
-  keys_to_copy = [ prefix + key for key in ('user', 'type', 'sort', 'design_id', 'auto_query', 'search') ]
+  keys_to_copy = [prefix + key for key in ('user', 'type', 'sort', 'design_id', 'auto_query', 'search')]
   filter_params = copy_query_dict(querydict, keys_to_copy)
 
   return paginator, page, filter_params

@@ -23,18 +23,23 @@ import logging
 import math
 import functools
 import re
+import sys
 
+from django.db import connection, models
 from django.urls import reverse
-from desktop.conf import REST_CONN_TIMEOUT
-from desktop.lib.view_util import format_duration_in_millis
-from desktop.lib import i18n
 from django.utils.html import escape
-from django.utils.translation import ugettext as _
 
-from desktop.lib.view_util import location_to_url
+from desktop.auth.backend import is_admin
+from desktop.conf import REST_CONN_TIMEOUT
+from desktop.lib import i18n
+from desktop.lib.view_util import format_duration_in_millis, location_to_url
 
 from jobbrowser.conf import DISABLE_KILLING_JOBS
-from desktop.auth.backend import is_admin
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -104,7 +109,7 @@ class LinkJobLogs(object):
   @classmethod
   def _replace_mr_link(self, match):
     try:
-      return '<a href="/hue%s">%s</a>' % (reverse('jobbrowser.views.single_job', kwargs={'job': match.group(0)}), match.group(0))
+      return '<a href="/hue%s">%s</a>' % (reverse('jobbrowser:jobbrowser.views.single_job', kwargs={'job': match.group(0)}), match.group(0))
     except:
       LOG.exception('failed to replace mr links: %s' % (match.groups(),))
       return match.group(0)

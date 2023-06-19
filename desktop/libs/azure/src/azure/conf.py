@@ -16,13 +16,17 @@
 from __future__ import absolute_import
 
 import logging
+import sys
 
-from django.utils.translation import ugettext_lazy as _, ugettext as _t
-
-from desktop.lib.conf import Config, UnspecifiedConfigSection, ConfigSection, coerce_password_from_script
+from desktop.lib.conf import Config, UnspecifiedConfigSection, ConfigSection, coerce_password_from_script, coerce_bool
 from desktop.lib.idbroker import conf as conf_idbroker
 
 from hadoop import core_site
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext_lazy as _t
+else:
+  from django.utils.translation import ugettext_lazy as _t
 
 LOG = logging.getLogger(__name__)
 
@@ -71,7 +75,10 @@ def get_default_abfs_url():
   return ABFS_CLUSTERS['default'].WEBHDFS_URL.get()
 
 def get_default_abfs_fs():
-  return ABFS_CLUSTERS['default'].FS_DEFAULTFS.get()
+  default_fs = core_site.get_default_fs()
+
+  return default_fs if default_fs and default_fs.startswith('abfs://') and \
+                       ABFS_CLUSTERS['default'].ENABLE_DEFAULTFS_FROM_CORESITE.get() else ABFS_CLUSTERS['default'].FS_DEFAULTFS.get()
 
 ADLS_CLUSTERS = UnspecifiedConfigSection(
   "adls_clusters",
@@ -115,7 +122,7 @@ AZURE_ACCOUNTS = UnspecifiedConfigSection(
         type=coerce_password_from_script,
         default=None,
         private=True,
-        help=_("Execute this script to produce the ADLS client secret.")),
+        help=_t("Execute this script to produce the ADLS client secret.")),
       TENANT_ID=Config(
         key="tenant_id",
         type=str,
@@ -126,7 +133,7 @@ AZURE_ACCOUNTS = UnspecifiedConfigSection(
         type=coerce_password_from_script,
         default=None,
         private=True,
-        help=_("Execute this script to produce the ADLS tenant id.")),
+        help=_t("Execute this script to produce the ADLS tenant id.")),
     )
   )
 )
@@ -137,27 +144,47 @@ ABFS_CLUSTERS = UnspecifiedConfigSection(
   each=ConfigSection(
     help="Information about a single ABFS cluster",
     members=dict(
-      FS_DEFAULTFS=Config("fs_defaultfs", help="abfss://<container_name>@<account_name>.dfs.core.windows.net", type=str, default=None),
+      ENABLE_DEFAULTFS_FROM_CORESITE=Config(
+        key="enable_defaultfs_from_coresite",
+        type=coerce_bool,
+        default=True,
+        help="Enable this param to use the defaultFS from core-site.xml"),
+      FS_DEFAULTFS=Config("fs_defaultfs", help="abfs://<container_name>@<account_name>.dfs.core.windows.net", type=str, default=None),
       WEBHDFS_URL=Config("webhdfs_url",
-                         help="https://<container_name>@<account_name>.dfs.core.windows.net",
+                         help="https://<account_name>.dfs.core.windows.net",
                          type=str, default=None),
     )
   )
 )
 
+def is_raz_abfs():
+  from desktop.conf import RAZ  # Must be imported dynamically in order to have proper value
+  return (RAZ.IS_ENABLED.get() and 'default' in list(ABFS_CLUSTERS.keys()))
+
 def is_adls_enabled():
-  return ('default' in list(AZURE_ACCOUNTS.keys()) and AZURE_ACCOUNTS['default'].get_raw() and AZURE_ACCOUNTS['default'].CLIENT_ID.get() or (conf_idbroker.is_idbroker_enabled('azure') and has_azure_metadata())) and 'default' in list(ADLS_CLUSTERS.keys())
+  return ('default' in list(AZURE_ACCOUNTS.keys()) and AZURE_ACCOUNTS['default'].get_raw() and AZURE_ACCOUNTS['default'].CLIENT_ID.get() \
+    or (conf_idbroker.is_idbroker_enabled('azure') and has_azure_metadata())) and 'default' in list(ADLS_CLUSTERS.keys())
 
 def is_abfs_enabled():
-  return ('default' in list(AZURE_ACCOUNTS.keys()) and AZURE_ACCOUNTS['default'].get_raw() and AZURE_ACCOUNTS['default'].CLIENT_ID.get() or (conf_idbroker.is_idbroker_enabled('azure') and has_azure_metadata())) and 'default' in list(ABFS_CLUSTERS.keys())
+  return ('default' in list(AZURE_ACCOUNTS.keys()) and AZURE_ACCOUNTS['default'].get_raw() and AZURE_ACCOUNTS['default'].CLIENT_ID.get() \
+    or (conf_idbroker.is_idbroker_enabled('azure') and has_azure_metadata())) and 'default' in list(ABFS_CLUSTERS.keys()) \
+    or is_raz_abfs()
 
 def has_adls_access(user):
+  from desktop.conf import RAZ  # Must be imported dynamically in order to have proper value
   from desktop.auth.backend import is_admin
-  return user.is_authenticated() and user.is_active and (is_admin(user) or user.has_hue_permission(action="adls_access", app="filebrowser"))
+
+  return user.is_authenticated and user.is_active and (
+    is_admin(user) or user.has_hue_permission(action="adls_access", app="filebrowser") or RAZ.IS_ENABLED.get()
+  )
 
 def has_abfs_access(user):
+  from desktop.conf import RAZ  # Must be imported dynamically in order to have proper value
   from desktop.auth.backend import is_admin
-  return user.is_authenticated() and user.is_active and (is_admin(user) or user.has_hue_permission(action="abfs_access", app="filebrowser"))
+
+  return user.is_authenticated and user.is_active and (
+    is_admin(user) or user.has_hue_permission(action="abfs_access", app="filebrowser") or RAZ.IS_ENABLED.get()
+  )
 
 def azure_metadata():
   global AZURE_METADATA
@@ -166,7 +193,7 @@ def azure_metadata():
     client = http_client.HttpClient(META_DATA_URL, logger=LOG)
     root = resource.Resource(client)
     try:
-      AZURE_METADATA = root.get('/compute', params={'api-version':'2019-06-04', 'format':'json'}, headers={'Metadata': 'true'})
+      AZURE_METADATA = root.get('/compute', params={'api-version': '2019-06-04', 'format': 'json'}, headers={'Metadata': 'true'})
     except Exception as e:
       AZURE_METADATA = False
   return AZURE_METADATA

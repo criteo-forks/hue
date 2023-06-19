@@ -21,7 +21,7 @@
 
 \s                                             { /* skip whitespace */ }
 '--'.*                                         { /* skip comments */ }
-[/][*][^*]*[*]+([^/*][^*]*[*]+)*[/]            { /* skip comments */ }
+[\/][*][^*]*[*]+([^\/*][^*]*[*]+)*[\/]         { /* skip comments */ }
 
 '\u2020'                                       { parser.yy.cursorFound = yylloc; return 'CURSOR'; }
 
@@ -79,7 +79,7 @@
                                                }
 <doubleQuotedValue>\"                          { this.popState(); return 'DOUBLE_QUOTE'; }
 
-[^\s\u3000!():"'^+\-\[\]{}~*?/\u2020]+         { return 'TERM'; }
+[^\s\u3000!():"'^+\-\[\]{}~*?\/\u2020]+        { return 'TERM'; }
 
 <<EOF>>                                        { return 'EOF'; }
 

@@ -17,10 +17,10 @@
 import $ from 'jquery';
 import * as ko from 'knockout';
 
-import hueUtils from 'utils/hueUtils';
+import getFileBrowseButton from 'utils/html/getFileBrowseButton';
 
 ko.bindingHandlers.filechooser = {
-  init: function(element, valueAccessor, allBindingsAccessor) {
+  init: function (element, valueAccessor, allBindingsAccessor) {
     const $element = $(element);
     const options = ko.unwrap(allBindingsAccessor());
     $element.attr('autocomplete', 'off');
@@ -70,7 +70,7 @@ ko.bindingHandlers.filechooser = {
     }
 
     $element.after(
-      hueUtils.getFileBrowseButton(
+      getFileBrowseButton(
         $element,
         true,
         valueAccessor,

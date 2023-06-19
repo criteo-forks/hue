@@ -14,7 +14,11 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
-    from django.utils.translation import ugettext as _
+    import sys
+    if sys.version_info[0] > 2:
+        from django.utils.translation import gettext as _
+    else:
+        from django.utils.translation import ugettext as _
 %>
 
 <%def name="task_counters(counters)">
@@ -194,7 +198,7 @@
 <%def name="get_container_link(status, node_manager_http_address, container_id)">
     ## As soon as the job finishes the container disappears
     % if status.lower() in ('running', 'accepted', 'ready', 'prep', 'waiting', 'suspended', 'prepsuspended', 'preppaused', 'paused', 'submitted', 'suspendedwitherror', 'pausedwitherror', 'finishing', 'started'):
-        <a href="${ url('jobbrowser.views.container', node_manager_http_address=node_manager_http_address, containerid=container_id) }" class="task_tracker_link">${ container_id }</a>
+        <a href="${ url('jobbrowser:jobbrowser.views.container', node_manager_http_address=node_manager_http_address, containerid=container_id) }" class="task_tracker_link">${ container_id }</a>
     % else:
         ${ container_id }
     % endif

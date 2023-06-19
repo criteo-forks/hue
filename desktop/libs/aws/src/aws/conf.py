@@ -18,14 +18,18 @@ from __future__ import absolute_import
 import logging
 import os
 import re
-
+import sys
 
 import requests
-from django.utils.translation import ugettext_lazy as _, ugettext as _t
 
 from desktop.lib.conf import Config, UnspecifiedConfigSection, ConfigSection, coerce_bool, coerce_password_from_script
 from desktop.lib.idbroker import conf as conf_idbroker
-from hadoop.core_site import get_s3a_access_key, get_s3a_secret_key, get_s3a_session_token
+from hadoop.core_site import get_s3a_access_key, get_s3a_secret_key, get_s3a_session_token, get_raz_api_url, get_raz_s3_default_bucket
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext_lazy as _, gettext as _t
+else:
+  from django.utils.translation import ugettext_lazy as _, ugettext as _t
 
 
 LOG = logging.getLogger(__name__)
@@ -49,12 +53,14 @@ def clear_cache():
 
 def get_locations():
   return ('EU',  # Ireland
+    'af-south-1',
     'ap-east-1',
     'ap-northeast-1',
     'ap-northeast-2',
     'ap-northeast-3',
     'ap-southeast-1',
     'ap-southeast-2',
+    'ap-southeast-3',
     'ap-south-1',
     'ca-central-1',
     'cn-north-1',
@@ -64,6 +70,7 @@ def get_locations():
     'eu-west-1',
     'eu-west-2',
     'eu-west-3',
+    'eu-south-1',
     'me-south-1',
     'sa-east-1',
     'us-east-1',
@@ -101,6 +108,14 @@ def get_default_region():
   return get_region(conf=AWS_ACCOUNTS['default']) if 'default' in AWS_ACCOUNTS else get_region()
 
 
+def get_default_host():
+  '''Returns the S3 host when Raz is configured'''
+
+  if get_raz_api_url():
+    endpoint = get_raz_s3_default_bucket()
+    if endpoint:
+      return endpoint.get('host')
+
 def get_region(conf=None):
   global REGION_CACHED
 
@@ -108,10 +123,10 @@ def get_region(conf=None):
     return REGION_CACHED
   region = ''
 
-  if conf:
+  if conf or get_default_host():
     # First check the host/endpoint configuration
-    if conf.HOST.get():
-      endpoint = conf.HOST.get()
+    endpoint = get_default_host() or conf.HOST.get()
+    if endpoint:
       if re.search(SUBDOMAIN_ENDPOINT_RE, endpoint, re.IGNORECASE):
         region = re.search(SUBDOMAIN_ENDPOINT_RE, endpoint, re.IGNORECASE).group('region')
       elif re.search(HYPHEN_ENDPOINT_RE, endpoint, re.IGNORECASE):
@@ -135,7 +150,7 @@ def get_region(conf=None):
 
   # If the parsed out region is not in the list of supported regions, fallback to the default
   if region not in get_locations():
-    LOG.warn("Region, %s, not found in the list of supported regions: %s" % (region, ', '.join(get_locations())))
+    LOG.warning("Region, %s, not found in the list of supported regions: %s" % (region, ', '.join(get_locations())))
     region = ''
 
   REGION_CACHED = region
@@ -150,12 +165,25 @@ def get_key_expiry():
     return 86400
 
 
-HAS_IAM_DETECTION=Config(
+HAS_IAM_DETECTION = Config(
   help=_('Enable the detection of an IAM role providing the credentials automatically. It can take a few seconds.'),
   key='has_iam_detection',
   default=False,
   type=coerce_bool
 )
+
+IS_SELF_SIGNING_ENABLED = Config(
+  key='is_self_signing_enabled',
+  help=_('Skip boto and use self signed URL and requests to make the calls to S3. Used for testing the RAZ integration.'),
+  type=coerce_bool,
+  private=True,
+  default=False,
+)
+
+def get_default_get_environment_credentials():
+  '''Allow to check if environment credentials are present or not'''
+  return not get_raz_api_url()
+
 
 AWS_ACCOUNTS = UnspecifiedConfigSection(
   'aws_accounts',
@@ -245,7 +273,9 @@ AWS_ACCOUNTS = UnspecifiedConfigSection(
         type=coerce_bool
       ),
       KEY_EXPIRY=Config(
-        help=_('The time in seconds before a delegate key is expired. Used when filebrowser/redirect_download is used. Default to 4 Hours.'),
+        help=_(
+          'The time in seconds before a delegate key is expired. Used when filebrowser/redirect'
+          'download is used. Default to 4 Hours.'),
         key='key_expiry',
         default=14400,
         type=int
@@ -257,7 +287,9 @@ AWS_ACCOUNTS = UnspecifiedConfigSection(
 
 def is_enabled():
   return ('default' in list(AWS_ACCOUNTS.keys()) and AWS_ACCOUNTS['default'].get_raw() and AWS_ACCOUNTS['default'].ACCESS_KEY_ID.get()) or \
-      has_iam_metadata()
+      has_iam_metadata() or \
+      conf_idbroker.is_idbroker_enabled('s3a') or \
+      is_raz_s3()
 
 
 def is_ec2_instance():
@@ -315,7 +347,16 @@ def has_iam_metadata():
 
 def has_s3_access(user):
   from desktop.auth.backend import is_admin
-  return user.is_authenticated() and user.is_active and (is_admin(user) or user.has_hue_permission(action="s3_access", app="filebrowser"))
+
+  return user.is_authenticated and user.is_active and (
+    is_admin(user) or user.has_hue_permission(action="s3_access", app="filebrowser") or is_raz_s3())
+
+
+def is_raz_s3():
+  from desktop.conf import RAZ  # Must be imported dynamically in order to have proper value
+
+  return (RAZ.IS_ENABLED.get() and 'default' in list(AWS_ACCOUNTS.keys()) and \
+          AWS_ACCOUNTS['default'].HOST.get() and AWS_ACCOUNTS['default'].get_raw() and not IS_SELF_SIGNING_ENABLED.get())
 
 
 def config_validator(user):

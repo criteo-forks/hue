@@ -16,26 +16,31 @@
 # limitations under the License.
 
 import logging
+import sys
 
 try:
-    import MySQLdb as Database
+  import MySQLdb as Database
 except ImportError as e:
-    from django.core.exceptions import ImproperlyConfigured
-    raise ImproperlyConfigured("Error loading MySQLdb module: %s" % e)
+  from django.core.exceptions import ImproperlyConfigured
+  raise ImproperlyConfigured("Error loading MySQLdb module: %s" % e)
 
 # We want version (1, 2, 1, 'final', 2) or later. We can't just use
 # lexicographic ordering in this check because then (1, 2, 1, 'gamma')
 # inadvertently passes the version test.
 version = Database.version_info
-if (version < (1,2,1) or (version[:3] == (1, 2, 1) and
+if (version < (1, 2, 1) or (version[:3] == (1, 2, 1) and
         (len(version) < 5 or version[3] != 'final' or version[4] < 2))):
-    from django.core.exceptions import ImproperlyConfigured
-    raise ImproperlyConfigured("MySQLdb-1.2.1p2 or newer is required; you have %s" % Database.__version__)
+  from django.core.exceptions import ImproperlyConfigured
+  raise ImproperlyConfigured("MySQLdb-1.2.1p2 or newer is required; you have %s" % Database.__version__)
 
-from django.utils.translation import ugettext as _
 from MySQLdb.converters import FIELD_TYPE
 
 from librdbms.server.rdbms_base_lib import BaseRDBMSDataTable, BaseRDBMSResult, BaseRDMSClient
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -111,7 +116,8 @@ class MySQLClient(BaseRDMSClient):
       'user': self.query_server['username'],
       'passwd': self.query_server['password'] or '',  # MySQL can accept an empty password
       'host': self.query_server['server_host'],
-      'port': self.query_server['server_port']
+      'port': self.query_server['server_port'],
+      'local_infile': False
     }
 
     if self.query_server['options']:
@@ -162,7 +168,8 @@ class MySQLClient(BaseRDMSClient):
     cursor = self.connection.cursor()
     query = 'SHOW TABLES'
     if table_names:
-      clause = ' OR '.join(["`Tables_in_%(database)s` LIKE '%%%(table)s%%'" % {'database': database, 'table': table} for table in table_names])
+      clause = ' OR '.join(["`Tables_in_%(database)s` LIKE '%%%(table)s%%'" % {'database': database, 'table': table}
+      for table in table_names])
       query += ' FROM `%(database)s` WHERE (%(clause)s)' % {'database': database, 'clause': clause}
     cursor.execute(query)
     self.connection.commit()

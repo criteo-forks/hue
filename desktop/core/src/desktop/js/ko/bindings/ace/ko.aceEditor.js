@@ -16,20 +16,22 @@
 
 import $ from 'jquery';
 import * as ko from 'knockout';
+import ace from 'ext/aceHelper';
+import { format } from '@gethue/sql-formatter';
 
-import apiHelper from 'api/apiHelper';
-import AceLocationHandler from 'ko/bindings/ace/aceLocationHandler';
-import huePubSub from 'utils/huePubSub';
+import AceLocationHandler, {
+  REFRESH_STATEMENT_LOCATIONS_EVENT
+} from 'ko/bindings/ace/aceLocationHandler';
 import AceGutterHandler from 'ko/bindings/ace/aceGutterHandler';
 import { registerBinding } from 'ko/bindings/bindingUtils';
-
-// TODO: Depends on Ace
+import huePubSub from 'utils/huePubSub';
+import { getFromLocalStorage, setInLocalStorage } from 'utils/storageUtils';
 
 export const NAME = 'aceEditor';
 export const INSERT_AT_CURSOR_EVENT = 'editor.insert.at.cursor';
 
 registerBinding(NAME, {
-  init: function(element, valueAccessor) {
+  init: function (element, valueAccessor) {
     const $el = $(element);
     const options = ko.unwrap(valueAccessor());
     const snippet = options.snippet;
@@ -37,7 +39,7 @@ registerBinding(NAME, {
 
     const disposeFunctions = [];
 
-    const dispose = function() {
+    const dispose = function () {
       disposeFunctions.forEach(dispose => {
         dispose();
       });
@@ -50,7 +52,7 @@ registerBinding(NAME, {
     const editor = ace.edit(snippet.id());
     const AceRange = ace.require('ace/range').Range;
 
-    const resizeAce = function() {
+    const resizeAce = function () {
       window.setTimeout(() => {
         try {
           editor.resize(true);
@@ -71,7 +73,6 @@ registerBinding(NAME, {
       editor: editor,
       editorId: $el.attr('id'),
       snippet: snippet,
-      executor: snippet.executor,
       i18n: { expandStar: options.expandStar, contextTooltip: options.contextTooltip }
     });
 
@@ -87,9 +88,8 @@ registerBinding(NAME, {
 
     editor.session.setMode(snippet.getAceMode());
     editor.setOptions({
-      fontSize: apiHelper.getFromTotalStorage(
-        'hue.ace',
-        'fontSize',
+      fontSize: getFromLocalStorage(
+        'hue.ace.fontSize',
         navigator.platform && navigator.platform.toLowerCase().indexOf('linux') > -1
           ? '14px'
           : '12px'
@@ -143,7 +143,7 @@ registerBinding(NAME, {
       aceErrorsSub.dispose();
     });
 
-    let darkThemeEnabled = apiHelper.getFromTotalStorage('ace', 'dark.theme.enabled', false);
+    let darkThemeEnabled = getFromLocalStorage('ace.dark.theme.enabled', false);
     editor.setTheme(darkThemeEnabled ? 'ace/theme/hue_dark' : 'ace/theme/hue');
 
     const editorOptions = {
@@ -163,17 +163,17 @@ registerBinding(NAME, {
     };
 
     editor.customMenuOptions = {
-      setEnableDarkTheme: function(enabled) {
+      setEnableDarkTheme: function (enabled) {
         darkThemeEnabled = enabled;
-        apiHelper.setInTotalStorage('ace', 'dark.theme.enabled', darkThemeEnabled);
+        setInLocalStorage('ace.dark.theme.enabled', darkThemeEnabled);
         editor.setTheme(darkThemeEnabled ? 'ace/theme/hue_dark' : 'ace/theme/hue');
       },
-      getEnableDarkTheme: function() {
+      getEnableDarkTheme: function () {
         return darkThemeEnabled;
       },
-      setEnableAutocompleter: function(enabled) {
+      setEnableAutocompleter: function (enabled) {
         editor.setOption('enableBasicAutocompletion', enabled);
-        apiHelper.setInTotalStorage('hue.ace', 'enableBasicAutocompletion', enabled);
+        setInLocalStorage('hue.ace.enableBasicAutocompletion', enabled);
         const $enableLiveAutocompletionChecked = $('#setEnableLiveAutocompletion:checked');
         const $setEnableLiveAutocompletion = $('#setEnableLiveAutocompletion');
         if (enabled && $enableLiveAutocompletionChecked.length === 0) {
@@ -182,27 +182,27 @@ registerBinding(NAME, {
           $setEnableLiveAutocompletion.trigger('click');
         }
       },
-      getEnableAutocompleter: function() {
+      getEnableAutocompleter: function () {
         return editor.getOption('enableBasicAutocompletion');
       },
-      setEnableLiveAutocompletion: function(enabled) {
+      setEnableLiveAutocompletion: function (enabled) {
         editor.setOption('enableLiveAutocompletion', enabled);
-        apiHelper.setInTotalStorage('hue.ace', 'enableLiveAutocompletion', enabled);
+        setInLocalStorage('hue.ace.enableLiveAutocompletion', enabled);
         if (enabled && $('#setEnableAutocompleter:checked').length === 0) {
           $('#setEnableAutocompleter').trigger('click');
         }
       },
-      getEnableLiveAutocompletion: function() {
+      getEnableLiveAutocompletion: function () {
         return editor.getOption('enableLiveAutocompletion');
       },
-      setFontSize: function(size) {
+      setFontSize: function (size) {
         if (size.toLowerCase().indexOf('px') === -1 && size.toLowerCase().indexOf('em') === -1) {
           size += 'px';
         }
         editor.setOption('fontSize', size);
-        apiHelper.setInTotalStorage('hue.ace', 'fontSize', size);
+        setInLocalStorage('hue.ace.fontSize', size);
       },
-      getFontSize: function() {
+      getFontSize: function () {
         let size = editor.getOption('fontSize');
         if (size.toLowerCase().indexOf('px') === -1 && size.toLowerCase().indexOf('em') === -1) {
           size += 'px';
@@ -212,53 +212,49 @@ registerBinding(NAME, {
     };
 
     if (window.ENABLE_SQL_SYNTAX_CHECK && window.Worker) {
-      let errorHighlightingEnabled = apiHelper.getFromTotalStorage(
-        'hue.ace',
-        'errorHighlightingEnabled',
-        true
-      );
+      let errorHighlightingEnabled = getFromLocalStorage('hue.ace.errorHighlightingEnabled', true);
 
       if (errorHighlightingEnabled) {
         aceLocationHandler.attachSqlSyntaxWorker();
       }
 
-      editor.customMenuOptions.setErrorHighlighting = function(enabled) {
+      editor.customMenuOptions.setErrorHighlighting = function (enabled) {
         errorHighlightingEnabled = enabled;
-        apiHelper.setInTotalStorage('hue.ace', 'errorHighlightingEnabled', enabled);
+        setInLocalStorage('hue.ace.errorHighlightingEnabled', enabled);
         if (enabled) {
           aceLocationHandler.attachSqlSyntaxWorker();
         } else {
           aceLocationHandler.detachSqlSyntaxWorker();
         }
       };
-      editor.customMenuOptions.getErrorHighlighting = function() {
+      editor.customMenuOptions.getErrorHighlighting = function () {
         return errorHighlightingEnabled;
       };
-      editor.customMenuOptions.setClearIgnoredSyntaxChecks = function() {
-        apiHelper.setInTotalStorage('hue.syntax.checker', 'suppressedRules', {});
+      editor.customMenuOptions.setClearIgnoredSyntaxChecks = function () {
+        setInLocalStorage('hue.syntax.checker.suppressedRules', {});
         $('#setClearIgnoredSyntaxChecks')
           .hide()
           .before('<div style="margin-top:5px;float:right;">done</div>');
       };
-      editor.customMenuOptions.getClearIgnoredSyntaxChecks = function() {
+      editor.customMenuOptions.getClearIgnoredSyntaxChecks = function () {
         return false;
       };
     }
 
     $.extend(editorOptions, aceOptions);
 
-    editorOptions['enableBasicAutocompletion'] = apiHelper.getFromTotalStorage(
-      'hue.ace',
-      'enableBasicAutocompletion',
+    editorOptions['enableBasicAutocompletion'] = getFromLocalStorage(
+      'hue.ace.enableBasicAutocompletion',
       true
     );
     if (editorOptions['enableBasicAutocompletion']) {
-      editorOptions['enableLiveAutocompletion'] = apiHelper.getFromTotalStorage(
-        'hue.ace',
-        'enableLiveAutocompletion',
+      editorOptions['enableLiveAutocompletion'] = getFromLocalStorage(
+        'hue.ace.enableLiveAutocompletion',
         true
       );
     }
+    editorOptions['tabSize'] = 2;
+    editorOptions['useSoftTabs'] = true;
 
     editor.setOptions(editorOptions);
 
@@ -269,7 +265,7 @@ registerBinding(NAME, {
     }
     editor.completer.exactMatch = !snippet.isSqlDialect();
 
-    const initAutocompleters = function() {
+    const initAutocompleters = function () {
       if (editor.completers) {
         editor.completers.length = 0;
         if (snippet.isSqlDialect()) {
@@ -288,9 +284,10 @@ registerBinding(NAME, {
 
     initAutocompleters();
 
-    const UNICODES_TO_REMOVE = /[\u1680\u180E\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u200B\u202F\u205F\u3000\uFEFF]/gi; //taken from https://www.cs.tut.fi/~jkorpela/chars/spaces.html
+    const UNICODES_TO_REMOVE =
+      /[\u1680\u180E\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u200B\u202F\u205F\u3000\uFEFF]/gi; //taken from https://www.cs.tut.fi/~jkorpela/chars/spaces.html
 
-    const removeUnicodes = function(value) {
+    const removeUnicodes = function (value) {
       return value.replace(UNICODES_TO_REMOVE, ' ');
     };
 
@@ -421,10 +418,7 @@ registerBinding(NAME, {
         data.location.last_line - 1,
         data.location.last_column - 1
       );
-      editor
-        .getSession()
-        .getDocument()
-        .replace(range, data.text);
+      editor.getSession().getDocument().replace(range, data.text);
     });
 
     disposeFunctions.push(() => {
@@ -454,11 +448,7 @@ registerBinding(NAME, {
       // automagically change snippet type
       // TODO: Remove completely, check if used in code, '% dialect'
       const firstLine = editor.session.getLine(0);
-      if (
-        !window.ENABLE_NOTEBOOK_2 &&
-        firstLine.indexOf('%') === 0 &&
-        firstLine.charAt(firstLine.length - 1) === ' '
-      ) {
+      if (firstLine.indexOf('%') === 0 && firstLine.charAt(firstLine.length - 1) === ' ') {
         const availableSnippets = snippet.availableSnippets;
         let removeFirstLine = false;
         for (let i = 0; i < availableSnippets.length; i++) {
@@ -481,7 +471,7 @@ registerBinding(NAME, {
     editor.commands.addCommand({
       name: 'execute',
       bindKey: { win: 'Ctrl-Enter', mac: 'Command-Enter|Ctrl-Enter' },
-      exec: function() {
+      exec: function () {
         snippet.statement_raw(removeUnicodes(editor.getValue()));
         snippet.execute();
       }
@@ -490,9 +480,9 @@ registerBinding(NAME, {
     editor.commands.addCommand({
       name: 'switchTheme',
       bindKey: { win: 'Ctrl-Alt-t', mac: 'Command-Alt-t' },
-      exec: function() {
+      exec: function () {
         darkThemeEnabled = !darkThemeEnabled;
-        apiHelper.setInTotalStorage('ace', 'dark.theme.enabled', darkThemeEnabled);
+        setInLocalStorage('ace.dark.theme.enabled', darkThemeEnabled);
         editor.setTheme(darkThemeEnabled ? 'ace/theme/hue_dark' : 'ace/theme/hue');
       }
     });
@@ -500,7 +490,7 @@ registerBinding(NAME, {
     editor.commands.addCommand({
       name: 'new',
       bindKey: { win: 'Ctrl-e', mac: 'Command-e' },
-      exec: function() {
+      exec: function () {
         huePubSub.publish('editor.create.new');
       }
     });
@@ -508,7 +498,7 @@ registerBinding(NAME, {
     editor.commands.addCommand({
       name: 'save',
       bindKey: { win: 'Ctrl-s', mac: 'Command-s|Ctrl-s' },
-      exec: function() {
+      exec: function () {
         huePubSub.publish('editor.save');
       }
     });
@@ -516,7 +506,7 @@ registerBinding(NAME, {
     editor.commands.addCommand({
       name: 'esc',
       bindKey: { win: 'Ctrl-Shift-p', mac: 'Ctrl-Shift-p|Command-Shift-p' },
-      exec: function() {
+      exec: function () {
         huePubSub.publish('editor.presentation.toggle');
       }
     });
@@ -529,38 +519,17 @@ registerBinding(NAME, {
         win: 'Ctrl-i|Ctrl-Shift-f|Ctrl-Alt-l',
         mac: 'Command-i|Ctrl-i|Ctrl-Shift-f|Command-Shift-f|Ctrl-Shift-l|Cmd-Shift-l'
       },
-      exec: function() {
-        if (
-          [
-            'ace/mode/hive',
-            'ace/mode/impala',
-            'ace/mode/sql',
-            'ace/mode/mysql',
-            'ace/mode/pgsql',
-            'ace/mode/sqlite',
-            'ace/mode/oracle'
-          ].indexOf(snippet.getAceMode()) > -1
-        ) {
-          $.post(
-            '/notebook/api/format',
-            {
-              statements:
-                editor.getSelectedText() !== '' ? editor.getSelectedText() : editor.getValue()
-            },
-            data => {
-              if (data.status === 0) {
-                if (editor.getSelectedText() !== '') {
-                  editor.session.replace(
-                    editor.session.selection.getRange(),
-                    data.formatted_statements
-                  );
-                } else {
-                  editor.setValue(data.formatted_statements);
-                  snippet.statement_raw(removeUnicodes(editor.getValue()));
-                }
-              }
-            }
-          );
+      exec: function () {
+        const formatted_statements = format(
+          editor.getSelectedText() !== '' ? editor.getSelectedText() : editor.getValue(),
+          { uppercase: true, linesBetweenQueries: 2, indentQuerySeparator: true }
+        );
+
+        if (editor.getSelectedText() !== '') {
+          editor.session.replace(editor.session.selection.getRange(), formatted_statements);
+        } else {
+          editor.setValue(formatted_statements);
+          snippet.statement_raw(removeUnicodes(editor.getValue()));
         }
       }
     });
@@ -571,11 +540,11 @@ registerBinding(NAME, {
       exec: editor.commands.commands['gotoline'].exec
     });
 
-    const isNewStatement = function() {
+    const isNewStatement = function () {
       return /^\s*$/.test(editor.getValue()) || /^.*;\s*$/.test(editor.getTextBeforeCursor());
     };
 
-    const insertSqlAtCursor = function(text, cursorEndAdjust, menu) {
+    const insertSqlAtCursor = function (text, cursorEndAdjust, menu) {
       const before = editor.getTextBeforeCursor();
       if (/\S+$/.test(before)) {
         text = ' ' + text;
@@ -683,7 +652,7 @@ registerBinding(NAME, {
 
     const dblClickS3ItemSub = huePubSub.subscribe('assist.dblClickS3Item', assistS3Entry => {
       if ($el.data('last-active-editor')) {
-        editor.session.insert(editor.getCursorPosition(), "'S3A://" + assistS3Entry.path + "'");
+        editor.session.insert(editor.getCursorPosition(), "'s3a://" + assistS3Entry.path + "'");
       }
     });
 
@@ -722,12 +691,12 @@ registerBinding(NAME, {
               editor.getCursorPosition().column - (questionMarkMatch[1].length - 1)
             );
             editor.removeTextBeforeCursor(1);
-            huePubSub.publish('editor.refresh.statement.locations', snippet);
+            huePubSub.publish(REFRESH_STATEMENT_LOCATIONS_EVENT, snippet.id());
             window.setTimeout(() => {
               editor.execCommand('startAutocomplete');
             }, 1);
           } else if (/\.$/.test(textBeforeCursor)) {
-            huePubSub.publish('editor.refresh.statement.locations', snippet);
+            huePubSub.publish(REFRESH_STATEMENT_LOCATIONS_EVENT, snippet.id());
             window.setTimeout(() => {
               editor.execCommand('startAutocomplete');
             }, 1);
@@ -761,7 +730,7 @@ registerBinding(NAME, {
                 $aceFileChooseContent.html($aceFileChooseContent.data('spinner'));
               }
               $aceFileChooseContent.jHueFileChooser({
-                onFileChoose: function(filePath) {
+                onFileChoose: function (filePath) {
                   editor.session.insert(editor.getCursorPosition(), filePath + "'");
                   editor.hideFileButton();
                   if (autocompleteTemporarilyDisabled) {
@@ -809,7 +778,7 @@ registerBinding(NAME, {
     snippet.ace(editor);
   },
 
-  update: function(element, valueAccessor) {
+  update: function (element, valueAccessor) {
     const options = ko.unwrap(valueAccessor());
     const snippet = options.snippet;
     const AceRange = ace.require('ace/range').Range;

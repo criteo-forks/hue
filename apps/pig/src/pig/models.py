@@ -19,11 +19,11 @@ from builtins import str
 from builtins import object
 import json
 import posixpath
+import sys
 
 from django.db import models
 from django.contrib.contenttypes.fields import GenericRelation
 from django.urls import reverse
-from django.utils.translation import ugettext as _, ugettext_lazy as _t
 
 from desktop.auth.backend import is_admin
 from desktop.lib.exceptions_renderable import PopupException
@@ -31,9 +31,19 @@ from desktop.models import Document as Doc, SAMPLE_USER_ID
 from hadoop.fs.hadoopfs import Hdfs
 from useradmin.models import User
 
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _, gettext_lazy as _t
+else:
+  from django.utils.translation import ugettext as _, ugettext_lazy as _t
 
 class Document(models.Model):
-  owner = models.ForeignKey(User, db_index=True, verbose_name=_t('Owner'), help_text=_t('User who can modify the job.'))
+  owner = models.ForeignKey(
+    User,
+    on_delete=models.CASCADE,
+    db_index=True,
+    verbose_name=_t('Owner'),
+    help_text=_t('User who can modify the job.')
+  )
   is_design = models.BooleanField(default=True, db_index=True, verbose_name=_t('Is a user document, not a document submission.'),
                                      help_text=_t('If the document is not a submitted job but a real query, script, workflow.'))
 

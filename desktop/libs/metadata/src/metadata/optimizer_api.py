@@ -20,9 +20,9 @@ import base64
 import json
 import logging
 import struct
+import sys
 
 from django.http import Http404
-from django.utils.translation import ugettext as _
 from django.views.decorators.http import require_POST
 
 from desktop.auth.backend import is_admin
@@ -32,10 +32,16 @@ from desktop.models import Document2
 from libsentry.privilege_checker import MissingSentryPrivilegeException
 from notebook.api import _get_statement
 from notebook.models import Notebook
+from notebook.sql_utils import get_current_statement
 
 from metadata.optimizer.base import get_api
 from metadata.optimizer.optimizer_client import NavOptException, _get_table_name, _clean_query
 from metadata.conf import OPTIMIZER
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 LOG = logging.getLogger(__name__)
 
@@ -46,7 +52,7 @@ try:
 
   from metastore.views import _get_db
 except ImportError as e:
-  LOG.warn("Hive lib not enabled")
+  LOG.warning("Hive lib not enabled")
 
 
 def error_handler(view_fn):
@@ -105,11 +111,12 @@ def top_tables(request):
 
   interface = request.POST.get('interface', OPTIMIZER.INTERFACE.get())
   database = request.POST.get('database', 'default')
+  connector = json.loads(request.POST.get('connector', '{}'))
   limit = request.POST.get('len', 1000)
 
   api = get_api(request.user, interface)
 
-  data = api.top_tables(database_name=database, page_size=limit)
+  data = api.top_tables(database_name=database, page_size=limit, connector=connector)
 
   if OPTIMIZER.APPLY_SENTRY_PERMISSIONS.get():
     checker = get_checker(user=self.user)
@@ -127,7 +134,8 @@ def top_tables(request):
       'popularity': table['workloadPercent'],
       'column_count': table['columnCount'],
       'total': table['total'],
-    } for table in data['results']
+    }
+    for table in data.get('results', [])
   ]
 
   response['top_tables'] = tables
@@ -142,12 +150,13 @@ def table_details(request):
   response = {'status': -1}
 
   interface = request.POST.get('interface', OPTIMIZER.INTERFACE.get())
+  connector = json.loads(request.POST.get('connector', '{}'))
   database_name = request.POST.get('databaseName')
   table_name = request.POST.get('tableName')
 
   api = get_api(request.user, interface)
 
-  data = api.table_details(database_name=database_name, table_name=table_name)
+  data = api.table_details(database_name=database_name, table_name=table_name, connector=connector)
 
   if data:
     response['status'] = 0
@@ -164,13 +173,14 @@ def query_compatibility(request):
   response = {'status': -1}
 
   interface = request.POST.get('interface', OPTIMIZER.INTERFACE.get())
+  connector = json.loads(request.POST.get('connector', '{}'))
   source_platform = request.POST.get('sourcePlatform')
   target_platform = request.POST.get('targetPlatform')
   query = request.POST.get('query')
 
   api = get_api(request.user, interface)
 
-  data = api.query_compatibility(source_platform=source_platform, target_platform=target_platform, query=query)
+  data = api.query_compatibility(source_platform=source_platform, target_platform=target_platform, query=query, connector=connector)
 
   if data:
     response['status'] = 0
@@ -187,13 +197,23 @@ def query_risk(request):
   response = {'status': -1}
 
   interface = request.POST.get('interface', OPTIMIZER.INTERFACE.get())
-  query = json.loads(request.POST.get('query'))
-  source_platform = request.POST.get('sourcePlatform')
-  db_name = request.POST.get('dbName')
+  connector = json.loads(request.POST.get('connector', '{}'))
+  if request.POST.get('query'):
+    # Via API
+    query = json.loads(request.POST.get('query'))
+    source_platform = request.POST.get('sourcePlatform')
+    db_name = request.POST.get('dbName')
+  else:
+    # Via Editor
+    snippet = json.loads(request.POST.get('snippet'))
+    should_close, resp = get_current_statement(snippet)
+    query = resp['statement']
+    source_platform = snippet['connector']['dialect']
+    db_name = snippet['database']
 
   api = get_api(request.user, interface)
 
-  data = api.query_risk(query=query, source_platform=source_platform, db_name=db_name)
+  data = api.query_risk(query=query, source_platform=source_platform, db_name=db_name, connector=connector)
 
   if data:
     response['status'] = 0
@@ -206,16 +226,40 @@ def query_risk(request):
 
 @require_POST
 @error_handler
+def predict(request):
+  response = {'status': -1}
+
+  interface = request.POST.get('interface', OPTIMIZER.INTERFACE.get())
+  connector = json.loads(request.POST.get('connector', '{}'))
+  before_cursor = request.POST.get('beforeCursor', '')
+  after_cursor = request.POST.get('afterCursor', '')
+
+  api = get_api(request.user, interface)
+
+  data = api.predict(before_cursor=before_cursor, after_cursor=after_cursor, connector=connector)
+
+  if data:
+    response['status'] = 0
+    response['prediction'] = data['statement']
+  else:
+    response['message'] = 'Optimizer: %s' % data
+
+  return JsonResponse(response)
+
+
+@require_POST
+@error_handler
 def similar_queries(request):
   response = {'status': -1}
 
   interface = request.POST.get('interface', OPTIMIZER.INTERFACE.get())
+  connector = json.loads(request.POST.get('connector', '{}'))
   source_platform = request.POST.get('sourcePlatform')
   query = json.loads(request.POST.get('query'))
 
   api = get_api(request.user, interface)
 
-  data = api.similar_queries(source_platform=source_platform, query=query)
+  data = api.similar_queries(source_platform=source_platform, query=query, connector=connector)
 
   if data:
     response['status'] = 0
@@ -232,12 +276,13 @@ def top_filters(request):
   response = {'status': -1}
 
   interface = request.POST.get('interface', OPTIMIZER.INTERFACE.get())
+  connector = json.loads(request.POST.get('connector', '{}'))
   db_tables = json.loads(request.POST.get('dbTables', '[]'))
   column_name = request.POST.get('columnName') # Unused
 
   api = get_api(request.user, interface)
 
-  data = api.top_filters(db_tables=db_tables)
+  data = api.top_filters(db_tables=db_tables, connector=connector)
 
   if data:
     response['status'] = 0
@@ -262,11 +307,12 @@ def top_joins(request):
   response = {'status': -1}
 
   interface = request.POST.get('interface', OPTIMIZER.INTERFACE.get())
+  connector = json.loads(request.POST.get('connector', '{}'))
   db_tables = json.loads(request.POST.get('dbTables', '[]'))
 
   api = get_api(request.user, interface)
 
-  data = api.top_joins(db_tables=db_tables)
+  data = api.top_joins(db_tables=db_tables, connector=connector)
 
   if data:
     response['status'] = 0
@@ -283,11 +329,12 @@ def top_aggs(request):
   response = {'status': -1}
 
   interface = request.POST.get('interface', OPTIMIZER.INTERFACE.get())
+  connector = json.loads(request.POST.get('connector', '{}'))
   db_tables = json.loads(request.POST.get('dbTables', '[]'))
 
   api = get_api(request.user, interface)
 
-  data = api.top_aggs(db_tables=db_tables)
+  data = api.top_aggs(db_tables=db_tables, connector=connector)
 
   if data:
     response['status'] = 0
@@ -304,10 +351,11 @@ def top_databases(request):
   response = {'status': -1}
 
   interface = request.POST.get('interface', OPTIMIZER.INTERFACE.get())
+  connector = json.loads(request.POST.get('connector', '{}'))
 
   api = get_api(request.user, interface)
 
-  data = api.top_databases()
+  data = api.top_databases(connector=connector)
 
   if data:
     response['status'] = 0
@@ -324,17 +372,16 @@ def top_columns(request):
   response = {'status': -1}
 
   interface = request.POST.get('interface', OPTIMIZER.INTERFACE.get())
+  connector = json.loads(request.POST.get('connector', '{}'))
   db_tables = json.loads(request.POST.get('dbTables', '[]'))
 
   api = get_api(request.user, interface)
 
-  data = api.top_columns(db_tables=db_tables)
+  data = api.top_columns(db_tables=db_tables, connector=connector)
 
-  if data:
-    response['status'] = 0
-    response['values'] = data
-  else:
-    response['message'] = 'Optimizer: %s' % data
+  response['status'] = 0
+  response['values'] = data or []
+  response['message'] = 'Optimizer: %s' % data
 
   return JsonResponse(response)
 
@@ -349,7 +396,8 @@ def _convert_queries(queries_data):
         guid = snippet['result']['handle']['guid']
         if isinstance(guid, str):
           guid = guid.encode('utf-8')
-        original_query_id = '%s:%s' % struct.unpack(b"QQ", base64.decodestring(guid)) # unpack_guid uses '%016x:%016x' while optmizer api uses '%s:%s'.
+        # unpack_guid uses '%016x:%016x' while optmizer api uses '%s:%s'.
+        original_query_id = '%s:%s' % struct.unpack(b"QQ", base64.decodestring(guid))
         execution_time = snippet['result']['executionTime'] * 100 if snippet['status'] in ('available', 'expired') else -1
         statement = _clean_query(_get_statement(query_data))
         queries.append((original_query_id, execution_time, statement, snippet.get('database', 'default').strip()))
@@ -377,8 +425,13 @@ def upload_history(request):
 
     elif OPTIMIZER.QUERY_HISTORY_UPLOAD_LIMIT.get() > 0:
       histories = [
-        (source_platform, Document2.objects.filter(type='query-%s' % source_platform, is_history=True, is_managed=False, is_trashed=False).order_by('-last_modified')[:OPTIMIZER.QUERY_HISTORY_UPLOAD_LIMIT.get()])
-            for source_platform in ['hive', 'impala']
+        (
+          source_platform,
+          Document2.objects.filter(
+            type='query-%s' % source_platform, is_history=True, is_managed=False, is_trashed=False
+          ).order_by('-last_modified')[:OPTIMIZER.QUERY_HISTORY_UPLOAD_LIMIT.get()]
+        )
+        for source_platform in ['hive', 'impala']
       ]
 
     for source_platform, history in histories:
@@ -466,12 +519,12 @@ def upload_table_stats(request):
 
         table_stats.append({
           'table_name': '%(database)s.%(table)s' % path, # DB Prefix
-          'num_rows':  stats.get('numRows', -1),
-          'last_modified_time':  stats.get('transient_lastDdlTime', -1),
-          'total_size':  stats.get('totalSize', -1),
-          'raw_data_size':  stats.get('rawDataSize', -1),
-          'num_files':  stats.get('numFiles', -1),
-          'num_partitions':  stats.get('numPartitions', -1),
+          'num_rows': stats.get('numRows', -1),
+          'last_modified_time': stats.get('transient_lastDdlTime', -1),
+          'total_size': stats.get('totalSize', -1),
+          'raw_data_size': stats.get('rawDataSize', -1),
+          'num_files': stats.get('numFiles', -1),
+          'num_partitions': stats.get('numPartitions', -1),
           # bytes_cached
           # cache_replication
           # format
@@ -479,14 +532,23 @@ def upload_table_stats(request):
 
       if with_columns_stats:
         if source_platform == 'impala':
-          colum_stats = json.loads(get_table_stats(mock_request, database=path['database'], table=path['table'], column=-1).content)['stats']
+          colum_stats = json.loads(
+            get_table_stats(mock_request, database=path['database'], table=path['table'], column=-1).content
+          )['stats']
         else:
           colum_stats = [
               json.loads(get_table_stats(mock_request, database=path['database'], table=path['table'], column=col).content)['stats']
               for col in full_table_stats['columns'][:25]
           ]
 
-        raw_column_stats = [dict([(key, val if val is not None else '') for col_stat in col for key, val in col_stat.items()]) for col in colum_stats]
+        raw_column_stats = [
+          dict([
+            (key, val if val is not None else '')
+              for col_stat in col for key, val in col_stat.items()
+            ]
+          )
+          for col in colum_stats
+        ]
 
         for col_stats in raw_column_stats:
           column_stats.append({
@@ -511,16 +573,19 @@ def upload_table_stats(request):
 
   if table_stats:
     response['upload_table_stats'] = api.upload(data=table_stats, data_type='table_stats', source_platform=source_platform)
-    response['upload_table_stats_status'] = 0 if response['upload_table_stats']['status']['state'] in ('WAITING', 'FINISHED', 'IN_PROGRESS') else -1
+    response['upload_table_stats_status'] = 0 if response['upload_table_stats']['status']['state'] in (
+      'WAITING', 'FINISHED', 'IN_PROGRESS') else -1
     response['status'] = response['upload_table_stats_status']
   if column_stats:
     response['upload_cols_stats'] = api.upload(data=column_stats, data_type='cols_stats', source_platform=source_platform)
-    response['upload_cols_stats_status'] = response['status'] if response['upload_cols_stats']['status']['state'] in ('WAITING', 'FINISHED', 'IN_PROGRESS') else -1
+    response['upload_cols_stats_status'] = response['status'] if response['upload_cols_stats']['status']['state'] in (
+      'WAITING', 'FINISHED', 'IN_PROGRESS') else -1
     if response['upload_cols_stats_status'] != 0:
       response['status'] = response['upload_cols_stats_status']
   if table_ddls:
     response['upload_table_ddl'] = api.upload(data=table_ddls, data_type='queries', source_platform=source_platform)
-    response['upload_table_ddl_status'] = response['status'] if response['upload_table_ddl']['status']['state'] in ('WAITING', 'FINISHED', 'IN_PROGRESS') else -1
+    response['upload_table_ddl_status'] = response['status'] if response['upload_table_ddl']['status']['state'] in (
+      'WAITING', 'FINISHED', 'IN_PROGRESS') else -1
     if response['upload_table_ddl_status'] != 0:
       response['status'] = response['upload_table_ddl_status']
 

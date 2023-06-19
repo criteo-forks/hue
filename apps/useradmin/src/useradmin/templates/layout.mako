@@ -15,7 +15,12 @@
 ## limitations under the License.
 
 <%!
-from django.utils.translation import ugettext as _
+import sys
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 from desktop.auth.backend import is_admin
 from desktop.conf import USE_DEFAULT_CONFIGURATION, ENABLE_ORGANIZATIONS
@@ -64,30 +69,30 @@ def is_selected(section, matcher):
               </li>
               % if is_admin(user):
                 <li class="${is_selected(section, 'users')}">
-                  <a href="${ url('useradmin.views.list_users') }">
+                  <a href="${ url('useradmin:useradmin.views.list_users') }">
                     ${ _('Users') }
                   </a>
                 </li>
                 <li class="${is_selected(section, 'groups')}">
-                  <a href="${ url('useradmin.views.list_groups') }">
+                  <a href="${ url('useradmin:useradmin.views.list_groups') }">
                     ${ _('Groups') }
                   </a>
                 </li>
                 <li class="${is_selected(section, 'permissions')}">
-                  <a href="${ url('useradmin.views.list_permissions') }">
+                  <a href="${ url('useradmin:useradmin.views.list_permissions') }">
                     ${ _('Permissions') }
                   </a>
                 </li>
                 % if ENABLE_ORGANIZATIONS.get():
                 <li class="${is_selected(section, 'organizations')}">
-                  <a href="${ url('useradmin.views.list_organizations') }">
+                  <a href="${ url('useradmin:useradmin.views.list_organizations') }">
                     ${ _('Organizations') }
                   </a>
                 </li>
                 % endif
                 % if USE_DEFAULT_CONFIGURATION.get():
                 <li class="${is_selected(section, 'configurations')}">
-                  <a href="${ url('useradmin.views.list_configurations') }">
+                  <a href="${ url('useradmin:useradmin.views.list_configurations') }">
                     ${ _('Configurations') }
                   </a>
                 </li>
@@ -113,7 +118,7 @@ def is_selected(section, matcher):
           $el.closest('.control-group').addClass('error');
           var html = '<span class="help-inline"><ul class="errorlist">';
           e.message.forEach(function (message) {
-            html += '<li>' + message + '</li>';
+            html += '<li>' + hueUtils.escapeOutput(message) + '</li>';
           });
           html += '</ul></span>';
           $el.after(html);

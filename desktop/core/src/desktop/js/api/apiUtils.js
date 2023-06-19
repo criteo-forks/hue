@@ -15,7 +15,8 @@
 // limitations under the License.
 
 import $ from 'jquery';
-import hueUtils from 'utils/hueUtils';
+
+import logError from 'utils/logError';
 
 /**
  * @param {Object} [response]
@@ -73,7 +74,7 @@ export const assistErrorCallback = options => {
     }
 
     if (!options || !options.silenceErrors) {
-      hueUtils.logError(errorResponse);
+      logError(errorResponse);
       if (errorMessage && errorMessage.indexOf('AuthorizationException') === -1) {
         $(document).trigger('error', errorMessage);
       }
@@ -116,7 +117,7 @@ export const simpleGet = (url, data, options) => {
  * @param {boolean} [options.silenceErrors]
  * @param {string} [options.dataType] - Default: Intelligent Guess (xml, json, script, text, html)
  *
- * @return {Promise}
+ * @return {JQueryPromise}
  */
 export const simplePost = (url, data, options) => {
   const deferred = $.Deferred();
@@ -144,16 +145,32 @@ export const simplePost = (url, data, options) => {
 
   const promise = deferred.promise();
 
-  promise.getReadyState = function() {
+  promise.getReadyState = function () {
     return request.readyState;
   };
 
-  promise.abort = function() {
+  promise.abort = () => {
     request.abort();
   };
 
+  promise.cancel = promise.abort;
+
   return promise;
 };
+
+/**
+ * @param {string} url
+ * @param {Object} data
+ * @param {Object} [options]
+ * @param {boolean} [options.silenceErrors]
+ * @param {string} [options.dataType] - Default: Intelligent Guess (xml, json, script, text, html)
+ *
+ * @return {Promise}
+ */
+export const simplePostAsync = async (url, data, options) =>
+  new Promise((resolve, reject) => {
+    simplePost(url, data, options).done(resolve).fail(reject);
+  });
 
 export const cancelActiveRequest = request => {
   if (typeof request !== 'undefined' && request !== null) {

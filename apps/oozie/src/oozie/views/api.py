@@ -24,7 +24,6 @@ import re
 import sys
 
 from django.http import Http404
-from django.utils.translation import ugettext as _
 
 from desktop.lib.django_util import JsonResponse
 from desktop.lib.exceptions import StructuredException
@@ -38,6 +37,10 @@ from oozie.models import Workflow, Node, Start, End, Kill,\
 from oozie.decorators import check_job_access_permission, check_job_edition_permission
 from oozie.utils import model_to_dict, format_dict_field_values, format_field_value
 
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 LOG = logging.getLogger(__name__)
 
@@ -46,7 +49,7 @@ try:
   from jobbrowser.views import job_single_logs
   from jobbrowser.models import LinkJobLogs
 except:
-  LOG.warn('Oozie is not enabled')
+  LOG.warning('Oozie is not enabled')
 
 
 def error_handler(view_fn):
@@ -456,7 +459,7 @@ def get_log(request, oozie_workflow, make_links=True, log_start_pattern=None, lo
             re_log_end = re.compile(log_end_pattern)
             is_really_done = re_log_end.search(action_logs) is not None or oozie_workflow.status == 'KILLED'
             if is_really_done and not action_logs:
-              LOG.warn('Unable to scrape full logs, try increasing the jobbrowser log_offset configuration value.')
+              LOG.warning('Unable to scrape full logs, try increasing the jobbrowser log_offset configuration value.')
 
           if make_links:
             action_logs = LinkJobLogs._make_links(action_logs)

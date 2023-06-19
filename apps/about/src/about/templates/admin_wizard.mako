@@ -15,8 +15,9 @@
 ## limitations under the License.
 
 <%!
+import sys
+
 from django.urls import reverse
-from django.utils.translation import ugettext as _
 
 from metadata.conf import OPTIMIZER, has_optimizer
 
@@ -24,6 +25,11 @@ from desktop.auth.backend import is_admin
 from desktop.conf import has_connectors
 from desktop.lib.i18n import smart_unicode
 from desktop.views import commonheader, commonfooter
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="layout" file="/about_layout.mako" />
@@ -109,7 +115,7 @@ ${ layout.menubar(section='quick_start') }
 
               % if has_connectors():
                 <!-- ko foreach: connectors -->
-                  <!-- ko if: ['hive', 'impala', 'mysql', 'postgresql', 'presto'].indexOf(dialect) != -1 -->
+                  <!-- ko if: ['hive', 'impala', 'mysql', 'postgresql', 'presto', 'phoenix', 'flink', 'ksql'].indexOf(dialect) != -1 -->
                   <li>
                     <a href="javascript:void(0)" data-bind="click: $root.installConnectorDataExample">
                       <i class="fa fa-download"></i> <span data-bind="text: name"></span>
@@ -213,7 +219,7 @@ ${ layout.menubar(section='quick_start') }
           <div id="step4" class="stepDetails hide">
             <div>
               <h3>${ _('Create or import users') }</h3>
-              <a href="${ url('useradmin.views.list_users') }"
+              <a href="${ url('useradmin:useradmin.views.list_users') }"
                  % if not is_embeddable:
                  target="_blank"
                  % endif
@@ -265,7 +271,7 @@ ${ layout.menubar(section='quick_start') }
           <br/>
           <br/>
           <span class="pull-right muted">${ _('Hue and the Hue logo are trademarks of Cloudera, Inc.') }</span>
-          % if not user.is_authenticated():
+          % if not user.is_authenticated:
             <br/>
             <a href="${ url('desktop_views_home2') }" class="btn btn-primary" style="margin-top: 50px;margin-bottom: 20px">
               <i class="fa fa-sign-in"></i> ${ _('Sign in now!') }

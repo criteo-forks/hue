@@ -17,12 +17,13 @@
 import $ from 'jquery';
 import * as ko from 'knockout';
 
+import { ASSIST_LANG_REF_PANEL_SHOW_TOPIC_EVENT } from './events';
+import { simpleGet } from 'api/apiUtils';
+import { CONFIG_REFRESHED_TOPIC } from 'config/events';
+import { filterEditorConnectors } from 'config/hueConfig';
 import componentUtils from 'ko/components/componentUtils';
 import huePubSub from 'utils/huePubSub';
 import I18n from 'utils/i18n';
-import { CONFIG_REFRESHED_EVENT, filterEditorConnectors } from 'utils/hueConfig';
-import { simpleGet } from 'api/apiUtils';
-import { ASSIST_LANG_REF_PANEL_SHOW_TOPIC_EVENT } from './events';
 
 export const NAME = 'assist-language-reference-panel';
 
@@ -82,7 +83,7 @@ const TEMPLATE = `
       <!-- ko if: selectedTopic -->
       <div class="assist-flex-60 assist-docs-details" data-bind="with: selectedTopic">
         <div class="assist-panel-close"><button class="close" data-bind="click: function() { $component.selectedTopic(undefined); }">&times;</button></div>
-        <div data-bind="html: bodyMatch() || body()"></div>
+        <div data-bind="htmlUnsecure: bodyMatch() || body()"></div>
       </div>
       <!-- /ko -->
     </div>
@@ -177,7 +178,7 @@ class AssistLangRefPanel {
     };
 
     configUpdated();
-    huePubSub.subscribe(CONFIG_REFRESHED_EVENT, configUpdated);
+    huePubSub.subscribe(CONFIG_REFRESHED_TOPIC, configUpdated);
 
     if (this.connector()) {
       updateDialect(this.connector().dialect);
@@ -231,10 +232,7 @@ class AssistLangRefPanel {
             match = true;
           } else if (
             loadedTopic.body() &&
-            loadedTopic
-              .body()
-              .toLowerCase()
-              .indexOf(lowerCaseQuery) !== -1
+            loadedTopic.body().toLowerCase().indexOf(lowerCaseQuery) !== -1
           ) {
             loadedTopic.weight = 0;
             loadedTopic.titleMatch(undefined);
@@ -263,18 +261,14 @@ class AssistLangRefPanel {
     });
 
     this.selectedTopic.subscribe(() => {
-      $(element)
-        .find('.assist-docs-details')
-        .scrollTop(0);
+      $(element).find('.assist-docs-details').scrollTop(0);
     });
 
     this.query.subscribe(() => {
-      $(element)
-        .find('.assist-docs-topics')
-        .scrollTop(0);
+      $(element).find('.assist-docs-topics').scrollTop(0);
     });
 
-    const scrollToSelectedTopic = function() {
+    const scrollToSelectedTopic = function () {
       const topics = $(element).find('.assist-docs-topics');
       if (topics.find('.blue').length) {
         topics.scrollTop(
@@ -286,7 +280,7 @@ class AssistLangRefPanel {
       }
     };
 
-    const scrollToAnchor = function(anchorId) {
+    const scrollToAnchor = function (anchorId) {
       if (!anchorId) {
         return;
       }

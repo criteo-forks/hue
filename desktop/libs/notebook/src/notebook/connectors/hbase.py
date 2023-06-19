@@ -18,14 +18,19 @@
 from __future__ import absolute_import
 
 import logging
+import sys
 
 from django.urls import reverse
-from django.utils.translation import ugettext as _
 
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.i18n import force_unicode
 
 from notebook.connectors.base import Api, QueryError
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -34,7 +39,7 @@ LOG = logging.getLogger(__name__)
 try:
   from hbase.api import HbaseApi
 except ImportError as e:
-  LOG.warn("HBase app is not enabled: %s" % e)
+  LOG.warning("HBase app is not enabled: %s" % e)
 
 
 def query_error_handler(func):
@@ -50,7 +55,7 @@ def query_error_handler(func):
 class HBaseApi(Api):
 
   @query_error_handler
-  def autocomplete(self, snippet, database=None, table=None, column=None, nested=None):
+  def autocomplete(self, snippet, database=None, table=None, column=None, nested=None, operation=None):
     db = HbaseApi(self.user)
     cluster_name = database
 
@@ -68,7 +73,7 @@ class HBaseApi(Api):
       else:
         raise PopupException('Could not find column `%s`.`%s`.`%s`' % (database, table, column))
     except Exception as e:
-      LOG.warn('Autocomplete data fetching error: %s' % e)
+      LOG.warning('Autocomplete data fetching error: %s' % e)
       response['code'] = 500
       response['error'] = e.message
 

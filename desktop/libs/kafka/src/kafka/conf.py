@@ -16,10 +16,14 @@
 # limitations under the License.
 
 import logging
-
-from django.utils.translation import ugettext_lazy as _t
+import sys
 
 from desktop.lib.conf import Config, ConfigSection, coerce_bool
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext_lazy as _t
+else:
+  from django.utils.translation import ugettext_lazy as _t
 
 
 LOG = logging.getLogger(__name__)
@@ -36,21 +40,26 @@ KAFKA = ConfigSection(
   key='kafka',
   help=_t("""Configuration options for Kafka API integration"""),
   members=dict(
-    IS_ENABLED = Config(
+    IS_ENABLED=Config(
       key="is_enabled",
       help=_t("Enable the Kafka integration."),
       type=coerce_bool,
       default=False
     ),
-    # Deprecated
     API_URL=Config(
       key='api_url',
-      help=_t('Base URL of Kafka REST API.'),
+      help=_t('URL of Kafka REST API.'),
       default=None
     ),
     KSQL_API_URL=Config(
       key='ksql_api_url',
-      help=_t('Base URL of Kafka Ksql API.'),
-      default='http://127.0.0.1:8088'),
+      help=_t('URL of ksqlDB API.'),
+      default='http://localhost:8088'
+    ),
+    SCHEMA_REGISTRY_API_URL=Config(
+      key='schema_registry_api_url',
+      help=_t('URL of Schema Registry API.'),
+      default='http://localhost:8081'
+    ),
   )
 )

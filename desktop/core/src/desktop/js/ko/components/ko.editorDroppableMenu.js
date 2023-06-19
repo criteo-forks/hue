@@ -23,7 +23,7 @@ import sqlUtils from 'sql/sqlUtils';
 import DisposableComponent from './DisposableComponent';
 import { DRAGGABLE_TEXT_META_EVENT } from 'ko/bindings/ko.draggableText';
 import { INSERT_AT_CURSOR_EVENT } from 'ko/bindings/ace/ko.aceEditor';
-import { defer, sleep } from 'utils/hueUtils';
+import sleep from 'utils/timing/sleep';
 
 export const NAME = 'hue-editor-droppable-menu';
 
@@ -59,22 +59,26 @@ class EditorDroppableMenu extends DisposableComponent {
     super();
     this.editor = params.editor;
     const $parentDropTarget = $(params.parentDropTarget);
-    const $tableDropMenu = $(element)
-      .parent()
-      .find('.table-drop-menu');
+    const $tableDropMenu = $(element).parent().find('.table-drop-menu');
 
     this.meta = ko.observable();
 
-    this.identifier = ko.pureComputed(() => {
-      const meta = this.meta();
-      if (meta && meta.database && meta.table) {
-        return (
-          sqlUtils.backTickIfNeeded(meta.type, meta.database) +
-          '.' +
-          sqlUtils.backTickIfNeeded(meta.type, meta.table)
+    this.identifier = ko.observable('');
+
+    this.meta.subscribe(async meta => {
+      if (
+        meta &&
+        ((meta.connector.dialect === 'phoenix' && meta.database === '') || meta.database) &&
+        meta.table
+      ) {
+        this.identifier(
+          (await sqlUtils.backTickIfNeeded(meta.connector, meta.database)) +
+            '.' +
+            (await sqlUtils.backTickIfNeeded(meta.connector, meta.table))
         );
+      } else {
+        this.identifier('');
       }
-      return '';
     });
 
     super.subscribe(DRAGGABLE_TEXT_META_EVENT, this.meta);
@@ -83,7 +87,7 @@ class EditorDroppableMenu extends DisposableComponent {
       $tableDropMenu,
       $('.content-panel'),
       async () => {
-        await defer();
+        await sleep(0);
         $(document).on('click.' + NAME, async () => {
           if (this.menu) {
             $tableDropMenu.css('opacity', 0);
@@ -117,7 +121,12 @@ class EditorDroppableMenu extends DisposableComponent {
         }
         editor.moveCursorToPosition(position);
         const before = editor.getTextBeforeCursor();
-        if (meta.database && meta.table && !meta.column && /.*;|^\s*$/.test(before)) {
+        if (
+          ((meta.connector.dialect === 'phoenix' && meta.database === '') || meta.database) &&
+          meta.table &&
+          !meta.column &&
+          /.*;|^\s*$/.test(before)
+        ) {
           this.menu.show(e);
         } else {
           if (/\S+$/.test(before) && before.charAt(before.length - 1) !== '.') {
