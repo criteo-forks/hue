@@ -19,14 +19,15 @@ import sys
 from desktop.lib.paths import SAFE_CHARACTERS_URI_COMPONENTS
 
 from django.template.defaultfilters import urlencode, stringformat, date, filesizeformat, time
-from django.utils.translation import ugettext as _
 
 from aws.conf import get_default_region
 
 if sys.version_info[0] > 2:
   from urllib.parse import quote as urllib_quote
+  from django.utils.translation import gettext as _
 else:
   from urllib import quote as urllib_quote
+  from django.utils.translation import ugettext as _
 %>
 
 <%def name="breadcrumbs(path, breadcrumbs, from_listdir=False)">
@@ -51,24 +52,27 @@ else:
             </span>
           </li>
         %else:
-          <li><a class="pointer breadcrumb-link homeLink" data-bind="click: $root.openHome, attr:{'href': window.HUE_BASE_URL + '/filebrowser/view=${ urllib_quote(path.encode('utf-8'), safe=SAFE_CHARACTERS_URI_COMPONENTS) }?default_to_home'}">
+          <li><a class="pointer breadcrumb-link homeLink" data-bind="click: $root.openHome, attr:{'href': window.HUE_BASE_URL + '/filebrowser/view=' + window.USER_HOME_DIR  + '?default_to_home'}">
             <i class="fa fa-home"></i> ${_('Home')}</a>
           </li>
         %endif
         <li>
-          <ul id="editBreadcrumb" class="hue-breadcrumbs editable-breadcrumbs" data-bind="foreach: breadcrumbs" style="padding-right:40px; padding-top: 12px" title="${_('Edit path')}">
-            <li data-bind="visible: label.slice(-1) == '/'">
-              <a data-bind="click: show, attr: {'href': '${url('filebrowser.views.view', path=urlencode(''))}' + url}"><span class="divider" data-bind="text: label"></span></a>
-            </li>
-            <li data-bind="visible: label.slice(-1) != '/'">
-              <a data-bind="text: label, click: show, attr: {'href': '${url('filebrowser.views.view', path=urlencode(''))}' + url}"></a><span class="divider">/</span>
-            </li>
-          </ul>
+          <ul id="editBreadcrumb" class="hue-breadcrumbs editable-breadcrumbs" data-bind="foreach: breadcrumbs" style="padding-right:40px; padding-top: 12px" title="${_('Edit path')}"
+            ><li data-bind="visible: label.slice(-1) == '/' && window.RAZ_IS_ENABLED">
+              <span class="divider" data-bind="text: label"></span>
+            </li
+            ><li data-bind="visible: label.slice(-1) == '/' && !window.RAZ_IS_ENABLED">
+              <a data-bind="click: show, attr: {'href': '${url('filebrowser:filebrowser.views.view', path=urlencode(''))}' + url}"><span class="divider" data-bind="text: label"></span></a>
+            </li
+            ><li data-bind="visible: label.slice(-1) != '/'">
+              <a data-bind="text: label, click: show, attr: {'href': '${url('filebrowser:filebrowser.views.view', path=urlencode(''))}' + url}"></a><span class="divider">/</span>
+            </li
+          ></ul>
           <input id="hueBreadcrumbText" type="text" style="display:none" data-bind="value: currentPath" autocomplete="off" class="input-xxlarge" />
         </li>
         % if is_trash_enabled:
         <li class="pull-right">
-          <a class="pointer breadcrumb-link trashLink" data-bind="click: $root.openTrash, attr:{'href': window.HUE_BASE_URL + '/filebrowser/view=${ urllib_quote(path.encode('utf-8'), safe=SAFE_CHARACTERS_URI_COMPONENTS) }?default_to_trash'}" title="${_('View trash')}">
+          <a class="pointer breadcrumb-link trashLink" data-bind="click: $root.openTrash, attr:{'href': window.HUE_BASE_URL + '/filebrowser/view='+ window.USER_HOME_DIR +'?default_to_trash'}" title="${_('View trash')}">
             <i class="fa fa-trash-o"></i> ${_('Trash')}
           </a>
         </li>
@@ -76,15 +80,21 @@ else:
       </ul>
     % else:
       <ul class="nav nav-pills hue-breadcrumbs-bar">
-        <li><a data-bind="hueLink: window.HUE_BASE_URL + '/filebrowser/view=${ urllib_quote(path.encode('utf-8'), safe=SAFE_CHARACTERS_URI_COMPONENTS) }?default_to_home'" class="breadcrumb-link homeLink"><i class="fa fa-home"></i> ${_('Home')}</a></li>
+        <li>
+          <a data-bind="hueLink: window.HUE_BASE_URL + '/filebrowser/view='+ window.USER_HOME_DIR +'?default_to_home'" class="breadcrumb-link homeLink">
+            <i class="fa fa-home"></i> ${_('Home')}
+          </a>
+        </li>
         <li>
           <ul class="hue-breadcrumbs" style="padding-right:40px; padding-top: 12px">
           % for breadcrumb_item in breadcrumbs:
             <% label, f_url = breadcrumb_item['label'], breadcrumb_item['url'] %>
             %if label[-1] == '/':
-            <li><a data-bind="hueLink: '${'/filebrowser/view=' + f_url}'"><span class="divider">${label}</span></a></li>
+            <li><a href="javascript: void(0)" data-bind="click: ()=> {
+              huePubSub.publish('open.filebrowserlink', { pathPrefix: '/filebrowser/view=', decodedPath: `${f_url | n}` });}"><span class="divider">${label}</span></a></li>
             %else:
-            <li><a data-bind="hueLink: '${'/filebrowser/view=' + f_url}'">${label}</a><span class="divider">/</span></li>
+            <li><a href="javascript: void(0)" data-bind="click: ()=> {
+              huePubSub.publish('open.filebrowserlink', { pathPrefix: '/filebrowser/view=', decodedPath: `${f_url | n}` });}">${label}</a><span class="divider">/</span></li>
             %endif
           % endfor
           </ul>

@@ -14,8 +14,12 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
+  import sys
   from desktop.views import commonheader, commonfooter
-  from django.utils.translation import ugettext as _
+  if sys.version_info[0] > 2:
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 <%namespace name="comps" file="jobbrowser_components.mako" />
 
@@ -32,7 +36,7 @@ ${ comps.menubar() }
           <li class="nav-header">${_('Task ID')}</li>
           <li class="white truncate-text" title="${task.taskId_short}">${task.taskId_short}</li>
           <li class="nav-header">${_('Job')}</li>
-          <li><a href="${url('jobbrowser.views.single_job', job=joblnk.jobId)}" class="truncate-text" title="${joblnk.jobId_short}">${joblnk.jobId_short}</a></li>
+          <li><a href="${url('jobbrowser:jobbrowser.views.single_job', job=joblnk.jobId)}" class="truncate-text" title="${joblnk.jobId_short}">${joblnk.jobId_short}</a></li>
           <li class="nav-header">${_('Status')}</li>
           <li class="white">
             % if task.state.lower() == 'running' or task.state.lower() == 'pending':
@@ -83,8 +87,8 @@ ${ comps.menubar() }
                   <tbody>
                   % for attempt in task.attempts:
                     <tr>
-                      <td data-row-selector-exclude="true"><a href="${ url('single_task_attempt_logs', job=joblnk.jobId, taskid=task.taskId, attemptid=attempt.attemptId) }" data-row-selector-exclude="true"><i class="fa fa-tasks"></i></a></td>
-                      <td><a title="${_('View this attempt')}" href="${ url('single_task_attempt', job=joblnk.jobId, taskid=task.taskId, attemptid=attempt.attemptId) }" data-row-selector="true">${attempt.attemptId_short}</a></td>
+                      <td data-row-selector-exclude="true"><a href="${ url('jobbrowser:single_task_attempt_logs', job=joblnk.jobId, taskid=task.taskId, attemptid=attempt.attemptId) }" data-row-selector-exclude="true"><i class="fa fa-tasks"></i></a></td>
+                      <td><a title="${_('View this attempt')}" href="${ url('jobbrowser:single_task_attempt', job=joblnk.jobId, taskid=task.taskId, attemptid=attempt.attemptId) }" data-row-selector="true">${attempt.attemptId_short}</a></td>
                       <td>${"%d" % (attempt.progress * 100)}%</td>
                       <td><span class="status_link ${attempt.state}">${attempt.state}</span></td>
                       <td>
@@ -129,7 +133,7 @@ ${ comps.menubar() }
                     </tr>
                     <tr>
                       <td>${_('JobId')}</td>
-                      <td><a href="${url('jobbrowser.views.single_job', job=joblnk.jobId)}" title="${_('View this job')}">${joblnk.jobId}</a></td>
+                      <td><a href="${url('jobbrowser:jobbrowser.views.single_job', job=joblnk.jobId)}" title="${_('View this job')}">${joblnk.jobId}</a></td>
                     </tr>
                     <tr>
                       <td>${_('State')}</td>

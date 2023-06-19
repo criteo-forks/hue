@@ -14,12 +14,17 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
-from django.utils.translation import ugettext as _
+import sys
 
 from desktop import conf
 from desktop.views import commonheader, commonfooter, commonshare, _ko
 
 from oozie.conf import ENABLE_DOCUMENT_ACTION, ENABLE_IMPALA_ACTION, ENABLE_ALTUS_ACTION
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="dashboard" file="/common_dashboard.mako" />
@@ -88,11 +93,13 @@ ${ commonheader(_("Workflow Editor"), "Oozie", user, request, "40px") | n,unicod
             <i class="fa fa-fw fa-folder-open"></i> ${ _('Workspace') }
           </a>
         </li>
+        <!-- ko if: sharingEnabled -->
         <li data-bind="visible: workflow.id() != null && canEdit()">
           <a class="pointer share-link" rel="tooltip" data-placement="bottom" data-bind="click: openShareModal, css: {'isShared': isShared()}">
             <i class="fa fa-fw fa-users"></i> ${ _("Share") }
           </a>
         </li>
+        <!-- /ko -->
       </ul>
     </div>
 
@@ -630,7 +637,7 @@ ${ utils.submit_popup_event() }
 
 
   % if ENABLE_DOCUMENT_ACTION.get():
-  var defaultSection = apiHelper.getFromTotalStorage('oozie', 'draggable_section', 'documents');
+  var defaultSection = hueUtils.hueLocalStorage('oozie.draggable_section') || 'documents';
   % else:
   var defaultSection = 'actions';
   % endif
@@ -664,11 +671,13 @@ ${ utils.submit_popup_event() }
         showAddActionDemiModal(widget);
       });
     } else {
-      if (window.workflowEditorViewModel.currentlyDraggedOp() == "move"){
-        window.workflowEditorViewModel.workflow.moveNode(widget);
-      } else { // Copy
-        var _sourceNode = window.workflowEditorViewModel.workflow.getNodeById(window.workflowEditorViewModel.currentlyDraggedWidget().id());
-        window.workflowEditorViewModel.workflow.newNode(widget, window.workflowEditorViewModel.workflow.addNode, _sourceNode);
+      if (widget) {
+        if (window.workflowEditorViewModel.currentlyDraggedOp() == "move"){
+          window.workflowEditorViewModel.workflow.moveNode(widget);
+        } else { // Copy
+          var _sourceNode = window.workflowEditorViewModel.workflow.getNodeById(window.workflowEditorViewModel.currentlyDraggedWidget().id());
+          window.workflowEditorViewModel.workflow.newNode(widget, window.workflowEditorViewModel.workflow.addNode, _sourceNode);
+        }
       }
       window.setTimeout(renderChangeables, 0);
     }
@@ -885,7 +894,7 @@ ${ utils.submit_popup_event() }
     }, 'oozie');
 
     huePubSub.subscribe('oozie.draggable.section.change', function(val){
-      apiHelper.setInTotalStorage('oozie', 'draggable_section', val);
+      window.hueUtils.hueLocalStorage('oozie.draggable_section', val);
     });
 
     $(document).on("click", ".widget-main-section", function (e) {

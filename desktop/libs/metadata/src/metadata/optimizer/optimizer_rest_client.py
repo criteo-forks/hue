@@ -18,14 +18,18 @@
 
 import json
 import logging
-
-from django.utils.translation import ugettext as _
+import sys
 
 from desktop.lib.rest.http_client import HttpClient
 from desktop.lib.rest.resource import Resource
 
 from metadata.conf import OPTIMIZER, get_optimizer_url
 from metadata.optimizer.optimizer_client import OptimizerClient
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -46,7 +50,11 @@ class OptimizerRestClient(OptimizerClient):
 
 
   def _call(self, path, data):
-    return self._root.post(path, data=json.dumps(data), contenttype=_JSON_CONTENT_TYPE)
+    try:
+      return self._root.post(path, data=json.dumps(data), contenttype=_JSON_CONTENT_TYPE)
+    except:
+      LOG.exception('Error calling Optimize service')
+      return {}
 
 
 class MockApiLib():

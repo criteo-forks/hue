@@ -37,8 +37,8 @@ sf_caption_position:
 ampforwp-amp-on-off:
   - default
 categories:
-  - Querying
-  - Version 4.6
+  - Version 4
+# - Version 4.6
 
 ---
 Hue&#8217;s Editor [SQL functionalities][1] makes it much more easier to query your databases and datawarehouses. It was previously described about how to [improve or create your own SQL autocompleter][2] so that the Querying Experience gets even more effective. This post is about going one step further and improving the SQL syntax highlighting.
@@ -122,9 +122,9 @@ Any feedback or question? Feel free to comment here or on the <a href="https:/
 Romain from the Hue Team
 
  [1]: https://docs.gethue.com/user/querying/
- [2]: https://docs.gethue.com/developer/parsers/
+ [2]: https://docs.gethue.com/developer/development/#sql-parsers
  [3]: https://ace.c9.io/
  [4]: https://github.com/cloudera/hue/tree/master/tools/ace-editor/lib/ace/mode
  [5]: https://github.com/cloudera/hue/blob/master/desktop/libs/notebook/src/notebook/templates/editor_components.mako#L2118
- [6]: http://localhost:1313/developer/parsers/#prerequisites
+ [6]: http://localhost:1313/developer/development/#sql-parsers#prerequisites
  [7]: https://issues.cloudera.org/browse/HUE-8758

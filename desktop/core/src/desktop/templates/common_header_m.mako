@@ -14,15 +14,22 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
+import sys
+
 from desktop import conf
 from desktop.lib.i18n import smart_unicode
-from django.utils.translation import ugettext as _
+from desktop.webpack_utils import get_hue_bundles
 from metadata.conf import has_optimizer, OPTIMIZER
 
 home_url = url('desktop_views_home')
 from desktop.conf import USE_NEW_EDITOR
 
 from webpack_loader.templatetags.webpack_loader import render_bundle
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 if USE_NEW_EDITOR.get():
   home_url = url('desktop_views_home2')
@@ -74,11 +81,11 @@ if USE_NEW_EDITOR.get():
   <script type="text/javascript">
     var LOGGED_USERNAME = '${ user.username }';
     var IS_S3_ENABLED = '${ is_s3_enabled }' === 'True';
-    var HAS_OPTIMIZER = '${ has_optimizer() }' === 'True';
+    var HAS_SQL_ANALYZER = '${ has_optimizer() }' === 'True';
 
     var CACHEABLE_TTL = {
       default: ${ conf.CUSTOM.CACHEABLE_TTL.get() },
-      optimizer: ${ OPTIMIZER.CACHEABLE_TTL.get() }
+      sqlAnalyzer: ${ OPTIMIZER.CACHEABLE_TTL.get() }
     };
 
     var AUTOCOMPLETE_TIMEOUT = ${ conf.EDITOR_AUTOCOMPLETE_TIMEOUT.get() };
@@ -112,7 +119,9 @@ if USE_NEW_EDITOR.get():
     }
   </script>
 
-  ${ render_bundle('hue') | n,unicode }
+  % for bundle in get_hue_bundles('hue'):
+    ${ render_bundle(bundle) | n,unicode }
+  % endfor
 
   <script src="${ static('desktop/ext/js/jquery/plugins/jquery.touchSwipe.min.js') }"></script>
   <script src="${ static('desktop/js/bootstrap-typeahead-touchscreen.js') }"></script>
@@ -120,14 +129,6 @@ if USE_NEW_EDITOR.get():
   <script src="${ static('desktop/ext/js/moment-with-locales.min.js') }"></script>
   <script src="${ static('desktop/ext/js/moment-timezone-with-data.min.js') }" type="text/javascript" charset="utf-8"></script>
   <script src="${ static('desktop/ext/js/tzdetect.js') }" type="text/javascript" charset="utf-8"></script>
-  <script src="${ static('desktop/js/ace/ace.js') }"></script>
-  <script src="${ static('desktop/js/ace/mode-impala.js') }"></script>
-  <script src="${ static('desktop/js/ace/mode-hive.js') }"></script>
-  <script src="${ static('desktop/js/ace/ext-language_tools.js') }"></script>
-  <script src="${ static('desktop/js/ace.extended.js') }"></script>
-  <script>
-    ace.config.set("basePath", "${ static('desktop/js/ace') }");
-  </script>
 
   <script type="text/javascript">
 
@@ -162,7 +163,7 @@ if USE_NEW_EDITOR.get():
     }
 
     // sets global apiHelper TTL
-    $.totalStorage('hue.cacheable.ttl', ${conf.CUSTOM.CACHEABLE_TTL.get()});
+    hueUtils.hueLocalStorage('hue.cacheable.ttl', ${conf.CUSTOM.CACHEABLE_TTL.get()});
 
     var IDLE_SESSION_TIMEOUT = -1;
 

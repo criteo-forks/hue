@@ -15,8 +15,12 @@
 ## limitations under the License.
 
 <%!
+  import sys
   from desktop.views import commonheader, commonfooter
-  from django.utils.translation import ugettext as _
+  if sys.version_info[0] > 2:
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="layout" file="../navigation-bar.mako" />
@@ -289,8 +293,8 @@ ${ layout.menubar(section='sla', dashboard=True) }
       }
     });
 
-    if (window.location.getParameter('id') !== '') {
-      $("input[name='job_name']").val(window.location.getParameter('id').replace(/(<([^>]+)>)/ig, ""));
+    if (hueUtils.getParameter('id') !== '') {
+      $("input[name='job_name']").val(hueUtils.getParameter('id').replace(/(<([^>]+)>)/ig, ""));
       slaVM.performSearch();
     }
   });

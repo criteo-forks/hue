@@ -17,13 +17,13 @@
 import $ from 'jquery';
 
 import HueColors from 'utils/hueColors';
-import hueUtils from 'utils/hueUtils';
+import html2text from 'utils/html/html2text';
 
 const isNotNullForCharts = val => val !== 'NULL' && val !== null;
 
 const jQuery = $;
 
-const pieChartTransformer = function(rawDatum) {
+const pieChartTransformer = function (rawDatum) {
   let _data = [];
 
   if (rawDatum.snippet.chartX() != null && rawDatum.snippet.chartYSingle() != null) {
@@ -45,7 +45,7 @@ const pieChartTransformer = function(rawDatum) {
           val = 0;
         }
         _data.push({
-          label: hueUtils.html2text(item[_idxLabel]),
+          label: html2text(item[_idxLabel]),
           value: val,
           color: colors[cnt % colors.length],
           obj: item
@@ -67,7 +67,7 @@ const pieChartTransformer = function(rawDatum) {
   return _data;
 };
 
-const mapChartTransformer = function(rawDatum) {
+const mapChartTransformer = function (rawDatum) {
   let _data = [];
   if (rawDatum.snippet.chartX() != null && rawDatum.snippet.chartYSingle() != null) {
     let _idxRegion = -1;
@@ -105,7 +105,7 @@ const MAX_LAT = 90;
 const MIN_LNG = -180;
 const MAX_LNG = 180;
 
-const leafletMapChartTransformer = function(rawDatum) {
+const leafletMapChartTransformer = function (rawDatum) {
   let _data = [];
   if (rawDatum.snippet.chartX() != null && rawDatum.snippet.chartYSingle() != null) {
     let _idxLat = -1;
@@ -132,7 +132,7 @@ const leafletMapChartTransformer = function(rawDatum) {
           _data.push({
             lat: Math.min(Math.max(MIN_LAT, item[_idxLat]), MAX_LAT),
             lng: Math.min(Math.max(MIN_LNG, item[_idxLng]), MAX_LNG),
-            label: hueUtils.html2text(item[_idxLabel]),
+            label: html2text(item[_idxLabel]),
             isHeat: rawDatum.snippet.chartMapType() === 'heat',
             intensity:
               _idxHeat > -1 ? (item[_idxHeat] * 1 != NaN ? item[_idxHeat] * 1 : null) : null,
@@ -163,7 +163,7 @@ const leafletMapChartTransformer = function(rawDatum) {
   return _data;
 };
 
-const timelineChartTransformer = function(rawDatum) {
+const timelineChartTransformer = function (rawDatum) {
   const _datum = [];
   let _plottedSerie = 0;
 
@@ -188,7 +188,7 @@ const timelineChartTransformer = function(rawDatum) {
           if (isNotNullForCharts(item[_idxLabel]) && isNotNullForCharts(item[_idxValue])) {
             _data.push({
               series: _plottedSerie,
-              x: new Date(moment(hueUtils.html2text(item[_idxLabel])).valueOf()),
+              x: new Date(moment(html2text(item[_idxLabel])).valueOf()),
               y: item[_idxValue] * 1,
               color: colors[_plottedSerie % colors.length],
               obj: item
@@ -220,7 +220,7 @@ const timelineChartTransformer = function(rawDatum) {
   return _datum;
 };
 
-const multiSerieChartTransformer = function(rawDatum) {
+const multiSerieChartTransformer = function (rawDatum) {
   let _datum = [];
 
   if (rawDatum.snippet.chartX() != null && rawDatum.snippet.chartYMulti().length > 0) {
@@ -257,7 +257,7 @@ const multiSerieChartTransformer = function(rawDatum) {
               if (item[_idxPivot] === val) {
                 if (isNotNullForCharts(item[_idxValue]) && isNotNullForCharts(item[_idxLabel])) {
                   _data.push({
-                    x: _isXDate ? moment(item[_idxLabel]) : hueUtils.html2text(item[_idxLabel]),
+                    x: _isXDate ? moment(item[_idxLabel]) : html2text(item[_idxLabel]),
                     y: item[_idxValue] * 1,
                     color: colors[pivotCnt % colors.length],
                     obj: item
@@ -266,7 +266,7 @@ const multiSerieChartTransformer = function(rawDatum) {
               }
             });
             _datum.push({
-              key: hueUtils.html2text(val),
+              key: html2text(val),
               values: _data
             });
           });
@@ -367,7 +367,7 @@ const multiSerieChartTransformer = function(rawDatum) {
               if (isNotNullForCharts(item[_idxValue]) && isNotNullForCharts(item[_idxLabel])) {
                 _data.push({
                   series: _plottedSerie,
-                  x: _isXDate ? moment(item[_idxLabel]) : hueUtils.html2text(item[_idxLabel]),
+                  x: _isXDate ? moment(item[_idxLabel]) : html2text(item[_idxLabel]),
                   y: item[_idxValue] * 1,
                   color: colors[cnt % colors.length],
                   obj: item
@@ -400,7 +400,7 @@ const multiSerieChartTransformer = function(rawDatum) {
   return _datum;
 };
 
-const scatterChartTransformer = function(rawDatum) {
+const scatterChartTransformer = function (rawDatum) {
   const datum = {};
 
   if (rawDatum.snippet.chartX() != null && rawDatum.snippet.chartYSingle() != null) {
@@ -424,7 +424,7 @@ const scatterChartTransformer = function(rawDatum) {
     });
 
     if (idxX > -1 && idxY > -1) {
-      const createAndAddToArray = function(key, item) {
+      const createAndAddToArray = function (key, item) {
         if (!datum[key]) {
           datum[key] = [];
         }

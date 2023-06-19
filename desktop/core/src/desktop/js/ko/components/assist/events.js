@@ -16,6 +16,7 @@
 
 export const SHOW_LEFT_ASSIST_EVENT = 'left.assist.show';
 export const SHOW_RIGHT_ASSIST_EVENT = 'right.assist.show';
+export const BOTH_ASSIST_TOGGLE_EVENT = 'both.assists.toggle';
 
 export const ASSIST_IS_DB_PANEL_READY_EVENT = 'assist.is.db.panel.ready';
 export const ASSIST_DB_PANEL_IS_READY_EVENT = 'assist.db.panel.is.ready';
@@ -25,6 +26,7 @@ export const ASSIST_GET_DATABASE_EVENT = 'assist.get.database';
 export const ASSIST_SET_DATABASE_EVENT = 'assist.set.database';
 export const ASSIST_DB_HIGHLIGHT_EVENT = 'assist.db.highlight';
 export const ASSIST_DOC_HIGHLIGHT_EVENT = 'assist.doc.highlight';
+export const ASSIST_ACTIVE_DB_CHANGED_EVENT = 'assist.active.db.changed.event';
 
 export const ASSIST_SHOW_DOC_EVENT = 'assist.show.documents';
 export const ASSIST_SHOW_SQL_EVENT = 'assist.show.sql';

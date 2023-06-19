@@ -27,18 +27,21 @@ import logging
 import sys
 
 if sys.version_info[0] > 2:
-  from io import StringIO as string_io
+  from io import BytesIO as stream_io
 else:
-  from cStringIO import StringIO as string_io
+  from cStringIO import StringIO as stream_io
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.files.uploadhandler import FileUploadHandler, SkipFile, StopFutureHandlers, StopUpload, UploadFileException
-from django.utils.translation import ugettext as _
 
 from desktop.lib.fsmanager import get_client
 from aws.s3 import parse_uri
 from aws.s3.s3fs import S3FileSystemException
 
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 DEFAULT_WRITE_SIZE = 1024 * 1024 * 50  # TODO: set in configuration (currently 50 MiB)
 
@@ -122,7 +125,8 @@ class S3FileUploadHandler(FileUploadHandler):
 
 
   def _get_s3fs(self, request):
-    fs = get_client(user=request.user.username) # Pre 6.0 request.fs did not exist, now it does. The logic for assigning request.fs is not correct for FileUploadHandler.
+    # Pre 6.0 request.fs did not exist, now it does. The logic for assigning request.fs is not correct for FileUploadHandler.
+    fs = get_client(user=request.user.username)
 
     if not fs:
       raise S3FileUploadError(_("No S3 filesystem found."))
@@ -151,7 +155,7 @@ class S3FileUploadHandler(FileUploadHandler):
 
 
   def _get_file_part(self, raw_data):
-    fp = string_io()
+    fp = stream_io()
     fp.write(raw_data)
     fp.seek(0)
     return fp

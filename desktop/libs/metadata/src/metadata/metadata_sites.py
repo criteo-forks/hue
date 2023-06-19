@@ -44,12 +44,12 @@ def get_conf(name='navigator'):
 
 def get_navigator_server_url():
   """Returns the navigator.server.url"""
-  return get_conf('navigator-lineage').get(_CONF_NAVIGATOR_SERVER_URL, 'http://localhost:7187')
+  return get_conf('navigator-lineage').get(_CONF_NAVIGATOR_SERVER_URL, None)
 
 
 def get_navigator_audit_log_dir():
   """Returns audit_event_log_dir"""
-  return get_conf().get(_CONF_NAVIGATOR_AUDIT_LOG_DIR, '')
+  return get_conf().get(_CONF_NAVIGATOR_AUDIT_LOG_DIR, '/var/log/hue/audit.log')
 
 
 def get_navigator_audit_max_file_size():
@@ -66,7 +66,7 @@ def _parse_sites():
   from metadata.conf import NAVIGATOR
 
   global _SITE_DICT
-  _SITE_DICT ={}
+  _SITE_DICT = {}
 
   paths = [
     ('navigator', os.path.join(NAVIGATOR.CONF_DIR.get(), 'navigator.client.properties')), # 'audit'

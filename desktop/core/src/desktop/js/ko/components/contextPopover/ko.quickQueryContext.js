@@ -18,16 +18,18 @@ import * as ko from 'knockout';
 
 import { MULTI_NAME as SIMPLE_ACE_MULTI } from 'ko/components/simpleAceEditor/ko.simpleAceEditor';
 import { CONTEXT_SELECTOR_COMPONENT } from 'ko/components/ko.contextSelector';
-import { NAME as DROP_DOWN } from 'ko/components/ko.dropDown';
-import { NAME as EXECUTABLE_ACTIONS } from 'apps/notebook2/components/ko.executableActions';
-import { SIMPLE_RESULT_GRID_COMPONENT } from 'apps/notebook2/components/resultGrid/ko.simpleResultGrid';
+import { HUE_DROP_DOWN_COMPONENT } from 'ko/components/ko.dropDown';
+import { SIMPLE_RESULT_GRID_COMPONENT } from 'apps/editor/components/resultGrid/ko.simpleResultGrid';
 
+import 'apps/editor/components/ExecutableActionsKoBridge.vue';
+
+import Executor from 'apps/editor/execution/executor';
+import SqlExecutable from 'apps/editor/execution/sqlExecutable';
+import { CONFIG_REFRESHED_TOPIC } from 'config/events';
+import { filterEditorConnectors } from 'config/hueConfig';
 import componentUtils from 'ko/components/componentUtils';
 import DisposableComponent from 'ko/components/DisposableComponent';
-import Executor from 'apps/notebook2/execution/executor';
-import SqlExecutable from 'apps/notebook2/execution/sqlExecutable';
-import sqlStatementsParser from 'parse/sqlStatementsParser';
-import { CONFIG_REFRESHED_EVENT, filterEditorConnectors } from 'utils/hueConfig';
+import { getStatementsParser } from 'parse/utils';
 
 export const NAME = 'quick-query-context';
 
@@ -36,7 +38,7 @@ const TEMPLATE = `
 <div class="context-popover-flex-fill" style="overflow: auto;">
   <div style="display: inline-block" data-bind="
     component: {
-      name: '${ DROP_DOWN }',
+      name: '${ HUE_DROP_DOWN_COMPONENT }',
       params: {
         value: connector,
         labelAttribute: 'displayName',
@@ -83,12 +85,9 @@ const TEMPLATE = `
           }
         }
       "></div>
-      <div data-bind="
-        component: {
-          name: '${ EXECUTABLE_ACTIONS }',
-          params: { activeExecutable: $parent.activeExecutable }
-        }
-      "></div>
+      <executable-actions-ko-bridge data-bind="vueKoProps: {
+          'executable-observable': $parent.activeExecutable
+        }"></executable-actions-ko-bridge>
       <div data-bind="
         component: {
           name: '${ SIMPLE_RESULT_GRID_COMPONENT }',
@@ -138,13 +137,15 @@ class QuickQueryContext extends DisposableComponent {
     );
 
     this.updateFromConfig();
-    this.subscribe(CONFIG_REFRESHED_EVENT, this.updateFromConfig.bind(this));
+    this.subscribe(CONFIG_REFRESHED_TOPIC, this.updateFromConfig.bind(this));
 
     let refreshExecutableThrottle = -1;
     const refreshExecutable = () => {
       window.clearTimeout(refreshExecutableThrottle);
       refreshExecutableThrottle = window.setTimeout(() => {
-        const parsedStatement = sqlStatementsParser.parse(this.statement() || '')[0];
+        const parsedStatement = getStatementsParser(this.connector()).parse(
+          this.statement() || ''
+        )[0];
 
         const executable = new SqlExecutable({
           executor: this.executor,

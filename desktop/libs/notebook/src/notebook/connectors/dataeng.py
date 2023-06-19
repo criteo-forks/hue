@@ -17,15 +17,20 @@
 
 import logging
 import re
+import sys
 
 from django.urls import reverse
-from django.utils.translation import ugettext as _
 
 from metadata.workload_analytics_client import WorkfloadAnalyticsClient
 
 from notebook.connectors.altus import DataEngApi as AltusDataEngApi
 from notebook.connectors.base import Api, QueryError
 from jobbrowser.apis.data_eng_api import RUNNING_STATES
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -88,7 +93,7 @@ class DataEngApi(Api):
 
   def fetch_result(self, notebook, snippet, rows, start_over):
     return {
-        'data':  [[_('Job successfully completed.')]],
+        'data': [[_('Job successfully completed.')]],
         'meta': [{'name': 'Header', 'type': 'STRING_TYPE', 'comment': ''}],
         'type': 'table',
         'has_more': False,
@@ -113,7 +118,8 @@ class DataEngApi(Api):
     #    operation_execution_id='cedb71ae-0956-42e1-8578-87b9261d4a37',
     #    attempt_id='attempt_1499705340501_0045_m_000000_0'
     # )
-    # return ''.join(re.findall('(?<=>>> Invoking Beeline command line now >>>)(.*?)(?=<<< Invocation of Beeline command completed <<<)', logs['stdout'], re.DOTALL))
+    # return ''.join(re.findall('(?<=>>> Invoking Beeline command line now >>>)
+    # (.*?)(?=<<< Invocation of Beeline command completed <<<)', logs['stdout'], re.DOTALL))
     return ''
 
 
@@ -122,7 +128,7 @@ class DataEngApi(Api):
     job_id = snippet['result']['handle']['id']
     return [{
         'name': job_id,
-        'url': reverse('jobbrowser.views.apps') + '#!' + job_id,
+        'url': reverse('jobbrowser:jobbrowser.views.apps') + '#!' + job_id,
         'started': True,
         'finished': False # Would need call to check_status
       }

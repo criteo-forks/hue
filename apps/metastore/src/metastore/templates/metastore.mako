@@ -14,13 +14,19 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
+import sys
 from django.utils.html import escape
-from django.utils.translation import ugettext as _
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 from desktop import conf
 from desktop.conf import USE_NEW_EDITOR
 from desktop.lib.i18n import smart_unicode
 from desktop.views import commonheader, commonfooter, _ko
+from desktop.webpack_utils import get_hue_bundles
+from metastore.conf import SHOW_TABLE_ERD
 from beeswax.conf import LIST_PARTITIONS_LIMIT
 from webpack_loader.templatetags.webpack_loader import render_bundle
 
@@ -61,7 +67,9 @@ ${ commonheader(_("Metastore"), app_name, user, request) | n,unicode }
 <link rel="stylesheet" href="${ static('desktop/ext/css/bootstrap-editable.css') }">
 <link rel="stylesheet" href="${ static('notebook/css/notebook.css') }">
 
-${ render_bundle('tableBrowser') | n,unicode }
+% for bundle in get_hue_bundles('tableBrowser'):
+  ${ render_bundle(bundle) | n,unicode }
+% endfor
 
 <span class="notebook">
 
@@ -72,7 +80,7 @@ ${ components.menubar(is_embeddable) }
 <script type="text/html" id="metastore-breadcrumbs">
   <div style="font-size: 14px; margin: 0 12px; line-height: 27px;">
     <!-- ko if: sources().length >= 2 -->
-    <div data-bind="component: { name: 'hue-drop-down', params: { value: source, entries: sources, onSelect: sourceChanged, labelAttribute: 'name', searchable: true, linkTitle: '${ _ko('Source') }' } }"
+    <div data-bind="component: { name: 'hue-drop-down', params: { value: source, entries: sources, onSelect: sourceChanged, labelAttribute: 'displayName', searchable: true, linkTitle: '${ _ko('Source') }' } }"
       style="display: inline-block">
     </div>
     <!-- /ko -->
@@ -242,6 +250,9 @@ ${ components.menubar(is_embeddable) }
           </a>
         </span>
         ${ _('Table') }
+        <!-- ko if: $parent.catalogEntry.isIcebergTable() -->
+          <i class="fa muted fa-snowflake-o" title="${ _('Iceberg table') }"></i>
+        <!-- /ko -->
       <!-- /ko -->
     </div>
     <!-- ko ifnot: $parent.catalogEntry.isView() -->
@@ -255,11 +266,16 @@ ${ components.menubar(is_embeddable) }
       ${_('and stored in')}
       <!-- ko if: details.properties.format === 'kudu' -->
         <div>${_('Kudu')}</div>
+      <!-- /ko -->
+      <!-- ko if: details.properties.format !== 'kudu' -->
+        <!-- ko if: hdfs_link -->
+          <div>          
+            <a data-bind="hueLink: hdfs_link, attr: { title: $parent.catalogEntry.getHdfsFilePath() }" target="_blank" >${_('location')}</a>
+          </div>
         <!-- /ko -->
-        <!-- ko if: details.properties.format !== 'kudu' -->
-        <div>
-          <a href="javascript: void(0);" data-bind="storageContextPopover: { path: hdfs_link.replace('/filebrowser/view=', ''), offset: { left: 5 } }"> ${_('location')}</a>
-        </div>
+        <!-- ko ifnot: hdfs_link -->
+          <div>${_('unknown location')}</div>
+        <!-- /ko -->
       <!-- /ko -->
     </div>
     <!-- /ko -->
@@ -472,12 +488,14 @@ ${ components.menubar(is_embeddable) }
             <div>${ _('Owner') }</div>
             <div><span data-bind="text: owner_name ? owner_name : '${ _ko('None') }'"></span> <span data-bind="visible: owner_type">(<span data-bind="text: owner_type"></span>)</span></div>
           </div>
-          <div class="metastore-property">
-            <div>${ _('Location') }</div>
-            <div>
-              <a href="javascript: void(0);" data-bind="storageContextPopover: { path: hdfs_link.replace('/filebrowser/view=', ''), offset: { left: 5 } }"> ${_('Location')}</a>
+          <!-- ko if: hdfs_link  -->
+            <div class="metastore-property">
+              <div>${ _('Location') }</div>
+              <div>              
+                <a data-bind="hueLink: hdfs_link, attr: { title: $parent.catalogEntry.getHdfsFilePath() }" target="_blank" >${_('location')}</a>
+              </div>
             </div>
-          </div>
+          <!-- /ko -->
         </div>
       </div>
       <!-- ko with: parameters -->
@@ -684,7 +702,7 @@ ${ components.menubar(is_embeddable) }
 <script type="text/html" id="metastore-queries-tab">
   <br/>
   <i class="fa fa-spinner fa-spin" data-bind="visible: $root.loadingQueries"></i>
-  <table data-bind="visible: ! loadingQueries() && $data.optimizerDetails().queryList().length > 0" class="table table-condensed">
+  <table data-bind="visible: ! loadingQueries() && $data.sqlAnalyzerDetails().queryList().length > 0" class="table table-condensed">
     <thead>
     <tr>
       <th width="10%">${ _('Id') }</th>
@@ -696,11 +714,11 @@ ${ components.menubar(is_embeddable) }
       <th width="10%">${ _('Impala Compatible') }</th>
     </tr>
     </thead>
-    <tbody data-bind="hueach: { data: $data.optimizerDetails().queryList(), itemHeight: 32, scrollable: '${ MAIN_SCROLLABLE }', scrollableOffset: 200 }">
+    <tbody data-bind="hueach: { data: $data.sqlAnalyzerDetails().queryList(), itemHeight: 32, scrollable: '${ MAIN_SCROLLABLE }', scrollableOffset: 200 }">
     <tr>
       <td data-bind="text: qid"></td>
       <td style="height: 10px; width: 70px; margin-top:5px;" data-bind="attr: {'title': queryCount()}">
-        <div class="progress bar" style="background-color: #0B7FAD" data-bind="style: { 'width' : Math.round(queryCount() / $parent.optimizerDetails().queryCount() * 100) + '%' }"></div>
+        <div class="progress bar" style="background-color: #0B7FAD" data-bind="style: { 'width' : Math.round(queryCount() / $parent.sqlAnalyzerDetails().queryCount() * 100) + '%' }"></div>
       </td>
       <td><code data-bind="text: queryChar"></code></td>
       <td><code data-bind="text: query().substring(0, 100) + '...'"></code></td>
@@ -710,7 +728,7 @@ ${ components.menubar(is_embeddable) }
     </tr>
     </tbody>
   </table>
-  <div data-bind="visible: ! loadingQueries() && $data.optimizerDetails().queryList().length == 0" class="empty-message">
+  <div data-bind="visible: ! loadingQueries() && $data.sqlAnalyzerDetails().queryList().length == 0" class="empty-message">
     ${ _('No queries found for the current table.') }
   </div>
 </script>
@@ -747,41 +765,6 @@ ${ components.menubar(is_embeddable) }
   <!-- /ko -->
 </script>
 
-<script type="text/html" id="metastore-relationships-tab">
-  <!-- ko hueSpinner: { spin: loadingTopJoins, inline: true } --><!-- /ko -->
-  <table data-bind="visible: !loadingTopJoins()" class="table table-condensed">
-    <thead>
-    <tr>
-      <th>${ _('Table') }</th>
-      <th>${ _('Foreign keys') }</th>
-    </tr>
-    </thead>
-    <tbody>
-    <!-- ko if: topJoins().length === 0 -->
-    <tr>
-      <td colspan="2" style="font-style: italic;">${ _('No related tables found.') }</td>
-    </tr>
-    <!-- /ko -->
-    <!-- ko foreach: topJoins -->
-    <tr>
-      <td><a href="javascript:void(0);" data-bind="text: tableName, sqlContextPopover: { sourceType: $parents[1].catalogEntry.getConnector().id, namespace: parents[1].catalogEntry.namespace, compute: parents[1].catalogEntry.compute, path: tablePath, offset: { top: -3, left: 3 }}"></a></td>
-      <td>
-        <table class="metastore-join-column-table">
-          <tbody data-bind="foreach: joinCols">
-          <tr>
-            <td><a href="javascript:void(0);" data-bind="text: target, sqlContextPopover: { sourceType: $parents[2].catalogEntry.getConnector().id, namespace: $parents[2].catalogEntry.namespace, compute: parents[2].catalogEntry.compute, path: targetPath, offset: { top: -3, left: 3 }}"></a></td>
-            <td class="metastore-join-arrow"><i class="fa fa-arrows-h"></i></td>
-            <td><a href="javascript:void(0);" data-bind="text: source, sqlContextPopover: { sourceType: $parents[2].catalogEntry.getConnector().id, namespace: $parents[2].catalogEntry.namespace, compute: parents[2].catalogEntry.compute, path: sourcePath, offset: { top: -3, left: 3 }}"></a></td>
-          </tr>
-          </tbody>
-        </table>
-      </td>
-    </tr>
-    <!-- /ko -->
-    </tbody>
-  </table>
-</script>
-
 <script type="text/html" id="metastore-describe-table">
   <div class="clearfix"></div>
   <!-- ko template: 'metastore-main-description' --><!-- /ko -->
@@ -792,15 +775,11 @@ ${ components.menubar(is_embeddable) }
 
   <ul class="nav nav-tabs nav-tabs-border margin-top-10">
     <li data-bind="css: { 'active': $root.currentTab() === 'overview' }"><a href="javascript: void(0);" data-bind="click: function() { $root.currentTab('overview'); }">${_('Overview')}</a></li>
-    <!-- ko if: $root.optimizerEnabled() -->
-      <li data-bind="css: { 'active': $root.currentTab() === 'relationships' }"><a href="javascript: void(0);" data-bind="click: function() { $root.currentTab('relationships'); }">${_('Relationships')} (<span data-bind="text: topJoins().length"></span>)</a></li>
-##       <!-- ko if: $root.database().table().optimizerDetails() -->
-##       <li data-bind="css: { 'active': $root.currentTab() === 'queries' }"><a href="javascript: void(0);" data-bind="click: function(){ $root.currentTab('queries'); }">${_('Queries')} (<span data-bind="text: $root.database().table().optimizerDetails().queryCount"></span>)</a></li>
-##       <li data-bind="css: { 'active': $root.currentTab() === 'joins' }"><a href="javascript: void(0);" data-bind="click: function(){ $root.currentTab('joins'); }">${_('Joins')} (<span data-bind="text: $root.database().table().optimizerDetails().joinCount"></span>)</a></li>
-##       <!-- /ko -->
-##       <!-- ko if: $root.database().table().relationshipsDetails() -->
-##       <!-- /ko -->
-    <!-- /ko -->
+    % if SHOW_TABLE_ERD.get():
+    <li data-bind="css: { 'active' : $root.currentTab() === 'erd' || $root.currentTab() === 'erd-animated' }">
+      <a href="javascript: void(0);" data-bind="click: function() { $root.currentTab('erd'); }">${_('Relationships')} (<span data-bind="text: topJoins().length"></span>)</a>
+    </li>
+    % endif
     <!-- ko if: tableDetails() && tableDetails().partition_keys.length -->
     <li data-bind="css: { 'active': $root.currentTab() === 'partitions' }">
       <a href="javascript: void(0);" data-bind="click: function() { $root.currentTab('partitions'); }">${_('Partitions')} (<span data-bind="text: partitionsCountLabel"></span>)</a>
@@ -830,10 +809,6 @@ ${ components.menubar(is_embeddable) }
         <!-- ko template: 'metastore-overview-tab' --><!-- /ko -->
       <!-- /ko -->
 
-      <!-- ko if: $root.currentTab() === 'relationships' -->
-      <!-- ko template: { name: 'metastore-relationships-tab' } --><!-- /ko -->
-      <!-- /ko -->
-
       <!-- ko if: $root.currentTab() === 'partitions' -->
         <!-- ko template: 'metastore-partitions-tab' --><!-- /ko -->
       <!-- /ko -->
@@ -842,7 +817,7 @@ ${ components.menubar(is_embeddable) }
         <!-- ko template: 'metastore-sample-tab' --><!-- /ko -->
       <!-- /ko -->
 
-      <!-- ko if: $root.optimizerEnabled() && $root.currentTab() === 'queries' -->
+      <!-- ko if: $root.sqlAnalyzerEnabled() && $root.currentTab() === 'queries' -->
         <!-- ko template: { name: 'metastore-queries-tab', data: $root.database().table() } --><!-- /ko -->
       <!-- /ko -->
 
@@ -857,6 +832,25 @@ ${ components.menubar(is_embeddable) }
       <!-- ko if: $root.currentTab() === 'privileges' -->
         <div data-bind="component: { name: 'hue-sentry-privileges', params: { isSentryAdmin: false, readOnly: true, server: 'server1', path: catalogEntry.path.join('.')}}"></div>
       <!-- /ko -->
+
+      <!-- ko if: $root.currentTab() === 'erd' || $root.currentTab() === 'erd-animated' -->
+        <!-- ko hueSpinner: { spin: loading, center: true, size: 'xlarge' } --><!-- /ko -->
+        <!-- ko ifnot: loading -->
+          <er-diagram data-bind="
+            vueProps: $root.propsMappers.tableERD(database.table().catalogEntry),
+            vueEvents: {
+              'entity-clicked': function (event){
+                const entity = event.detail[0];
+                if(entity.type === 'TABLE') {
+                  $root.setDbAndTableByName(entity.database, entity.name, () => $root.currentTab('erd-animated'));
+                }
+              }
+            },
+            class: $root.currentTab() + ' table-erd'
+          "></er-diagram>
+        <!-- /ko -->
+      <!-- /ko -->
+
     </div>
   </div>
 </script>
@@ -908,7 +902,7 @@ ${ components.menubar(is_embeddable) }
                         <a class="btn btn-default" data-bind="attr: { 'href': '/metastore/table/'+ catalogEntry.path.join('/') + '/read' }" title="${_('Browse Data')}"><i class="fa fa-play fa-fw"></i> ${_('Browse Data')}</a>
                       % endif
                       % if has_write_access:
-                        <a href="javascript: void(0);" class="btn btn-default" data-bind="click: showImportData, visible: tableDetails() && !catalogEntry.isView()" title="${_('Import Data')}"><i class="fa fa-upload fa-fw"></i> ${_('Import')}</a>
+                        <a href="javascript: void(0);" class="btn btn-default" data-bind="click: showImportData, visible: enableImport($root.source().type)" title="${_('Import Data')}"><i class="fa fa-upload fa-fw"></i> ${_('Import')}</a>
                       % endif
                       % if has_write_access:
                         <a href="#dropSingleTable" data-toggle="modal" class="btn btn-default" data-bind="attr: { 'title' : tableDetails() && catalogEntry.isView() ? '${_('Drop View')}' : '${_('Drop Table')}' }"><i class="fa fa-times fa-fw"></i> ${_('Drop')}</a>

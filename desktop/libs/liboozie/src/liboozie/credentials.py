@@ -17,8 +17,12 @@
 
 from builtins import object
 import logging
+import sys
 
-from django.utils.translation import ugettext as _
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -53,7 +57,7 @@ class Credentials(object):
     from beeswax import hive_site, conf
 
     if not hasattr(conf.HIVE_SERVER_HOST, 'get') or not conf.HIVE_SERVER_HOST.get():
-      LOG.warn('Could not get all the Oozie credentials: beeswax app is blacklisted.')
+      LOG.warning('Could not get all the Oozie credentials: beeswax app is blacklisted.')
     else:
       if hive_properties is None:
         hive_properties = hive_site.get_metastore()
@@ -62,7 +66,7 @@ class Credentials(object):
 
       if not hive_properties:
         hive_properties = {}
-        LOG.warn('Could not get all the Oozie credentials: hive-site.xml required on the Hue host.')
+        LOG.warning('Could not get all the Oozie credentials: hive-site.xml required on the Hue host.')
 
       credentials[self.hive_name] = {
         'xml_name': self.hive_name,

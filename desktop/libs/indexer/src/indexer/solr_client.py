@@ -21,8 +21,7 @@ import logging
 import json
 import os
 import shutil
-
-from django.utils.translation import ugettext as _
+import sys
 
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.i18n import smart_str
@@ -31,6 +30,11 @@ from libzookeeper.models import ZookeeperClient
 
 from indexer.conf import CORE_INSTANCE_DIR, get_solr_ensemble
 from indexer.utils import copy_configs
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -87,7 +91,7 @@ class SolrClient(object):
 
     except Exception as e:
       msg = _('Solr server could not be contacted properly: %s') % e
-      LOG.warn(msg)
+      LOG.warning(msg)
       raise PopupException(msg, detail=smart_str(e))
 
     return sorted(indexes, key=lambda index: index['name'])
@@ -281,7 +285,7 @@ class SolrClient(object):
         if not zc.path_exists(root_node):
           zc.copy_path(root_node, config_root_path)
         else:
-          LOG.warn('Config %s already existing.' % name)
+          LOG.warning('Config %s already existing.' % name)
       except Exception as e:
         if zc.path_exists(root_node):
           zc.delete_path(root_node)

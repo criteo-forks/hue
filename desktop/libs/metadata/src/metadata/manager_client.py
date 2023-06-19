@@ -25,7 +25,6 @@ import logging
 import sys
 
 from django.core.cache import cache
-from django.utils.translation import ugettext as _
 
 from desktop.lib.rest.http_client import RestException, HttpClient
 from desktop.lib.rest.resource import Resource
@@ -36,7 +35,9 @@ from metadata.conf import MANAGER, get_navigator_auth_username, get_navigator_au
 
 if sys.version_info[0] > 2:
   from urllib.parse import quote as urllib_quote
+  from django.utils.translation import gettext as _
 else:
+  from django.utils.translation import ugettext as _
   from urllib import quote as urllib_quote
 
 LOG = logging.getLogger(__name__)
@@ -124,7 +125,7 @@ class ManagerApi(object):
           }, params={'view': 'full'})['items']
           return shs_server_hostId, shs_server_configs
     except Exception as e:
-      LOG.warn("Check Spark History Server via ManagerApi: %s" % e)
+      LOG.warning("Check Spark History Server via ManagerApi: %s" % e)
 
     return None, None
 
@@ -163,7 +164,7 @@ class ManagerApi(object):
 
   def assemble_shs_url(self, shs_ui_hostname, shs_ui_port=None, shs_ssl_port=None, shs_ssl_enabled=None):
     if not shs_ui_hostname or not shs_ui_port or not shs_ssl_port or not shs_ssl_enabled:
-      LOG.warn("Spark conf not found!")
+      LOG.warning("Spark conf not found!")
       return None
 
     protocol = 'https' if shs_ssl_enabled.lower() == 'true' else 'http'
@@ -270,7 +271,7 @@ class ManagerApi(object):
     cluster = self._get_cluster(cluster_name)
     roles = [role['name'] for role in self._get_roles(cluster['name'], service, 'AGENT')]
 
-    if restart:    
+    if restart:
       return self.restart_services(cluster['name'], service, roles)
     else:
       return self.refresh_configs(cluster['name'], service, roles)
@@ -375,6 +376,6 @@ class ManagerApi(object):
                 return config['value']
 
     except Exception as e:
-      LOG.warn("Get Impala Daemon API configurations via ManangerAPI: %s" % e)
+      LOG.warning("Get Impala Daemon API configurations via ManangerAPI: %s" % e)
 
     return None

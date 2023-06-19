@@ -36,8 +36,12 @@ import sys
 
 from desktop.conf import LDAP
 from django.core.management.base import BaseCommand
-from django.utils.translation import ugettext as _
 from useradmin import ldap_access
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.DEBUG)
@@ -137,6 +141,7 @@ will typically work with Active Directory/LDAP. Typically this is member
 for Active Directory and LDAP.
 """
 
+
 class Command(BaseCommand):
   def print_ldap_global_settings(self, cfg, is_multi_ldap):
     LOG.info('[desktop]')
@@ -196,19 +201,19 @@ class Command(BaseCommand):
     ldap_url = ldap_config.LDAP_URL.get()
     if ldap_url is None:
       LOG.info(_(ldap_url_msg))
-      LOG.warn('Could not find LDAP_URL server in hue.ini required for authentication')
+      LOG.warning('Could not find LDAP_URL server in hue.ini required for authentication')
       return err_code
 
     if not ((ldap_url.startswith("ldap") and
-          "://" in ldap_url)):
+                 "://" in ldap_url)):
       LOG.info(_(ldap_url_msg))
-      LOG.warn("Check your ldap_url=%s" % ldap_url)
+      LOG.warning("Check your ldap_url=%s" % ldap_url)
       return err_code
 
     ldap_cert = ldap_config.LDAP_CERT.get()
     if ldap_cert is not None and (not os.path.isfile(ldap_cert)):
       LOG.info(_(ldap_cert_msg))
-      LOG.warn("Could not find certificate %s on %s" % (ldap_cert, socket.gethostname()))
+      LOG.warning("Could not find certificate %s on %s" % (ldap_cert, socket.gethostname()))
       return err_code
 
     if ldap_cert is not None:
@@ -218,7 +223,7 @@ class Command(BaseCommand):
     bind_dn = ldap_config.BIND_DN.get()
     if bind_dn is None:
       LOG.info(_(bind_dn_msg))
-      LOG.warn("Could not find bind_dn in hue.ini required for authentication")
+      LOG.warning("Could not find bind_dn in hue.ini required for authentication")
       return err_code
 
     if ldap_config.SEARCH_BIND_AUTHENTICATION.get():
@@ -226,19 +231,19 @@ class Command(BaseCommand):
       user_name_attr = ldap_config.USERS.USER_NAME_ATTR.get()
       user_filter = ldap_config.USERS.USER_FILTER.get()
       bind_password = ldap_config.BIND_PASSWORD.get()
-      if user_name_attr=='' or ' ' in user_name_attr:
+      if user_name_attr == '' or ' ' in user_name_attr:
         LOG.info(_(user_name_attr_msg))
-        LOG.warn("Could not find user_name_attr in hue.ini")
+        LOG.warning("Could not find user_name_attr in hue.ini")
         return err_code
 
-      if user_filter=='':
+      if user_filter == '':
         LOG.info(_(user_filter_msg))
-        LOG.warn("Could not find user_filter in hue.ini required for authentication")
+        LOG.warning("Could not find user_filter in hue.ini required for authentication")
         return err_code
 
       if (not bind_password and not ldap_config.BIND_PASSWORD_SCRIPT.get()):
         LOG.info(_(bind_password_msg))
-        LOG.warn("Could not find bind_password in hue.ini, required for authentication")
+        LOG.warning("Could not find bind_password in hue.ini, required for authentication")
         return err_code
     else:
       # Direct Bind Auth
@@ -248,8 +253,8 @@ class Command(BaseCommand):
         if pattern is None:
           LOG.info(_(nt_domain_msg))
           LOG.info(_(ldap_username_pattern_msg))
-          LOG.warn('Could not find nt_domain in hue.ini')
-          LOG.warn('Could not find ldap_username_pattern in hue.ini, required for authentication')
+          LOG.warning('Could not find nt_domain in hue.ini')
+          LOG.warning('Could not find ldap_username_pattern in hue.ini, required for authentication')
           return err_code
         else:
           pattern = pattern.replace('<username>', bind_dn)
@@ -258,7 +263,7 @@ class Command(BaseCommand):
         if ((',' in bind_dn) or ('@' in bind_dn) or ('=' in bind_dn) or (' ' in bind_dn)):
           LOG.info(_(nt_domain_msg))
           LOG.info(_(ldap_username_pattern_msg))
-          LOG.warn('bind_dn value contains , or @ or = or " " character which is not allowed')
+          LOG.warning('bind_dn value contains , or @ or = or " " character which is not allowed')
           return err_code
         # %(user)s is a special string that will get replaced during the authentication process
         LOG.info('Setting USER_DN_TEMPLATE as %s@%s' % (bind_dn, nt_domain))
@@ -269,28 +274,28 @@ class Command(BaseCommand):
     err_code = 0
     test_ldap_user = ldap_config.TEST_LDAP_USER.get()
     if '*' in test_ldap_user:
-      LOG.warn('Setting test_ldap_user as %s' % test_ldap_user)
-      LOG.warn('This operation can overwhelm the server')
-      LOG.warn('Chances are server may or may not respond')
-      LOG.warn('If you want to test your LDAP Settings please use specific username')
+      LOG.warning('Setting test_ldap_user as %s' % test_ldap_user)
+      LOG.warning('This operation can overwhelm the server')
+      LOG.warning('Chances are server may or may not respond')
+      LOG.warning('If you want to test your LDAP Settings please use specific username')
 
     try:
       users = ldap_obj.find_users(test_ldap_user)
     except ldap.NO_SUCH_OBJECT as err:
-      LOG.warn(str(err))
+      LOG.warning(str(err))
       LOG.info(_(base_dn_msg))
-      LOG.warn('hints: check base_dn')
+      LOG.warning('hints: check base_dn')
       err_code = 1
     except:
       typ, value, traceback = sys.exc_info()
-      LOG.warn("%s %s" % (typ, value))
+      LOG.warning("%s %s" % (typ, value))
       LOG.info(_(base_dn_msg))
-      LOG.warn('hints: check base_dn')
+      LOG.warning('hints: check base_dn')
       err_code = 1
 
     # print ldapsearch command for debugging purpose
     if err_code:
-      LOG.warn(ldap_obj.ldapsearch_cmd())
+      LOG.warning(ldap_obj.ldapsearch_cmd())
       return err_code
     else:
       LOG.info(ldap_obj.ldapsearch_cmd())
@@ -298,16 +303,16 @@ class Command(BaseCommand):
     if users:
       for user in users:
         LOG.info('%s' % user)
-        if user.get('username', '')=='':
+        if user.get('username', '') == '':
           LOG.info(_(user_name_attr_msg))
-          LOG.warn('hints: check user_name_attr="%s"' % ldap_config.USERS.USER_NAME_ATTR.get())
+          LOG.warning('hints: check user_name_attr="%s"' % ldap_config.USERS.USER_NAME_ATTR.get())
           err_code = 1
     else:
-      LOG.warn('test_ldap_user %s may not exist' % test_ldap_user)
+      LOG.warning('test_ldap_user %s may not exist' % test_ldap_user)
       LOG.info(_(user_filter_msg))
       LOG.info(_(user_name_attr_msg))
-      LOG.warn('hints: check user_filter="%s"' % ldap_config.USERS.USER_FILTER.get())
-      LOG.warn('hints: check user_name_attr="%s"' % ldap_config.USERS.USER_NAME_ATTR.get())
+      LOG.warning('hints: check user_filter="%s"' % ldap_config.USERS.USER_FILTER.get())
+      LOG.warning('hints: check user_name_attr="%s"' % ldap_config.USERS.USER_NAME_ATTR.get())
       err_code = 1
 
     return err_code
@@ -316,40 +321,40 @@ class Command(BaseCommand):
     err_code = 0
     test_ldap_group = ldap_config.TEST_LDAP_GROUP.get()
     if '*' in test_ldap_group:
-      LOG.warn("Setting test_ldap_group as %s" % test_ldap_group)
-      LOG.warn("This operation can overwhelm the server")
-      LOG.warn("Chances are server may or may not respond")
-      LOG.warn("If you want to test your LDAP Settings please use specific groupname")
+      LOG.warning("Setting test_ldap_group as %s" % test_ldap_group)
+      LOG.warning("This operation can overwhelm the server")
+      LOG.warning("Chances are server may or may not respond")
+      LOG.warning("If you want to test your LDAP Settings please use specific groupname")
 
     try:
       groups = ldap_obj.find_groups(test_ldap_group)
     except ldap.NO_SUCH_OBJECT as err:
-      LOG.warn(str(err))
+      LOG.warning(str(err))
       LOG.info(_(base_dn_msg))
-      LOG.warn("hints: check base_dn")
+      LOG.warning("hints: check base_dn")
       err_code = 1
     except:
       typ, value, traceback = sys.exc_info()
-      LOG.warn("%s %s" % (typ, value))
+      LOG.warning("%s %s" % (typ, value))
       LOG.info(_(base_dn_msg))
-      LOG.warn("hints: check base_dn")
+      LOG.warning("hints: check base_dn")
       err_code = 1
 
     if err_code:
-      LOG.warn(ldap_obj.ldapsearch_cmd())
+      LOG.warning(ldap_obj.ldapsearch_cmd())
       return err_code
     else:
-     LOG.info(ldap_obj.ldapsearch_cmd())
+      LOG.info(ldap_obj.ldapsearch_cmd())
 
     if groups:
       for grp in groups:
         LOG.info("%s" % grp)
     else:
-      LOG.warn("test_ldap_group %s may not exist" % test_ldap_group)
+      LOG.warning("test_ldap_group %s may not exist" % test_ldap_group)
       LOG.info(_(group_filter_msg))
       LOG.info(_(group_name_attr_msg))
-      LOG.warn("hints: check group_filter=\"%s\"" % ldap_config.GROUPS.GROUP_FILTER.get())
-      LOG.warn("hints: check group_name_attr=\"%s\"" % ldap_config.GROUPS.GROUP_NAME_ATTR.get())
+      LOG.warning("hints: check group_filter=\"%s\"" % ldap_config.GROUPS.GROUP_FILTER.get())
+      LOG.warning("hints: check group_name_attr=\"%s\"" % ldap_config.GROUPS.GROUP_NAME_ATTR.get())
       err_code = 1
 
     return err_code
@@ -361,20 +366,20 @@ class Command(BaseCommand):
     try:
       groups = ldap_obj.find_users_of_group(test_ldap_group)
     except ldap.NO_SUCH_OBJECT as err:
-      LOG.warn(str(err))
+      LOG.warning(str(err))
       LOG.info(_(base_dn_msg))
-      LOG.warn('hints: check base_dn')
+      LOG.warning('hints: check base_dn')
       err_code = 1
     except:
       typ, value, traceback = sys.exc_info()
-      LOG.warn("%s %s" % (typ, value))
+      LOG.warning("%s %s" % (typ, value))
       LOG.info(_(base_dn_msg))
-      LOG.warn('hints: check base_dn')
+      LOG.warning('hints: check base_dn')
       err_code = 1
 
     # print ldapsearch command for debugging purpose
     if err_code:
-      LOG.warn(ldap_obj.ldapsearch_cmd())
+      LOG.warning(ldap_obj.ldapsearch_cmd())
       return err_code
     else:
       LOG.info(ldap_obj.ldapsearch_cmd())
@@ -382,16 +387,16 @@ class Command(BaseCommand):
     if groups:
       for grp in groups:
         LOG.info('%s' % grp)
-        if grp.get('members', [])==[]:
+        if grp.get('members', []) == []:
           LOG.info(_(group_member_attr_msg))
-          LOG.warn('hints: check group_member_attr="%s"' % ldap_config.GROUPS.GROUP_MEMBER_ATTR.get())
+          LOG.warning('hints: check group_member_attr="%s"' % ldap_config.GROUPS.GROUP_MEMBER_ATTR.get())
           err_code = 1
     else:
-      LOG.warn('find_users_of_group %s may not exist' % test_ldap_group)
+      LOG.warning('find_users_of_group %s may not exist' % test_ldap_group)
       LOG.info(_(group_filter_msg))
       LOG.info(_(group_name_attr_msg))
-      LOG.warn('hints: check group_filter="%s"' % ldap_config.GROUPS.GROUP_FILTER.get())
-      LOG.warn('hints: check group_name_attr="%s"' % ldap_config.GROUPS.GROUP_NAME_ATTR.get())
+      LOG.warning('hints: check group_filter="%s"' % ldap_config.GROUPS.GROUP_FILTER.get())
+      LOG.warning('hints: check group_name_attr="%s"' % ldap_config.GROUPS.GROUP_NAME_ATTR.get())
       err_code = 1
 
     return err_code
@@ -403,20 +408,20 @@ class Command(BaseCommand):
     try:
       groups = ldap_obj.find_groups_of_group(test_ldap_group)
     except ldap.NO_SUCH_OBJECT as err:
-      LOG.warn(err.args)
+      LOG.warning(err.args)
       LOG.info(_(base_dn_msg))
-      LOG.warn('hints: check base_dn')
+      LOG.warning('hints: check base_dn')
       err_code = 1
     except:
       typ, value, traceback = sys.exc_info()
-      LOG.warn("%s %s" % (typ, value))
+      LOG.warning("%s %s" % (typ, value))
       LOG.info(_(base_dn_msg))
-      LOG.warn('hints: check base_dn')
+      LOG.warning('hints: check base_dn')
       err_code = 1
 
     # print ldapsearch command for debugging purpose
     if err_code:
-      LOG.warn(ldap_obj.ldapsearch_cmd())
+      LOG.warning(ldap_obj.ldapsearch_cmd())
       return err_code
     else:
       LOG.info(ldap_obj.ldapsearch_cmd())
@@ -424,9 +429,9 @@ class Command(BaseCommand):
     if groups:
       for grp in groups:
         LOG.info('%s' % grp)
-        if grp.get('members',[])==[]:
+        if grp.get('members', []) == []:
           LOG.info(_(group_member_attr_msg))
-          LOG.warn('hints: check group_member_attr="%s"' % ldap_config.GROUPS.GROUP_MEMBER_ATTR.get())
+          LOG.warning('hints: check group_member_attr="%s"' % ldap_config.GROUPS.GROUP_MEMBER_ATTR.get())
           err_code = 1
     else:
       LOG.info('find_groups_of_group %s may not exist' % test_ldap_group)
@@ -434,8 +439,8 @@ class Command(BaseCommand):
     return err_code
 
   def sys_exit(self, exit_code):
-    if exit_code!=0:
-      LOG.warn('LDAP Test Command failed')
+    if exit_code != 0:
+      LOG.warning('LDAP Test Command failed')
     sys.exit(exit_code)
 
   def handle(self, *args, **options):
@@ -466,7 +471,6 @@ class Command(BaseCommand):
 
     self.sys_exit(err_code)
 
-
   def check_single_ldap_setting(self, ldap_config, is_multi_ldap=False):
     self.print_ldap_setting(ldap_config, is_multi_ldap)
     # Basic validation check for hue.ini's ldap parameters [desktop] > [[ldap]]
@@ -477,31 +481,35 @@ class Command(BaseCommand):
       try:
         connection = ldap_access.get_connection(ldap_config)
       except ldap_access.LdapBindException as err:
-        LOG.warn(str(err))
+        LOG.warning(str(err))
         LOG.info(_(ldap_url_msg))
         LOG.info(_(bind_dn_msg))
-        LOG.warn('hints: check bind_dn, bind_password and ldap_url')
-        LOG.warn('ldap_url="%s"' % ldap_config.LDAP_URL.get())
-        LOG.warn('bind_dn="%s"' % ldap_config.BIND_DN.get())
+        LOG.warning('hints: check bind_dn, bind_password and ldap_url')
+        LOG.warning('ldap_url="%s"' % ldap_config.LDAP_URL.get())
+        LOG.warning('bind_dn="%s"' % ldap_config.BIND_DN.get())
         err_code = 1
       except:
         typ, value, traceback = sys.exc_info()
-        LOG.warn("%s %s" % (typ, value))
+        LOG.warning("%s %s" % (typ, value))
         LOG.info(_(ldap_url_msg))
         LOG.info(_(bind_dn_msg))
-        LOG.warn('hints: check bind_dn, bind_password and ldap_url')
-        LOG.warn('ldap_url="%s"' % ldap_config.LDAP_URL.get())
-        LOG.warn('bind_dn="%s"' % ldap_config.BIND_DN.get())
+        LOG.warning('hints: check bind_dn, bind_password and ldap_url')
+        LOG.warning('ldap_url="%s"' % ldap_config.LDAP_URL.get())
+        LOG.warning('bind_dn="%s"' % ldap_config.BIND_DN.get())
         err_code = 1
 
       if err_code:
         cfg = ldap_access.get_auth(ldap_config)
         ldapsearch = 'ldapsearch -x -LLL -H {ldap_url} -D "{binddn}" -w "********" -b "" ' \
                      ' -s base'.format(ldap_url=cfg[0], binddn=cfg[1])
-        LOG.warn(ldapsearch)
+        LOG.warning(ldapsearch)
         self.sys_exit(err_code)
 
-      LOG.info('LDAP whoami_s() %s' % (connection.ldap_handle.whoami_s()))
+      try:
+        LOG.info('LDAP whoami_s() %s' % (connection.ldap_handle.whoami_s()))
+      except:
+        LOG.warn('Not able to execute whoami_s() command')
+
       if ldap_config.TEST_LDAP_USER.get() is not None:
         err_code = self.find_ldapusers(ldap_config, connection)
         if err_code:

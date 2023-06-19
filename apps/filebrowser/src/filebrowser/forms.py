@@ -26,7 +26,6 @@ import urllib.request, urllib.error
 from django import forms
 from django.forms import FileField, CharField, BooleanField, Textarea
 from django.forms.formsets import formset_factory, BaseFormSet
-from django.utils.translation import ugettext_lazy as _
 
 from aws.s3 import S3A_ROOT, normpath as s3_normpath
 from azure.abfs.__init__ import ABFS_ROOT, normpath as abfs_normpath
@@ -38,8 +37,10 @@ from filebrowser.lib import rwx
 
 if sys.version_info[0] > 2:
   from urllib.parse import unquote as urllib_unquote
+  from django.utils.translation import gettext_lazy as _
 else:
   from urllib import unquote as urllib_unquote
+  from django.utils.translation import ugettext_lazy as _
 
 
 logger = logging.getLogger(__name__)
@@ -73,7 +74,9 @@ class PathField(CharField):
 
   def clean(self, value):
     cleaned_path = CharField.clean(self, value)
-    if value.lower().startswith(S3A_ROOT):
+    if not value:
+      value = ''
+    elif value.lower().startswith(S3A_ROOT):
       cleaned_path = s3_normpath(cleaned_path)
     elif value.lower().startswith(ABFS_ROOT):
       cleaned_path = abfs_normpath(cleaned_path)
@@ -127,13 +130,17 @@ class SetReplicationFactorForm(forms.Form):
 class UploadFileForm(forms.Form):
   op = "upload"
   # The "hdfs" prefix in "hdfs_file" triggers the HDFSfileUploadHandler
-  hdfs_file = FileField(forms.Form, label=_("File to Upload"))
-  dest = PathField(label=_("Destination Path"), help_text=_("Filename or directory to upload to."))
+  hdfs_file = FileField(label=_("File to Upload"))
+  dest = PathField(label=_("Destination Path"), help_text=_("Filename or directory to upload to."), required=False)  # Used actually?
   extract_archive = BooleanField(required=False)
+
+class UploadLocalFileForm(forms.Form):
+  op = "upload"
+  file = FileField(label=_("File to Upload"))
 
 class UploadArchiveForm(forms.Form):
   op = "upload"
-  archive = FileField(forms.Form, label=_("Archive to Upload"))
+  archive = FileField(label=_("Archive to Upload"))
   dest = PathField(label=_("Destination Path"), help_text=_("Archive to upload to."))
 
 class RemoveForm(forms.Form):
@@ -189,8 +196,8 @@ class ChownForm(forms.Form):
   def __init__(self, *args, **kwargs):
     super(ChownForm, self).__init__(*args, **kwargs)
 
-    self.all_groups = [ group.name for group in Group.objects.all() ]
-    self.all_users = [ user.username for user in User.objects.all() ]
+    self.all_groups = [group.name for group in Group.objects.all()]
+    self.all_users = [user.username for user in User.objects.all()]
 
 class BaseChownFormSet(FormSet):
   op = "chown"

@@ -16,11 +16,12 @@
 
 import * as ko from 'knockout';
 
-import componentUtils from 'ko/components/componentUtils';
-import I18n from 'utils/i18n';
-import DisposableComponent from 'ko/components/DisposableComponent';
 import { simpleGet, simplePost } from 'api/apiUtils';
+import { REFRESH_CONFIG_TOPIC } from 'config/events';
+import componentUtils from 'ko/components/componentUtils';
+import DisposableComponent from 'ko/components/DisposableComponent';
 import huePubSub from 'utils/huePubSub';
+import I18n from 'utils/i18n';
 
 export const NAME = 'connectors-config';
 
@@ -66,7 +67,7 @@ const TEMPLATE = `
           valueUpdate: 'afterkeydown'
       ">
       <span>
-        <a href="https://docs.gethue.com/administrator/configuration/" target="_blank">
+        <a href="https://docs.gethue.com/administrator/configuration/connectors/" target="_blank">
           <i class="fa fa-question-circle"></i> ${ I18n('Help') }
         </a>
       </span>
@@ -302,14 +303,14 @@ class ConnectorsConfig extends DisposableComponent {
     if (this.section() === 'installed-connectors-page') {
       this.instance(data);
     } else {
-      this.newConnector(data.dialect);
+      this.newConnector(data.dialect, data.interface);
     }
     this.section('connector-page');
   }
 
-  newConnector(dialect) {
+  newConnector(dialect, con_interface) {
     simpleGet(
-      '/desktop/connectors/api/instance/new/' + dialect,
+      '/desktop/connectors/api/instance/new/' + dialect + '/' + con_interface,
       {},
       {
         successCallback: data => {
@@ -341,7 +342,7 @@ class ConnectorsConfig extends DisposableComponent {
         successCallback: data => {
           this.section('installed-connectors-page');
           this.fetchConnectors();
-          huePubSub.publish('cluster.config.refresh.config');
+          huePubSub.publish(REFRESH_CONFIG_TOPIC);
         }
       }
     );
@@ -358,7 +359,7 @@ class ConnectorsConfig extends DisposableComponent {
           connector.id = data.connector.id;
           this.section('installed-connectors-page');
           this.fetchConnectors();
-          huePubSub.publish('cluster.config.refresh.config');
+          huePubSub.publish(REFRESH_CONFIG_TOPIC);
         }
       }
     );

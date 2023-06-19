@@ -15,26 +15,33 @@
 ## limitations under the License.
 
 <%!
-  from django.utils.translation import ugettext as _
+  import sys
 
   from desktop import conf
   from desktop.auth.backend import is_admin, is_hue_admin
   from desktop.conf import APP_SWITCHER_ALTUS_BASE_URL, APP_SWITCHER_MOW_BASE_URL, CUSTOM_DASHBOARD_URL, \
-      DISPLAY_APP_SWITCHER, IS_K8S_ONLY, IS_MULTICLUSTER_ONLY, USE_DEFAULT_CONFIGURATION, USE_NEW_SIDE_PANELS, \
-      VCS, ENABLE_GIST, ENABLE_LINK_SHARING, has_channels
-  from desktop.models import hue_version, _get_apps, get_cluster_config
+      DISPLAY_APP_SWITCHER, IS_K8S_ONLY, IS_MULTICLUSTER_ONLY, USE_DEFAULT_CONFIGURATION, USE_NEW_ASSIST_PANEL, \
+      VCS, ENABLE_GIST, ENABLE_LINK_SHARING, has_channels, has_connectors, ENABLE_UNIFIED_ANALYTICS, RAZ
+  from desktop.models import hue_version, _get_apps, get_cluster_config, _handle_user_dir_raz
 
   from beeswax.conf import DOWNLOAD_BYTES_LIMIT, DOWNLOAD_ROW_LIMIT, LIST_PARTITIONS_LIMIT, CLOSE_SESSIONS
   from dashboard.conf import HAS_SQL_ENABLED
   from jobbrowser.conf import ENABLE_HISTORY_V2
-  from filebrowser.conf import SHOW_UPLOAD_BUTTON
+  from filebrowser.conf import SHOW_UPLOAD_BUTTON, REMOTE_STORAGE_HOME
   from indexer.conf import ENABLE_NEW_INDEXER
+  from libsaml.conf import get_logout_redirect_url, CDP_LOGOUT_URL
   from metadata.conf import has_catalog, has_readonly_catalog, has_optimizer, has_workload_analytics, OPTIMIZER, get_optimizer_url, \
       get_catalog_url, get_optimizer_mode
   from metastore.conf import ENABLE_NEW_CREATE_TABLE
   from metastore.views import has_write_access
   from notebook.conf import ENABLE_NOTEBOOK_2, ENABLE_QUERY_ANALYSIS, ENABLE_QUERY_BUILDER, ENABLE_QUERY_SCHEDULING, ENABLE_SQL_INDEXER, \
       get_ordered_interpreters, SHOW_NOTEBOOKS
+  from django.utils.translation import get_language
+
+  if sys.version_info[0] > 2:
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="sqlDocIndex" file="/sql_doc_index.mako" />
@@ -47,9 +54,11 @@
 
   window.BANNER_TOP_HTML = '${ conf.CUSTOM.BANNER_TOP_HTML.get() }';
 
+  window.DISABLE_LOCAL_STORAGE = '${ conf.DISABLE_LOCAL_STORAGE.get() }' === 'True';
+
   window.CACHEABLE_TTL = {
     default: ${ conf.CUSTOM.CACHEABLE_TTL.get() },
-    optimizer: ${ OPTIMIZER.CACHEABLE_TTL.get() or 0 }
+    sqlAnalyzer: ${ OPTIMIZER.CACHEABLE_TTL.get() or 0 }
   };
 
   window.DEV = '${ conf.DEV.get() }' === 'True';
@@ -75,13 +84,16 @@
   window.KNOX_BASE_PATH = window._KNOX_BASE_PATH.indexOf('KNOX_BASE_PATH_KNOX') < 0 ? window._KNOX_BASE_PATH_KNOX : '';
   window.KNOX_BASE_URL = window._KNOX_BASE_URL.indexOf('KNOX_BASE_URL') < 0 ? window._KNOX_BASE_URL : '';
 
+  window.SAML_LOGOUT_URL = '${ CDP_LOGOUT_URL.get() }';
+  window.SAML_REDIRECT_URL = '${ get_logout_redirect_url() }';
+
   window.HAS_GIT = ${ len(VCS.keys()) } > 0;
   window.HAS_MULTI_CLUSTER = '${ get_cluster_config(user)['has_computes'] }' === 'True';
 
   window.HAS_SQL_DASHBOARD = '${ HAS_SQL_ENABLED.get() }' === 'True';
   window.CUSTOM_DASHBOARD_URL = '${ CUSTOM_DASHBOARD_URL.get() }';
 
-  window.DROPZONE_HOME_DIR = '${ user.get_home_directory() if not user.is_anonymous() else "" }';
+  window.DROPZONE_HOME_DIR = '${ user.get_home_directory() if not user.is_anonymous else "" }';
 
   window.DOWNLOAD_ROW_LIMIT = ${ DOWNLOAD_ROW_LIMIT.get() if hasattr(DOWNLOAD_ROW_LIMIT, 'get') and DOWNLOAD_ROW_LIMIT.get() >= 0 else 'undefined' };
   window.DOWNLOAD_BYTES_LIMIT = ${ DOWNLOAD_BYTES_LIMIT.get() if hasattr(DOWNLOAD_BYTES_LIMIT, 'get') and DOWNLOAD_BYTES_LIMIT.get() >= 0 else 'undefined' };
@@ -93,10 +105,13 @@
   window.ENABLE_DOWNLOAD = '${ conf.ENABLE_DOWNLOAD.get() }' === 'True';
   window.ENABLE_NEW_CREATE_TABLE = '${ hasattr(ENABLE_NEW_CREATE_TABLE, 'get') and ENABLE_NEW_CREATE_TABLE.get()}' === 'True';
   window.ENABLE_NOTEBOOK_2 = '${ ENABLE_NOTEBOOK_2.get() }' === 'True';
+  window.ENABLE_PREDICT = '${ OPTIMIZER.ENABLE_PREDICT.get() }' === 'True';
   window.ENABLE_SQL_INDEXER = '${ ENABLE_SQL_INDEXER.get() }' === 'True';
 
   window.ENABLE_QUERY_BUILDER = '${ ENABLE_QUERY_BUILDER.get() }' === 'True';
   window.ENABLE_QUERY_SCHEDULING = '${ ENABLE_QUERY_SCHEDULING.get() }' === 'True';
+  window.ENABLE_UNIFIED_ANALYTICS = '${ ENABLE_UNIFIED_ANALYTICS.get() }' === 'True';
+  window.RAZ_IS_ENABLED = '${ RAZ.IS_ENABLED.get() }' === 'True';
 
   window.ENABLE_HISTORY_V2 = '${ hasattr(ENABLE_HISTORY_V2, 'get') and ENABLE_HISTORY_V2.get() }' === 'True';
 
@@ -106,13 +121,14 @@
   window.CATALOG_URL = '${ get_catalog_url() or "" }'
   window.HAS_READ_ONLY_CATALOG = '${ has_readonly_catalog(request.user) }' === 'True' || '${ has_write_access(request.user) }' === 'False';
 
-  window.HAS_OPTIMIZER = '${ has_optimizer() }' === 'True';
-  window.OPTIMIZER_MODE = '${ get_optimizer_mode() }';
-  window.OPTIMIZER_URL = '${ get_optimizer_url() }'
-  window.AUTO_UPLOAD_OPTIMIZER_STATS = '${ OPTIMIZER.AUTO_UPLOAD_STATS.get() }' === 'True';
+  window.HAS_SQL_ANALYZER = '${ has_optimizer() }' === 'True';
+  window.SQL_ANALYZER_MODE = '${ get_optimizer_mode() }';
+  window.AUTO_UPLOAD_SQL_ANALYZER_STATS = '${ OPTIMIZER.AUTO_UPLOAD_STATS.get() }' === 'True';
 
   window.HAS_GIST = '${ ENABLE_GIST.get() }' === 'True';
+  window.SHARE_TO_SLACK = '${ conf.SLACK.SHARE_FROM_EDITOR.get() }' === 'True' && '${ conf.SLACK.IS_ENABLED.get() }' === 'True';
   window.HAS_LINK_SHARING = '${ ENABLE_LINK_SHARING.get() }' === 'True';
+  window.HAS_CONNECTORS = '${ has_connectors() }' === 'True';
 
   ## In the past was has_workload_analytics()
   window.HAS_WORKLOAD_ANALYTICS = '${ ENABLE_QUERY_ANALYSIS.get() }' === 'True';
@@ -129,6 +145,7 @@
 
   window.HUE_URLS = {
     IMPORTER_CREATE_TABLE: '${ 'indexer' in apps and url('indexer:importer_prefill', source_type = 'all', target_type = 'table')}',
+    IMPORTER_CREATE_PHOENIX_TABLE: '${ 'indexer' in apps and url('indexer:importer_prefill', source_type = 'all', target_type = 'big-table')}',
     IMPORTER_CREATE_DATABASE: '${ 'indexer' in apps and url('indexer:importer_prefill', source_type = 'manual', target_type = 'database')}',
     NOTEBOOK_INDEX: '${url('notebook:index')}',
     % if 'pig' in apps:
@@ -155,7 +172,6 @@
     'Active namespace': '${ _('Active namespace') }',
     'Add a description...': '${ _('Add a description...') }',
     'Add filter': '${ _('Add filter') }',
-    'Add more...': '${ _('Add more...') }',
     'Add privilege': '${ _('Add privilege') }',
     'Add properties...': '${ _('Add properties...') }',
     'Add table': '${ _('Add table') }',
@@ -163,6 +179,8 @@
     'Add': '${ _('Add') }',
     'Admin': '${ _('Admin') }',
     'Administration': '${ _('Administration') }',
+    'Administer Server': '${ _('Administer Server') }',
+    'Administer Users': '${ _('Administer Users') }',
     'aggregate': '${ _('aggregate') }',
     'Aggregate': '${ _('Aggregate') }',
     'alias': '${ _('alias') }',
@@ -260,6 +278,7 @@
     'Done.': '${ _('Done.') }',
     'Drop a SQL file here': '${_('Drop a SQL file here')}',
     'Drop iPython/Zeppelin notebooks here': '${_('Drop iPython/Zeppelin notebooks here')}',
+    'Edit list...': '${ _('Edit list...') }',
     'Edit Profile': '${ _('Edit Profile') }',
     'Edit tags': '${ _('Edit tags') }',
     'Edit this privilege': '${ _('Edit this privilege') }',
@@ -589,7 +608,7 @@
     'Updated: ': '${ _('Updated: ') }',
     'Upload a file': '${_('Upload a file')}',
     'Upload file': '${_('Upload file')}',
-    'Upload optimizer history': '${ _('Upload optimizer history') }',
+    'Upload SQL Analyzer history': '${ _('Upload SQL Analyzer history') }',
     'uploaded successfully': '${ _('uploaded successfully') }',
     'USA': '${ _('USA') }',
     'used by': '${ _('used by') }',
@@ -614,6 +633,7 @@
     'Yes': '${ _('Yes') }',
     'Yes, delete': '${ _('Yes, delete') }',
   };
+  window.HUE_LANG = '${get_language()}';
 
   window.STATIC_URLS = {
     'desktop/art/cloudera-data-warehouse-3.svg': '${ static('desktop/art/cloudera-data-warehouse-3.svg') }',
@@ -655,14 +675,16 @@
     # TODO remove
     # Code moved from assist.mako
     try:
-      home_dir = user.get_home_directory()
+      home_dir = REMOTE_STORAGE_HOME.get() if hasattr(REMOTE_STORAGE_HOME, 'get') and REMOTE_STORAGE_HOME.get() else user.get_home_directory()
+      home_dir = _handle_user_dir_raz(user, home_dir)
+
       if not request.fs.isdir(home_dir):
         home_dir = '/'
     except:
       home_dir = '/'
   %>
 
-  window.USE_NEW_SIDE_PANELS = '${ USE_NEW_SIDE_PANELS.get() }' === 'True'
+  window.USE_NEW_ASSIST_PANEL = '${ USE_NEW_ASSIST_PANEL.get() }' === 'True'
   window.USER_HOME_DIR = '${ home_dir }';
 
   var userGroups = [];

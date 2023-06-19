@@ -31,22 +31,25 @@ from boto.s3.connection import Location
 from boto.s3.key import Key
 from boto.s3.prefix import Prefix
 
-from django.utils.translation import ugettext as _
-
 from aws import s3
-from aws.conf import get_default_region, get_locations, PERMISSION_ACTION_S3
+from aws.conf import get_default_region, get_locations, PERMISSION_ACTION_S3, is_raz_s3
 from aws.s3 import normpath, s3file, translate_s3_error, S3A_ROOT
 from aws.s3.s3stat import S3Stat
+
+from filebrowser.conf import REMOTE_STORAGE_HOME
 
 if sys.version_info[0] > 2:
   import urllib.request, urllib.error
   from urllib.parse import quote as urllib_quote, urlparse as lib_urlparse
+  from django.utils.translation import gettext as _
 else:
   from urllib import quote as urllib_quote
   from urlparse import urlparse as lib_urlparse
+  from django.utils.translation import ugettext as _
 
 DEFAULT_READ_SIZE = 1024 * 1024  # 1MB
-BUCKET_NAME_PATTERN = re.compile("^((?:(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9_\-]*[a-zA-Z0-9])\.)*(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9_\-]*[A-Za-z0-9]))$")
+BUCKET_NAME_PATTERN = re.compile(
+  "^((?:(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9_\-]*[a-zA-Z0-9])\.)*(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9_\-]*[A-Za-z0-9]))$")
 
 LOG = logging.getLogger(__name__)
 
@@ -64,6 +67,7 @@ def auth_error_handler(view_fn):
     try:
       return view_fn(*args, **kwargs)
     except (S3ResponseError, IOError) as e:
+      LOG.exception('S3 error: ' + str(e))
       if 'Forbidden' in str(e) or (hasattr(e, 'status') and e.status == 403):
         path = kwargs.get('path')
         if not path and len(args) > 1:
@@ -80,6 +84,18 @@ def auth_error_handler(view_fn):
     except Exception as e:
       raise e
   return decorator
+
+
+def get_s3_home_directory(user=None):
+  from desktop.models import _handle_user_dir_raz
+
+  remote_home_s3 = 's3a://'
+  if hasattr(REMOTE_STORAGE_HOME, 'get') and REMOTE_STORAGE_HOME.get() and REMOTE_STORAGE_HOME.get().startswith('s3a://'):
+    remote_home_s3 = REMOTE_STORAGE_HOME.get()
+
+  remote_home_s3 = _handle_user_dir_raz(user, remote_home_s3)
+
+  return remote_home_s3
 
 
 class S3FileSystem(object):
@@ -99,7 +115,9 @@ class S3FileSystem(object):
       return self._s3_connection.get_bucket(name, headers=self.header_values)
     except S3ResponseError as e:
       if e.status == 301 or e.status == 400:
-        raise S3FileSystemException(_('Failed to retrieve bucket "%s" in region "%s" with "%s". Your bucket is in region "%s"') % (name, self._get_location(), e.message or e.reason, self.get_bucket_location(name)))
+        raise S3FileSystemException(
+          _('Failed to retrieve bucket "%s" in region "%s" with "%s". Your bucket is in region "%s"') % 
+          (name, self._get_location(), e.message or e.reason, self.get_bucket_location(name)))
       else:
         raise e
 
@@ -109,7 +127,7 @@ class S3FileSystem(object):
       resp = self._s3_connection.make_request('HEAD', name)
       return resp.getheader('x-amz-bucket-region')
     except Exception as e:
-      LOG.warn('Failed to fetch bucket "%s" location with "%s"' % (name, e.message or e.reason))
+      LOG.warning('Failed to fetch bucket "%s" location with "%s"' % (name, e.message or e.reason))
       return None
 
   def _get_or_create_bucket(self, name):
@@ -207,7 +225,7 @@ class S3FileSystem(object):
       return S3Stat.from_key(key, is_dir=is_directory_name, fs=fs)
     else:
       key.name = S3FileSystem._append_separator(key.name)
-      ls = key.bucket.get_all_keys(prefix=key.name, max_keys=1)
+      ls = key.bucket.get_all_keys(prefix=key.name, max_keys=1)  # Not sure possible via signed request
       if len(ls) > 0:
         return S3Stat.from_key(key, is_dir=True, fs=fs)
     return None
@@ -297,12 +315,14 @@ class S3FileSystem(object):
 
     if S3FileSystem.isroot(path):
       try:
-        return sorted([S3Stat.from_bucket(b, self.fs) for b in self._s3_connection.get_all_buckets(headers=self.header_values)], key=lambda x: x.name)
+        return sorted(
+          [S3Stat.from_bucket(b, self.fs) for b in self._s3_connection.get_all_buckets(headers=self.header_values)], key=lambda x: x.name)
       except S3FileSystemException as e:
         raise e
       except S3ResponseError as e:
         if 'Forbidden' in str(e) or (hasattr(e, 'status') and e.status == 403):
-          raise S3ListAllBucketsException(_('You do not have permissions to list all buckets. Please specify a bucket name you have access to.'))
+          raise S3ListAllBucketsException(
+            _('You do not have permissions to list all buckets. Please specify a bucket name you have access to.'))
         else:
           raise S3FileSystemException(_('Failed to retrieve buckets: %s') % e.reason)
       except Exception as e:
@@ -335,25 +355,33 @@ class S3FileSystem(object):
     if bucket_name and not key_name:
       self._delete_bucket(bucket_name)
     else:
+      if self.isdir(path):
+        path = self._append_separator(path)  # Really need to make sure we end with a '/'
+
       key = self._get_key(path, validate=False)
 
       if key.exists():
-        to_delete = iter([key])
-      else:
-        to_delete = iter([])
+        to_delete = [key]
+        dir_keys = []
 
-      if self.isdir(path):
-        # add `/` to prevent removing of `s3://b/a_new` trying to remove `s3://b/a`
-        prefix = self._append_separator(key.name)
-        keys = key.bucket.list(prefix=prefix)
-        to_delete = itertools.chain(keys, to_delete)
-      result = key.bucket.delete_keys(to_delete)
-      if result.errors:
-        msg = "%d errors occurred while attempting to delete the following S3 paths:\n%s" % (
-          len(result.errors), '\n'.join(['%s: %s' % (error.key, error.message) for error in result.errors])
-        )
-        LOG.error(msg)
-        raise S3FileSystemException(msg)
+        if self.isdir(path):
+          dir_keys = key.bucket.list(prefix=path)
+          to_delete = itertools.chain(dir_keys, to_delete)
+
+        if not dir_keys:
+          # Avoid Raz bulk delete issue
+          deleted_key = key.delete()
+          if deleted_key.exists():
+            raise S3FileSystemException('Could not delete key %s' % deleted_key)
+        else:
+          result = key.bucket.delete_keys(to_delete)
+          if result.errors:
+            msg = "%d errors occurred while attempting to delete the following S3 paths:\n%s" % (
+              len(result.errors), '\n'.join(['%s: %s' % (error.key, error.message) for error in result.errors])
+            )
+            LOG.error(msg)
+            raise S3FileSystemException(msg)
+
 
   @translate_s3_error
   @auth_error_handler
@@ -367,7 +395,15 @@ class S3FileSystem(object):
     return self._filebrowser_action
 
   def create_home_dir(self, home_path):
-    LOG.info('Create home directory is not available for S3 filesystem')
+    # When S3 raz is enabled, try to create user home dir for REMOTE_STORAGE_HOME path
+    if is_raz_s3():
+      LOG.debug('Attempting to create user directory for path: %s' % home_path)
+      try:
+        self.mkdir(home_path)
+      except Exception as e:
+        LOG.exception('Failed to create user home directory for path %s with error: %s' % (home_path, str(e)))
+    else:
+      LOG.info('Create home directory is not available for S3 filesystem')
 
   @translate_s3_error
   @auth_error_handler
@@ -528,7 +564,7 @@ class S3FileSystem(object):
       else:
         self.open(path)
     except Exception as e:
-      LOG.warn('S3 check_access encountered error verifying %s permission at path "%s": %s' % (permission, path, str(e)))
+      LOG.warning('S3 check_access encountered error verifying %s permission at path "%s": %s' % (permission, path, str(e)))
       return False
     return True
 

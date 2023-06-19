@@ -17,10 +17,9 @@
 
 import logging
 import os
+import sys
 
 from subprocess import CalledProcessError
-
-from django.utils.translation import ugettext_lazy as _t
 
 from desktop.conf import AUTH_USERNAME as DEFAULT_AUTH_USERNAME, CLUSTER_ID as DEFAULT_CLUSTER_ID
 from desktop.lib.conf import Config, ConfigSection, coerce_bool, coerce_password_from_script
@@ -28,6 +27,11 @@ from desktop.lib.paths import get_config_root, get_desktop_root
 
 from metadata.settings import DJANGO_APPS
 from metadata.catalog import atlas_flags
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext_lazy as _t
+else:
+  from django.utils.translation import ugettext_lazy as _t
 
 
 OPTIMIZER_AUTH_PASSWORD = None
@@ -50,7 +54,13 @@ def default_catalog_config_dir():
 
 def default_catalog_interface():
   """Detect if the configured catalog is Navigator or default to Atlas"""
-  return 'atlas' if atlas_flags.get_api_url() else 'navigator'
+  from metadata.metadata_sites import get_navigator_server_url
+  catalog_interface = ''
+  if atlas_flags.get_api_url():
+    catalog_interface = 'atlas'
+  elif get_navigator_server_url():
+    catalog_interface = 'navigator'
+  return catalog_interface
 
 def default_navigator_config_dir():
   """Get from usual main Hue config directory"""
@@ -59,7 +69,7 @@ def default_navigator_config_dir():
 def default_navigator_url():
   """Get from usual main Hue config directory"""
   from metadata.metadata_sites import get_navigator_server_url
-  return get_navigator_server_url() + '/api'
+  return get_navigator_server_url() + '/api' if get_navigator_server_url() else None
 
 
 def get_optimizer_url():
@@ -133,17 +143,19 @@ OPTIMIZER = ConfigSection(
     ),
     TENANT_ID=Config(
       key="tenant_id",
-      help=_t("The name of the workload where queries are uploaded and optimizations are calculated from. Automatically guessed from auth_key and cluster_id if not specified."),
+      help=_t("The name of the workload where queries are uploaded and optimizations are calculated from. "
+              "Automatically guessed from auth_key and cluster_id if not specified."),
       private=True,
       default=None
     ),
     CLUSTER_ID=Config(
       key="cluster_id",
-      help=_t("The name of the cluster used to determine the tenant id when this one is not specified. Defaults to the cluster Id or 'default'."),
+      help=_t("The name of the cluster used to determine the tenant id when this one is not specified. "
+              "Defaults to the cluster Id or 'default'."),
       private=True,
       default=DEFAULT_CLUSTER_ID.get()
     ),
-    APPLY_SENTRY_PERMISSIONS = Config(
+    APPLY_SENTRY_PERMISSIONS=Config(
       key="apply_sentry_permissions",
       help=_t("Perform Sentry privilege filtering. Default to true automatically if the cluster is secure."),
       dynamic_default=get_security_default,
@@ -154,25 +166,31 @@ OPTIMIZER = ConfigSection(
       type=int,
       help=_t('The cache TTL in milliseconds for the assist/autocomplete/etc calls. Set to 0 to disable the cache.'),
       default=10 * 24 * 60 * 60 * 1000),
-    AUTO_UPLOAD_QUERIES = Config(
+    AUTO_UPLOAD_QUERIES=Config(
       key="auto_upload_queries",
       help=_t("Automatically upload queries after their execution in order to improve recommendations."),
       default=True,
       type=coerce_bool
     ),
-    AUTO_UPLOAD_DDL = Config(
+    AUTO_UPLOAD_DDL=Config(
       key="auto_upload_ddl",
       help=_t("Automatically upload queried tables DDL in order to improve recommendations."),
       default=True,
       type=coerce_bool
     ),
-    AUTO_UPLOAD_STATS = Config(
+    AUTO_UPLOAD_STATS=Config(
       key="auto_upload_stats",
       help=_t("Automatically upload queried tables and columns stats in order to improve recommendations."),
       default=False,
       type=coerce_bool
     ),
-    QUERY_HISTORY_UPLOAD_LIMIT = Config(
+    ENABLE_PREDICT=Config(
+      key="enable_predict",
+      help=_t("Enables the predict API for editor typeahead."),
+      default=False,
+      type=coerce_bool
+    ),
+    QUERY_HISTORY_UPLOAD_LIMIT=Config(
       key="query_history_upload_limit",
       help=_t("Allow admins to upload the last N executed queries in the quick start wizard. Use 0 to disable."),
       default=10000,
@@ -206,7 +224,7 @@ ALTUS = ConfigSection(
       help=_t('Hostname prefix to Altus WA API or compatible service.'),
       default='waapi.us-west-1.altus.cloudera.com'
     ),
-    HAS_WA = Config(
+    HAS_WA=Config(
       key="has_wa",
       help=_t("Switch to turn on workload analytics insights."),
       default=True,
@@ -308,9 +326,15 @@ CATALOG = ConfigSection(
     SEARCH_CLUSTER=Config(
       key="search_cluster",
       help=_t("Limits found entities to a specific cluster."),
-      default=None
+      default='cm'
     ),
-    FETCH_SIZE_SEARCH_INTERACTIVE = Config(
+    ENABLE_BASIC_SEARCH=Config(
+      key="enable_basic_search",
+      help=_t("Limits found entities to a specific cluster."),
+      default=True,
+      type=coerce_bool
+    ),
+    FETCH_SIZE_SEARCH_INTERACTIVE=Config(
       key="fetch_size_search_interactive",
       help=_t("Max number of items to fetch in one call in object search autocomplete."),
       default=25,
@@ -454,30 +478,30 @@ NAVIGATOR = ConfigSection(
       type=coerce_password_from_script,
       default=None
     ),
-    CONF_DIR = Config(
+    CONF_DIR=Config(
       key='conf_dir',
       help=_t('Navigator configuration directory, where navigator.client.properties is located.'),
       dynamic_default=default_navigator_config_dir
     ),
-    APPLY_SENTRY_PERMISSIONS = Config(
+    APPLY_SENTRY_PERMISSIONS=Config(
       key="apply_sentry_permissions",
       help=_t("Perform Sentry privilege filtering. Default to true automatically if the cluster is secure."),
       dynamic_default=get_security_default,
       type=coerce_bool
     ),
-    FETCH_SIZE_SEARCH = Config(
+    FETCH_SIZE_SEARCH=Config(
       key="fetch_size_search",
       help=_t("Max number of items to fetch in one call in object search."),
       default=450,
       type=int
     ),
-    FETCH_SIZE_SEARCH_INTERACTIVE = Config(
+    FETCH_SIZE_SEARCH_INTERACTIVE=Config(
       key="fetch_size_search_interactive",
       help=_t("Max number of items to fetch in one call in object search autocomplete."),
       default=450,
       type=int
     ),
-    ENABLE_FILE_SEARCH = Config(
+    ENABLE_FILE_SEARCH=Config(
       key="enable_file_search",
       help=_t("Enable to search HDFS, S3 files."),
       type=coerce_bool,

@@ -14,6 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { SqlAnalyzerMode } from 'catalog/analyzer/types';
 import $ from 'jquery';
 import * as ko from 'knockout';
 
@@ -42,11 +43,11 @@ import huePubSub from 'utils/huePubSub';
  * @type {{init: ko.bindingHandlers.sqlContextPopover.init}}
  */
 ko.bindingHandlers.sqlContextPopover = {
-  init: function(element, valueAccessor, allBindings, viewModel, bindingContext) {
+  init: function (element, valueAccessor, allBindings, viewModel, bindingContext) {
     ko.bindingHandlers.click.init(
       element,
       () => {
-        return function() {
+        return function () {
           const options = valueAccessor();
 
           // TODO: Use connector for SQL context popover
@@ -55,12 +56,12 @@ ko.bindingHandlers.sqlContextPopover = {
             (options.sourceType === 'hive' || options.sourceType === 'impala')
           ) {
             options.connector = {
-              optimizer: 'api',
+              optimizer: SqlAnalyzerMode.api,
               id: options.sourceType,
               dialect: options.sourceType
             };
           }
-          dataCatalog.getEntry(options).done(entry => {
+          dataCatalog.getEntry(options).then(entry => {
             const $source = $(element);
             const offset = $source.offset();
             if (options.offset) {

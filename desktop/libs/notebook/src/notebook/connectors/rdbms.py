@@ -40,7 +40,10 @@ def query_error_handler(func):
       if 'Invalid query handle' in message or 'Invalid OperationHandle' in message:
         raise QueryExpired(e)
       else:
-        raise QueryError, message, sys.exc_info()[2]
+        if sys.version_info[0] > 2:
+          raise QueryError(message).with_traceback(sys.exc_info()[2])
+        else:
+          raise QueryError, message, sys.exc_info()[2]
   return decorator
 
 
@@ -114,7 +117,7 @@ class RdbmsApi(Api):
 
 
   @query_error_handler
-  def autocomplete(self, snippet, database=None, table=None, column=None, nested=None):
+  def autocomplete(self, snippet, database=None, table=None, column=None, nested=None, operation=None):
     query_server = self._get_query_server()
     db = dbms.get(self.user, query_server)
 

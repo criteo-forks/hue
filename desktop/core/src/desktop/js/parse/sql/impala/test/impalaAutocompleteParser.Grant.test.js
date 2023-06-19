@@ -18,7 +18,7 @@ import impalaAutocompleteParser from '../impalaAutocompleteParser';
 
 describe('impalaAutocompleteParser.js GRANT statements', () => {
   beforeAll(() => {
-    impalaAutocompleteParser.yy.parseError = function(msg) {
+    impalaAutocompleteParser.yy.parseError = function (msg) {
       throw Error(msg);
     };
   });
@@ -271,6 +271,52 @@ describe('impalaAutocompleteParser.js GRANT statements', () => {
     it('should suggest keywords for "REVOKE |"', () => {
       assertAutoComplete({
         beforeCursor: 'REVOKE ',
+        afterCursor: '',
+        noErrors: true,
+        expectedResult: {
+          lowerCase: false,
+          suggestKeywords: [
+            'ALL',
+            'ALTER',
+            'CREATE',
+            'DROP',
+            'GRANT OPTION FOR',
+            'INSERT',
+            'REFRESH',
+            'ROLE',
+            'SELECT'
+          ]
+        }
+      });
+    });
+
+    it('should suggest keywords for "REVOKE GRANT |"', () => {
+      assertAutoComplete({
+        beforeCursor: 'REVOKE GRANT ',
+        afterCursor: '',
+        noErrors: true,
+        expectedResult: {
+          lowerCase: false,
+          suggestKeywords: ['OPTION FOR']
+        }
+      });
+    });
+
+    it('should suggest keywords for "REVOKE GRANT OPTION |"', () => {
+      assertAutoComplete({
+        beforeCursor: 'REVOKE GRANT OPTION ',
+        afterCursor: '',
+        noErrors: true,
+        expectedResult: {
+          lowerCase: false,
+          suggestKeywords: ['FOR']
+        }
+      });
+    });
+
+    it('should suggest keywords for "REVOKE GRANT OPTION FOR |"', () => {
+      assertAutoComplete({
+        beforeCursor: 'REVOKE GRANT OPTION FOR ',
         afterCursor: '',
         noErrors: true,
         expectedResult: {

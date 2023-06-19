@@ -17,8 +17,8 @@
 
 import json
 import logging
+import sys
 
-from django.utils.translation import ugettext as _
 from django.views.decorators.http import require_GET, require_POST
 
 from desktop.lib.django_util import JsonResponse
@@ -26,6 +26,11 @@ from desktop.lib.i18n import smart_unicode
 from libsolr.api import SolrApi
 
 from indexer.solr_client import SolrClient
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -135,7 +140,7 @@ def delete_indexes(request):
       elif index['type'] == 'alias':
         client.delete_alias(index['name'])
       else:
-        LOG.warn('We could not delete: %s' % index)
+        LOG.warning('We could not delete: %s' % index)
 
     response['status'] = 0
     response['message'] = _('Indexes removed!')

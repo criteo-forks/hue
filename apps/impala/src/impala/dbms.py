@@ -16,8 +16,7 @@
 # limitations under the License.
 
 import logging
-
-from django.utils.translation import ugettext as _
+import sys
 
 from desktop.conf import CLUSTER_ID, has_connectors
 from desktop.lib.exceptions_renderable import PopupException
@@ -30,6 +29,12 @@ from beeswax.server.dbms import HiveServer2Dbms, QueryServerException, QueryServ
   get_query_server_config as beeswax_query_server_config, get_query_server_config_via_connector
 
 from impala import conf
+from impala.impala_flags import get_hs2_http_port
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -39,19 +44,27 @@ def get_query_server_config(connector=None):
   if connector and has_connectors():
     query_server = get_query_server_config_via_connector(connector)
   else:
+    server_port = get_hs2_http_port() if conf.USE_THRIFT_HTTP.get() and not conf.PROXY_ENDPOINT.get() else conf.SERVER_PORT.get()
     query_server = {
         'server_name': 'impala',
         'dialect': 'impala',
         'server_host': conf.SERVER_HOST.get(),
-        'server_port': conf.SERVER_PORT.get(),
+        'server_port': server_port,
         'principal': conf.IMPALA_PRINCIPAL.get(),
+        'http_url': '%(protocol)s://%(host)s:%(port)s%(cli_endpoint)s' % {
+            'protocol': 'https' if conf.SSL.ENABLED.get() else 'http',
+            'host': conf.SERVER_HOST.get(),
+            'port': server_port,
+            'cli_endpoint': conf.PROXY_ENDPOINT.get()
+          },
         'impersonation_enabled': conf.IMPERSONATION_ENABLED.get(),
         'querycache_rows': conf.QUERYCACHE_ROWS.get(),
         'QUERY_TIMEOUT_S': conf.QUERY_TIMEOUT_S.get(),
         'SESSION_TIMEOUT_S': conf.SESSION_TIMEOUT_S.get(),
         'auth_username': conf.AUTH_USERNAME.get(),
         'auth_password': conf.AUTH_PASSWORD.get(),
-        'use_sasl': conf.USE_SASL.get()
+        'use_sasl': conf.USE_SASL.get(),
+        'transport_mode': 'http' if conf.USE_THRIFT_HTTP.get() else 'socket',
     }
 
   debug_query_server = query_server.copy()
@@ -166,7 +179,7 @@ class ImpalaDbms(HiveServer2Dbms):
         unique_values = set(histogram.split(', '))
         results = list(unique_values)
       except IndexError as e:
-        LOG.warn('Failed to get histogram results, result set has unexpected format: %s' % smart_str(e))
+        LOG.warning('Failed to get histogram results, result set has unexpected format: %s' % smart_str(e))
       finally:
         self.close(handle)
 

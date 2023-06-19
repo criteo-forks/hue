@@ -15,9 +15,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from django.utils.translation import ugettext_lazy as _
+import sys
 
 from desktop.lib.conf import Config
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext_lazy as _
+else:
+  from django.utils.translation import ugettext_lazy as _
 
 
 ENABLE_NEW_CREATE_TABLE = Config(
@@ -32,4 +37,11 @@ FORCE_HS2_METADATA = Config(
   help=_("Flag to force all metadata calls (e.g. list tables, table or column details...) to happen via HiveServer2 if available instead of Impala."),
   type=bool,
   default=False
+)
+
+SHOW_TABLE_ERD = Config(
+  key="show_table_erd",
+  default=False,
+  type=bool,
+  help=_('Choose whether to show the table ERD component.')
 )

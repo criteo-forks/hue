@@ -17,9 +17,9 @@
 
 import json
 import logging
+import sys
 
 from django.utils.encoding import smart_str
-from django.utils.translation import ugettext as _
 from hadoop.yarn import resource_manager_api
 
 from desktop.lib.django_util import JsonResponse
@@ -27,6 +27,11 @@ from desktop.lib.exceptions import MessageException
 from desktop.lib.exceptions_renderable import PopupException
 from jobbrowser.conf import MAX_JOB_FETCH, LOG_OFFSET
 from jobbrowser.views import job_executor_logs, job_single_logs
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -65,18 +70,21 @@ class JobApi(Api):
     return self._get_api(appid).profile(appid, app_type, app_property, app_filters)
 
   def _get_api(self, appid):
-    if type(appid) == list:
-      return self.yarn_api
-    elif appid.startswith('task_'):
-      return YarnMapReduceTaskApi(self.user, appid)
-    elif appid.startswith('attempt_'):
-      return YarnMapReduceTaskAttemptApi(self.user, appid)
-    elif appid.startswith('appattempt_'):
-      return YarnAttemptApi(self.user, appid)
-    elif appid.find('_executor_') > 0:
-      return SparkExecutorApi(self.user, appid)
-    else:
-      return self.yarn_api # application_
+    try:
+      if type(appid) == list:
+        return self.yarn_api
+      elif appid.startswith('task_'):
+        return YarnMapReduceTaskApi(self.user, appid)
+      elif appid.startswith('attempt_'):
+        return YarnMapReduceTaskAttemptApi(self.user, appid)
+      elif appid.startswith('appattempt_'):
+        return YarnAttemptApi(self.user, appid)
+      elif appid.find('_executor_') > 0:
+        return SparkExecutorApi(self.user, appid)
+      else:
+        return self.yarn_api # application_
+    except:
+      raise PopupException("Job would have failed due to which there no attempt or appattempt information available")
 
   def _set_request(self, request):
     self.request = request
@@ -243,7 +251,7 @@ class YarnApi(Api):
       else:
         logs = None
     except PopupException as e:
-      LOG.warn('No task attempt found for logs: %s' % smart_str(e))
+      LOG.warning('No task attempt found for logs: %s' % smart_str(e))
     return {'logs': logs, 'logsList': logs_list}
 
 
@@ -418,7 +426,7 @@ class YarnMapReduceTaskApi(Api):
       response = job_attempt_logs_json(MockDjangoRequest(self.user), job=self.app_id, name=log_name, is_embeddable=is_embeddable)
       logs = json.loads(response.content)['log']
     except PopupException as e:
-      LOG.warn('No task attempt found for default logs: %s' % e)
+      LOG.warning('No task attempt found for default logs: %s' % e)
       logs = ''
     return {'progress': 0, 'logs': logs}
 

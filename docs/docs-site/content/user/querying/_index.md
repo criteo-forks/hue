@@ -105,7 +105,7 @@ If multiple tables appear in the FROM clause, including derived and joined table
 
 **Smart keyword completion**
 
-The autocompleter suggests keywords based on where the cursor is positioned in the statement. Where possible it will even suggest more than one word at at time, like in the case of IF NOT EXISTS, no one likes to type too much right? In the parts where order matters but the keywords are optional, for instance after FROM tbl, it will list the keyword suggestions in the order they are expected with the first expected one on top. So after FROM tbl the WHERE keyword is listed above GROUP BY etc.
+The autocompleter suggests keywords based on where the cursor is positioned in the statement. Where possible it will even suggest more than one word at a time, like in the case of IF NOT EXISTS, no one likes to type too much right? In the parts where order matters but the keywords are optional, for instance after FROM tbl, it will list the keyword suggestions in the order they are expected with the first expected one on top. So after FROM tbl the WHERE keyword is listed above GROUP BY etc.
 
 **Functions**
 
@@ -119,7 +119,7 @@ When editing subqueries it will only make suggestions within the scope of the su
 
 **Context popup**
 
-Right click on any fragement of the queries (e.g. a table name) to gets all its metadata information. This is a handy shortcut to get more description or check what types of values are contained in the table or columns.
+Right click on any fragment of the queries (e.g. a table name) to gets all its metadata information. This is a handy shortcut to get more description or check what types of values are contained in the table or columns.
 
 It’s quite handy to be able to look at column samples while writing a query to see what type of values you can expect. Hue now has the ability to perform some operations on the sample data, you can now view distinct values as well as min and max values. Expect to see more operations in coming releases.
 
@@ -182,7 +182,7 @@ Here is an example of SQL for using them:
     TBLPROPERTIES ('kudu.num_tablet_replicas' = '1')
     ;
 
-## Foreign Keys
+#### Foreign Keys
 
 When a column value points to another column in another table. e.g. The head of the business unit must exist in the person table:
 
@@ -560,10 +560,6 @@ Initially this mode is limited to the actual editor area and we’re considering
 
 To toggle the dark mode you can either press `Ctrl-Alt-T` or `Command-Option-T` on Mac while the editor has focus. Alternatively you can control this through the settings menu which is shown by pressing `Ctrl-`, or `Command-`, on Mac.
 
-### Scheduling
-
-Scheduling is detailed in its [own section](/user/scheduling/). One click scheduling of queries is a work in progress in [HUE-3797](https://issues.cloudera.org/browse/HUE-3797).
-
 ## Dashboard
 
 Dashboards provide an interactive way to query indexed data quickly and easily. No programming is required and the analysis is done by drag & drops and clicks.
@@ -574,7 +570,7 @@ Widgets are interconnected together. This is great for exploring new datasets or
 
 ![Analytics dimensions](https://cdn.gethue.com/uploads/2018/08/dashboard_layout_dnd.gif)
 
-The best supported engine is Apache Solr, then support for SQL databases is getting better. To help add more SQL support, feel free to check the [dashboard connector](/developer/connectors/#dashboard) section.
+The best supported engine is Apache Solr, then support for SQL databases is getting better. To help add more SQL support, feel free to check the [dashboard connector](/developer/development/#connectors) section.
 
 These tutorials showcase the capabilities:
 
@@ -660,7 +656,7 @@ The main advantage is to be able to add snippets of different dialects (e.g. PyS
 
 ![Notebook mode](https://cdn.gethue.com/uploads/2015/10/notebook-october.png)
 
-Any configured language of the Editor will be available as a dialect. Each snippet has a code editor, wih autocomplete, syntax highlighting and other feature like shortcut links to HDFS paths and Hive tables.
+Any configured language of the Editor will be available as a dialect. Each snippet has a code editor, with autocomplete, syntax highlighting and other feature like shortcut links to HDFS paths and Hive tables.
 
 ![Notebook Screen](https://cdn.gethue.com/uploads/2015/08/notebook.png)
 
@@ -674,7 +670,7 @@ All the spark-submit, spark-shell, pyspark, sparkR properties of jobs & shells c
 
 ### Spark
 
-Hue relies on [Livy](http://livy.io/) for the interactive Scala, Python, SparkSQL and R snippets. Batch submission is both compatible with Livy and Apache Oozie as described in the [scheduling section](/user/scheduling/).
+Hue relies on [Livy](https://livy.incubator.apache.org/) for the interactive Scala, Python, SparkSQL and R snippets.
 
 Livy is an open source REST interface for interacting with Apache Spark from anywhere. It got initially developed in the Hue project but got a lot of traction and was moved to its own project on livy.io.
 
@@ -682,7 +678,7 @@ Make sure that the Notebook and interpreters [configured](/administrator/configu
 
 #### Livy
 
-Starting the Livy REST server is detailed on livy.io the [get started](http://livy.incubator.apache.org/get-started/).
+Starting the Livy REST server is detailed on the [get started](http://livy.incubator.apache.org/get-started/) page.
 
 **Executing some Spark**
 
@@ -927,12 +923,3 @@ Type [Apache Pig](https://pig.apache.org/) latin instructions to load/merge data
 
 **Apache Sqoop**
 Run an [SQL import](/user/browsing/#relational-databases) from a traditional relational database via an [Apache Sqoop](https://sqoop.apache.org/) command.
-
-**Java**
-Described in the [scheduling section](/user/scheduling/).
-
-**MapReduce**
-Described in the [scheduling section](/user/scheduling/).
-
-**Shell script**
-Described in the [scheduling section](/user/scheduling/).

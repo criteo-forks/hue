@@ -38,10 +38,11 @@ from django.contrib.contenttypes.fields import GenericRelation, GenericForeignKe
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.staticfiles.storage import staticfiles_storage
 from django.urls import reverse, NoReverseMatch
-from django.utils.translation import ugettext as _, ugettext_lazy as _t
 
-from dashboard.conf import get_engines, HAS_REPORT_ENABLED
+from dashboard.conf import get_engines, HAS_REPORT_ENABLED, IS_ENABLED as DASHBOARD_ENABLED
+from hadoop.core_site import get_raz_api_url, get_raz_s3_default_bucket
 from kafka.conf import has_kafka
+from indexer.conf import ENABLE_DIRECT_UPLOAD
 from metadata.conf import get_optimizer_mode
 from notebook.conf import DEFAULT_LIMIT, SHOW_NOTEBOOKS, get_ordered_interpreters
 from useradmin.models import User, Group, get_organization
@@ -49,8 +50,8 @@ from useradmin.organization import _fitered_queryset
 
 from desktop import appmanager
 from desktop.auth.backend import is_admin
-from desktop.conf import get_clusters, CLUSTER_ID, IS_MULTICLUSTER_ONLY, IS_K8S_ONLY, ENABLE_ORGANIZATIONS, ENABLE_PROMETHEUS,\
-    has_connectors, TASK_SERVER, ENABLE_GIST, APP_BLACKLIST
+from desktop.conf import get_clusters, IS_MULTICLUSTER_ONLY, ENABLE_ORGANIZATIONS, ENABLE_PROMETHEUS, \
+    has_connectors, TASK_SERVER, APP_BLACKLIST, COLLECT_USAGE, ENABLE_SHARING, ENABLE_CONNECTORS, ENABLE_UNIFIED_ANALYTICS, RAZ
 from desktop.lib import fsmanager
 from desktop.lib.connectors.api import _get_installed_connectors
 from desktop.lib.connectors.models import Connector
@@ -60,10 +61,14 @@ from desktop.lib.paths import get_run_root, SAFE_CHARACTERS_URI_COMPONENTS
 from desktop.redaction import global_redaction_engine
 from desktop.settings import DOCUMENT2_SEARCH_MAX_LENGTH, HUE_DESKTOP_VERSION
 
+from filebrowser.conf import REMOTE_STORAGE_HOME
+
 if sys.version_info[0] > 2:
   from urllib.parse import quote as urllib_quote
+  from django.utils.translation import gettext as _, gettext_lazy as _t
 else:
   from urllib import quote as urllib_quote
+  from django.utils.translation import ugettext as _, ugettext_lazy as _t
 
 
 LOG = logging.getLogger(__name__)
@@ -72,7 +77,7 @@ SAMPLE_USER_ID = 1100713
 SAMPLE_USER_INSTALL = 'hue'
 SAMPLE_USER_OWNERS = ['hue', 'sample']
 
-UTC_TIME_FORMAT = "%Y-%m-%dT%H:%MZ"
+UTC_TIME_FORMAT = "%Y-%m-%dT%H:%M"
 HUE_VERSION = None
 
 
@@ -98,7 +103,7 @@ def _version_from_properties(f):
 
 def get_sample_user_install(user):
   if ENABLE_ORGANIZATIONS.get():
-    organization = get_organization(email=user.email)
+    organization = get_organization(email=user.email if user else None)
     if organization.is_multi_user:
       return SAMPLE_USER_INSTALL + '@' + organization.domain
     else:
@@ -127,8 +132,11 @@ if not ENABLE_ORGANIZATIONS.get():
 
 
 class UserPreferences(models.Model):
-  """Holds arbitrary key/value strings."""
-  user = models.ForeignKey(User)
+  """
+  Holds arbitrary key/value strings.
+  Note: ideally user/jkeu should be unique together.
+  """
+  user = models.ForeignKey(User, on_delete=models.CASCADE)
   key = models.CharField(max_length=20)
   value = models.TextField(max_length=4096)
 
@@ -178,7 +186,7 @@ class DefaultConfiguration(models.Model):
 
   is_default = models.BooleanField(default=False, db_index=True)
   groups = models.ManyToManyField(Group, db_index=True, db_table='defaultconfiguration_groups')
-  user = models.ForeignKey(User, blank=True, null=True, db_index=True)
+  user = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True, db_index=True)
 
   objects = DefaultConfigurationManager()
 
@@ -302,7 +310,7 @@ class DocumentTag(models.Model):
   """
   Reserved tags can't be manually removed by the user.
   """
-  owner = models.ForeignKey(User, db_index=True)
+  owner = models.ForeignKey(User, on_delete=models.CASCADE, db_index=True)
   tag = models.SlugField()
 
   DEFAULT = 'default' # Always there
@@ -417,7 +425,7 @@ class DocumentManager(models.Manager):
       doc.tags.add(tag)
       return doc
     else:
-      LOG.warn('Object %s already has documents: %s' % (content_object, content_object.doc.all()))
+      LOG.warning('Object %s already has documents: %s' % (content_object, content_object.doc.all()))
       return content_object.doc.all()[0]
 
   def sync(self, doc2_only=True):
@@ -499,8 +507,10 @@ class DocumentManager(models.Manager):
                   owner = install_sample_user()
                 else:
                   owner = dashboard.owner
-                dashboard_doc = Document2.objects.create(name=dashboard.label, uuid=_uuid, type='search-dashboard', owner=owner, description=dashboard.label, data=dashboard.properties)
-                Document.objects.link(dashboard_doc, owner=owner, name=dashboard.label, description=dashboard.label, extra='search-dashboard')
+                dashboard_doc = Document2.objects.create(name=dashboard.label, uuid=_uuid, type='search-dashboard',
+                                                         owner=owner, description=dashboard.label, data=dashboard.properties)
+                Document.objects.link(dashboard_doc, owner=owner, name=dashboard.label, description=dashboard.label,
+                                      extra='search-dashboard')
                 dashboard.save()
     except Exception as e:
       LOG.exception('error syncing search')
@@ -630,7 +640,8 @@ class DocumentManager(models.Manager):
 
 class Document(models.Model):
 
-  owner = models.ForeignKey(User, db_index=True, verbose_name=_t('Owner'), help_text=_t('User who can own the job.'), related_name='doc_owner')
+  owner = models.ForeignKey(User, on_delete=models.CASCADE, db_index=True, verbose_name=_t('Owner'),
+                            help_text=_t('User who can own the job.'), related_name='doc_owner')
   name = models.CharField(default='', max_length=255)
   description = models.TextField(default='')
 
@@ -640,7 +651,7 @@ class Document(models.Model):
 
   tags = models.ManyToManyField(DocumentTag, db_index=True)
 
-  content_type = models.ForeignKey(ContentType)
+  content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
   object_id = models.PositiveIntegerField()
   content_object = GenericForeignKey('content_type', 'object_id')
 
@@ -775,7 +786,7 @@ class Document(models.Model):
       else:
         return staticfiles_storage.url('desktop/art/icon_hue_48.png')
     except Exception as e:
-      LOG.warn(force_unicode(e))
+      LOG.warning(force_unicode(e))
       return staticfiles_storage.url('desktop/art/icon_hue_48.png')
 
   def share(self, users, groups, name='read'):
@@ -872,13 +883,11 @@ class DocumentPermissionManager(models.Manager):
     perm, created = DocumentPermission.objects.get_or_create(doc=document, perms=name)
 
     if users is not None:
-      perm.users = []
-      perm.users = users
+      perm.users.set(users)
       perm.save()
 
     if groups is not None:
-      perm.groups = []
-      perm.groups = groups
+      perm.groups.set(groups)
       perm.save()
 
     if not users and not groups:
@@ -893,7 +902,7 @@ class DocumentPermission(models.Model):
   READ_PERM = 'read'
   WRITE_PERM = 'write'
 
-  doc = models.ForeignKey(Document)
+  doc = models.ForeignKey(Document, on_delete=models.CASCADE)
 
   users = models.ManyToManyField(User, db_index=True, db_table='documentpermission_users')
   groups = models.ManyToManyField(Group, db_index=True, db_table='documentpermission_groups')
@@ -917,7 +926,8 @@ class FilesystemException(Exception):
 
 class Document2QueryMixin(object):
 
-  def documents(self, user, perms='both', include_history=False, include_trashed=False, include_managed=False, include_shared_links=False):
+  def documents(self, user, perms='both', include_history=False, include_trashed=False, include_managed=False,
+                include_shared_links=False, allow_distinct=True):
     """
     Returns all documents that are owned or shared with the user.
     :param perms: both, shared, owned. Defaults to both.
@@ -951,7 +961,10 @@ class Document2QueryMixin(object):
     if not include_trashed:
       docs = docs.exclude(is_trashed=True)
 
-    return docs.defer('description', 'data', 'extra', 'search').distinct().order_by('-last_modified')
+    if allow_distinct:
+      docs = docs.distinct()
+
+    return docs.defer('description', 'data', 'extra', 'search').order_by('-last_modified')
 
 
   def search_documents(self, types=None, search_text=None, order_by=None):
@@ -967,7 +980,8 @@ class Document2QueryMixin(object):
       documents = documents.filter(type__in=types)
 
     if search_text:
-      documents = documents.filter(Q(name__icontains=search_text) | Q(description__icontains=search_text) | Q(search__icontains=search_text))
+      documents = documents.filter(Q(name__icontains=search_text) | Q(description__icontains=search_text) |
+                                   Q(search__icontains=search_text))
 
     if order_by:  # TODO: Validate that order_by is a valid sort parameter
       documents = documents.order_by(order_by)
@@ -976,7 +990,7 @@ class Document2QueryMixin(object):
 
 
 class Document2QuerySet(QuerySet, Document2QueryMixin):
-    pass
+  pass
 
 
 class Document2Manager(models.Manager, Document2QueryMixin):
@@ -1019,12 +1033,13 @@ class Document2Manager(models.Manager, Document2QueryMixin):
 
     return latest_doc
 
-  def get_history(self, user, doc_type=None, connector_id=None, include_trashed=False):
+  def get_history(self, user, doc_type=None, connector_id=None, include_trashed=False, allow_distinct=True):
     history = self.documents(
         user,
         perms='owned',
         include_history=True,
-        include_trashed=include_trashed
+        include_trashed=include_trashed,
+        allow_distinct=allow_distinct
     ).filter(is_history=True)
 
     if doc_type is not None:
@@ -1034,13 +1049,14 @@ class Document2Manager(models.Manager, Document2QueryMixin):
 
     return history
 
-  def get_tasks_history(self, user):
+  def get_tasks_history(self, user, allow_distinct=True):
     return self.documents(
         user,
         perms='owned',
         include_history=True,
         include_trashed=False,
-        include_managed=True
+        include_managed=True,
+        allow_distinct=allow_distinct
     ).filter(is_history=True, is_managed=True).exclude(name='pig-app-hue-script').exclude(type='oozie-workflow2')
 
   def get_home_directory(self, user):
@@ -1061,9 +1077,24 @@ class Document2Manager(models.Manager, Document2QueryMixin):
 
   def get_gist_directory(self, user):
     home_dir = self.get_home_directory(user)
-    gist_dir, created = Directory.objects.get_or_create(name=Document2.GIST_DIR, owner=user, parent_directory=home_dir)
-    if created:
-      LOG.info('Successfully created gist directory for user: %s' % user.username)
+
+    try:
+      gist_dir, created = Directory.objects.get_or_create(name=Document2.GIST_DIR, owner=user, parent_directory=home_dir)
+      if created:
+        LOG.info('Successfully created gist directory for user: %s' % user.username)
+    except Directory.MultipleObjectsReturned:
+      LOG.exception('Multiple Gist directories detected. Merging all into one.')
+
+      all_gist_dirs = self.filter(
+        owner=user, parent_directory=home_dir, name=Document2.GIST_DIR, type='directory'
+      ).order_by('-last_modified')
+      gist_dir = all_gist_dirs.last()
+      gist_dirs_dup = all_gist_dirs.exclude(uuid=gist_dir.uuid)
+      for dir in gist_dirs_dup:
+        dir.children.update(parent_directory=gist_dir)
+
+      gist_dirs_dup.delete()
+
     return gist_dir
 
   def get_by_path(self, user, path):
@@ -1124,7 +1155,14 @@ class Document2(models.Model):
   TRASH_DIR = '.Trash'
   EXAMPLES_DIR = 'examples'
 
-  owner = models.ForeignKey(User, db_index=True, verbose_name=_t('Owner'), help_text=_t('Creator.'), related_name='doc2_owner')
+  owner = models.ForeignKey(
+    User,
+    on_delete=models.CASCADE,
+    db_index=True,
+    verbose_name=_t('Owner'),
+    help_text=_t('Creator.'),
+    related_name='doc2_owner'
+  )
   name = models.CharField(default='', max_length=255)
   description = models.TextField(default='')
   uuid = models.CharField(default=uuid_default, max_length=36, db_index=True)
@@ -1136,6 +1174,7 @@ class Document2(models.Model):
   )
   connector = models.ForeignKey(
       Connector,
+      on_delete=models.CASCADE,  # /!\ Deleting a connector delete all its queries currently
       verbose_name=_t('Connector'),
       help_text=_t('Connector.'),
       blank=True,
@@ -1156,7 +1195,7 @@ class Document2(models.Model):
       db_index=True,
       verbose_name=_t('If managed under the cover by Hue and never by the user')
   )
-  is_trashed = models.NullBooleanField(default=False, db_index=True, verbose_name=_t('True if trashed'))
+  is_trashed = models.BooleanField(default=False, db_index=True, verbose_name=_t('True if trashed'))
 
   dependencies = models.ManyToManyField('self', symmetrical=False, related_name='dependents', db_index=True)
 
@@ -1173,6 +1212,9 @@ class Document2(models.Model):
   def __unicode__(self):
     res = '%s - %s - %s - %s' % (force_unicode(self.name), self.owner, self.type, self.uuid)
     return force_unicode(res)
+
+  def __str__(self):
+    return self.__unicode__()
 
   @property
   def data_dict(self):
@@ -1250,7 +1292,7 @@ class Document2(models.Model):
       else:
         url = reverse('oozie:edit_workflow') + '?workflow=' + str(self.id)
     except NoReverseMatch:
-      LOG.warn('Could not perform reverse lookup for type %s, app may be blacklisted.' % self.type)
+      LOG.warning('Could not perform reverse lookup for type %s, app may be blacklisted.' % self.type)
     return url
 
   def to_dict(self):
@@ -1464,13 +1506,13 @@ class Document2(models.Model):
 
     perm, created = Document2Permission.objects.get_or_create(doc=self, perms=name)
 
-    perm.users = []
+    perm.users.clear()
     if users is not None:
-      perm.users = users
+      perm.users.set(users)
 
-    perm.groups = []
+    perm.groups.clear()
     if groups is not None:
-      perm.groups = groups
+      perm.groups.set(groups)
 
     perm.is_link_on = is_link_on
 
@@ -1605,8 +1647,8 @@ class Directory(Document2):
     # Get documents that are direct children, or shared with but not owned by the current user
     documents = Document2.objects.filter(
         Q(parent_directory=self) |
-        ( (Q(document2permission__users=user) | Q(document2permission__groups__in=user.groups.all())) &
-          ~Q(owner=user) )
+        ((Q(document2permission__users=user) | Q(document2permission__groups__in=user.groups.all())) &
+          ~Q(owner=user))
       )
 
     documents = documents.exclude(is_history=True).exclude(is_managed=True)
@@ -1643,7 +1685,7 @@ class Document2Permission(models.Model):
   LINK_READ_PERM = 'link_read'
   LINK_WRITE_PERM = 'link_write'
 
-  doc = models.ForeignKey(Document2)
+  doc = models.ForeignKey(Document2, on_delete=models.CASCADE)
 
   users = models.ManyToManyField(User, db_index=True, db_table='documentpermission2_users')
   groups = models.ManyToManyField(Group, db_index=True, db_table='documentpermission2_groups')
@@ -1684,6 +1726,25 @@ class Document2Permission(models.Model):
 def get_cluster_config(user):
   return Cluster(user).get_app_config().get_config()
 
+def get_remote_home_storage(user=None):
+  remote_home_storage = REMOTE_STORAGE_HOME.get() if hasattr(REMOTE_STORAGE_HOME, 'get') and REMOTE_STORAGE_HOME.get() else None
+
+  if not remote_home_storage:
+    if get_raz_api_url() and get_raz_s3_default_bucket():
+      remote_home_storage = 's3a://%(bucket)s' % get_raz_s3_default_bucket()
+
+  remote_home_storage = _handle_user_dir_raz(user, remote_home_storage)
+
+  return remote_home_storage
+
+
+def _handle_user_dir_raz(user, remote_home_storage):
+  # In RAZ env, apppend username so that it defaults to user's dir and doesn't give 403 error
+  if user and remote_home_storage and RAZ.IS_ENABLED.get() and remote_home_storage.endswith('/user'):
+    remote_home_storage += '/' + user.username
+
+  return remote_home_storage
+
 
 class ClusterConfig(object):
   """
@@ -1717,11 +1778,16 @@ class ClusterConfig(object):
           editors,
           app_config.get('dashboard'),
           app_config.get('scheduler')
-        ] if app is not None
+        ]
+        if app is not None
       ],
       'default_sql_interpreter': default_sql_interpreter,
       'cluster_type': self.cluster_type,
-      'has_computes': self.cluster_type in ('altus', 'snowball') # or any grouped engine connectors
+      'has_computes': self.cluster_type in ('altus', 'snowball'), # or any grouped engine connectors
+      'hue_config': {
+        'enable_sharing': ENABLE_SHARING.get(),
+        'collect_usage': COLLECT_USAGE.get()
+      }
     }
 
 
@@ -1749,12 +1815,18 @@ class ClusterConfig(object):
     default_interpreter = default_app.get('interpreters')
 
     try:
-      user_default_app = json.loads(UserPreferences.objects.get(user=self.user, key='default_app').value)
+      user_preference = get_user_preferences(user=self.user, key='default_app')
+      if not user_preference:
+        raise UserPreferences.DoesNotExist()
+      user_default_app = json.loads(user_preference['default_app'])
       if apps.get(user_default_app['app']):
         default_interpreter = []
         default_app = apps[user_default_app['app']]
         if default_app.get('interpreters'):
-          interpreters = [interpreter for interpreter in default_app['interpreters'] if interpreter['type'] == user_default_app['interpreter']]
+          interpreters = [
+            interpreter
+            for interpreter in default_app['interpreters'] if interpreter['type'] == user_default_app['interpreter']
+          ]
           if interpreters:
             default_interpreter = interpreters
     except UserPreferences.DoesNotExist:
@@ -1778,6 +1850,15 @@ class ClusterConfig(object):
     }
 
 
+  def displayName(self, dialect, name):
+    if ENABLE_UNIFIED_ANALYTICS.get() and dialect == 'hive':
+      return 'Unified Analytics'
+    elif name.lower() == 'hplsql':
+      return 'HPL/SQL'
+    else:
+      return name
+
+
   def _get_editor(self):
     interpreters = []
 
@@ -1789,7 +1870,7 @@ class ClusterConfig(object):
           'name': interpreter['name'],
           'type': interpreter['type'],  # Connector v1
           'id': interpreter['type'],
-          'displayName': interpreter['name'],
+          'displayName': self.displayName(interpreter['dialect'], interpreter['name']),
           'buttonName': _('Query'),
           'tooltip': _('%s Query') % interpreter['type'].title(),
           'optimizer': get_optimizer_mode(),
@@ -1844,7 +1925,8 @@ class ClusterConfig(object):
         interpreters.append({
           'name': interpreter['name'],
           'type': interpreter['type'],
-          'displayName': interpreter['name'],
+          'id': interpreter['type'],
+        'displayName': 'Unified Analytics' if ENABLE_UNIFIED_ANALYTICS.get() and interpreter['dialect'] == 'hive' else interpreter['name'],
           'buttonName': _('Query'),
           'tooltip': _('%s Query') % interpreter['type'].title(),
           'page': '/editor/?type=%(type)s' % interpreter,
@@ -1858,10 +1940,11 @@ class ClusterConfig(object):
     interpreters = get_engines(self.user)
     _interpreters = []
 
-    if interpreters:
+    if interpreters and DASHBOARD_ENABLED.get():
       if HAS_REPORT_ENABLED.get():
         _interpreters.append({
           'type': 'report',
+          'id': 'report',
           'displayName': 'Report',
           'buttonName': 'Report',
           'page': '/dashboard/new_search?engine=report',
@@ -1871,12 +1954,14 @@ class ClusterConfig(object):
 
       _interpreters.extend([{
           'type': interpreter['type'],
-          'displayName': interpreter['type'].title(),
-          'buttonName': interpreter['type'].title(),
+          'id': interpreter['type'],
+          'displayName': interpreter['name'].title(),
+          'buttonName': interpreter['name'].title(),
           'page': '/dashboard/new_search?engine=%(type)s' % interpreter,
-          'tooltip': _('%s Dashboard') % interpreter['type'].title(),
+          'tooltip': _('%s Dashboard') % interpreter['name'].title(),
           'is_sql': True
-        } for interpreter in interpreters
+        }
+        for interpreter in interpreters
       ])
 
       return {
@@ -1900,45 +1985,52 @@ class ClusterConfig(object):
     elif 'filebrowser' in self.apps and fsmanager.is_enabled_and_has_access('hdfs', self.user):
       hdfs_connectors.append(_('Files'))
 
+
+    remote_home_storage = get_remote_home_storage(self.user)
+
     for hdfs_connector in hdfs_connectors:
+      force_home = remote_home_storage and not remote_home_storage.startswith('/')
+      home_path = self.user.get_home_directory(force_home=force_home).encode('utf-8')
       interpreters.append({
         'type': 'hdfs',
         'displayName': hdfs_connector,
         'buttonName': _('Browse'),
         'tooltip': hdfs_connector,
         'page': '/filebrowser/' + (
-          not self.user.is_anonymous() and
-          'view=' + urllib_quote(self.user.get_home_directory().encode('utf-8'), safe=SAFE_CHARACTERS_URI_COMPONENTS) or ''
+          not self.user.is_anonymous and
+          'view=' + urllib_quote(home_path, safe=SAFE_CHARACTERS_URI_COMPONENTS) or ''
         )
       })
 
     if 'filebrowser' in self.apps and fsmanager.is_enabled_and_has_access('s3a', self.user):
+      home_path = remote_home_storage if remote_home_storage else 's3a://'.encode('utf-8')
       interpreters.append({
         'type': 's3',
         'displayName': _('S3'),
         'buttonName': _('Browse'),
         'tooltip': _('S3'),
-        'page': '/filebrowser/view=' + urllib_quote('S3A://'.encode('utf-8'), safe=SAFE_CHARACTERS_URI_COMPONENTS)
+        'page': '/filebrowser/view=' + urllib_quote(home_path, safe=SAFE_CHARACTERS_URI_COMPONENTS)
       })
 
     if 'filebrowser' in self.apps and fsmanager.is_enabled_and_has_access('adl', self.user):
+      home_path = remote_home_storage if remote_home_storage else 'adl:/'.encode('utf-8')
       interpreters.append({
         'type': 'adls',
         'displayName': _('ADLS'),
         'buttonName': _('Browse'),
         'tooltip': _('ADLS'),
-        'page': '/filebrowser/view=' + urllib_quote('adl:/'.encode('utf-8'), safe=SAFE_CHARACTERS_URI_COMPONENTS)
+        'page': '/filebrowser/view=' + urllib_quote(home_path, safe=SAFE_CHARACTERS_URI_COMPONENTS)
       })
 
     if 'filebrowser' in self.apps and fsmanager.is_enabled_and_has_access('abfs', self.user):
-      from azure.abfs.__init__ import get_home_dir_for_ABFS
-
+      from azure.abfs.__init__ import get_home_dir_for_abfs
+      home_path = remote_home_storage if remote_home_storage else get_home_dir_for_abfs(self.user).encode('utf-8')
       interpreters.append({
         'type': 'abfs',
         'displayName': _('ABFS'),
         'buttonName': _('Browse'),
         'tooltip': _('ABFS'),
-        'page': '/filebrowser/view=' + urllib_quote(get_home_dir_for_ABFS().encode('utf-8'), safe=SAFE_CHARACTERS_URI_COMPONENTS)
+        'page': '/filebrowser/view=' + urllib_quote(home_path, safe=SAFE_CHARACTERS_URI_COMPONENTS)
       })
 
     if 'metastore' in self.apps:
@@ -1960,9 +2052,10 @@ class ClusterConfig(object):
       })
 
     if 'jobbrowser' in self.apps:
-      from hadoop.cluster import get_default_yarncluster # Circular loop
+      from hadoop.cluster import get_default_yarncluster  # Circular loop
+      from jobbrowser.conf import ENABLE_HIVE_QUERY_BROWSER, ENABLE_QUERIES_LIST
 
-      if get_default_yarncluster():
+      if get_default_yarncluster() or ENABLE_HIVE_QUERY_BROWSER.get() or ENABLE_QUERIES_LIST.get():
         interpreters.append({
           'type': 'yarn',
           'displayName': _('Jobs'),
@@ -1998,7 +2091,11 @@ class ClusterConfig(object):
         'page': '/security/hive'
       })
 
-    if 'indexer' in self.apps and 'filebrowser' in self.apps and self.user.has_hue_permission(action="access:importer", app="indexer") \
+    if 'indexer' in self.apps and (
+        ('filebrowser' in self.apps and self.user.has_hue_permission(action="access:importer", app="indexer"))
+        or
+        ENABLE_DIRECT_UPLOAD.get()
+        ) \
         and 'importer' not in APP_BLACKLIST.get():
       interpreters.append({
         'type': 'importer',
@@ -2104,7 +2201,8 @@ class ClusterConfig(object):
       return None
 
   def get_hive_metastore_interpreters(self):
-    return [interpreter['type'] for interpreter in get_ordered_interpreters(self.user) if interpreter['type'] == 'hive' or interpreter['type'] == 'hms']
+    return [interpreter['type'] for interpreter in get_ordered_interpreters(self.user)
+            if interpreter['type'] == 'hive' or interpreter['type'] == 'hms']
 
 
 class Cluster(object):
@@ -2131,7 +2229,7 @@ class Cluster(object):
 def _get_apps(user, section=None):
   current_app = None
   other_apps = []
-  if user.is_authenticated():
+  if user.is_authenticated:
     apps_list = appmanager.get_apps_dict(user)
     apps = list(apps_list.values())
     for app in apps:
@@ -2155,8 +2253,15 @@ def get_user_preferences(user, key=None):
       return {key: x.value}
     except UserPreferences.DoesNotExist:
       return None
+    except UserPreferences.MultipleObjectsReturned:
+      for dup in UserPreferences.objects.filter(user=user, key=key)[1:]:
+        LOG.warning('Deleting UserPreferences duplicate %s' % dup)
+        dup.delete()
+      x = UserPreferences.objects.get(user=user, key=key)
+      return {key: x.value}
   else:
     return dict((x.key, x.value) for x in UserPreferences.objects.filter(user=user))
+
 
 
 def set_user_preferences(user, key, value):

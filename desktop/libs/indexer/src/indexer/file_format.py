@@ -25,8 +25,6 @@ import itertools
 import logging
 import sys
 
-from django.utils.translation import ugettext as _
-
 from desktop.lib import i18n
 
 from indexer.argument import CheckboxArgument, TextDelimiterArgument
@@ -37,7 +35,9 @@ from indexer.indexers.morphline_operations import get_operator
 if sys.version_info[0] > 2:
   from io import StringIO as string_io
   from past.builtins import long
+  from django.utils.translation import gettext as _
 else:
+  from django.utils.translation import ugettext as _
   from StringIO import StringIO as string_io
 
 LOG = logging.getLogger(__name__)
@@ -48,7 +48,11 @@ IMPORT_PEEK_NLINES = 20
 
 
 def get_format_types():
-  formats = [CSVFormat]
+  formats = [
+    CSVFormat,
+    JsonFormat,
+    XLSXFormat
+  ]
 
   if ENABLE_SCALABLE_INDEXER.get():
     formats.extend([
@@ -448,7 +452,8 @@ class CSVFormat(FileFormat):
         sample_data_lines = ''
         for line in lines:
           sample_data_lines += line
-        dialect, has_header = cls._guess_dialect(sample_data_lines) # Only use first few lines for guessing. Greatly improves performance of CSV library.
+        # Only use first few lines for guessing. Greatly improves performance of CSV library.
+        dialect, has_header = cls._guess_dialect(sample_data_lines)
         delimiter = dialect.delimiter
         line_terminator = dialect.lineterminator
         quote_char = dialect.quotechar
@@ -592,10 +597,28 @@ class CSVFormat(FileFormat):
       fields = [Field(header[i], types[i]) for i in range(len(header))]
     else:
       # likely failed to guess correctly
-      LOG.warn("Guess field types failed - number of headers didn't match number of predicted types.")
+      LOG.warning("Guess field types failed - number of headers didn't match number of predicted types.")
       fields = []
 
     return fields
+
+
+class XLSXFormat(CSVFormat):
+  _name = "excel"
+  _description = _("Excel File")
+  _args = [
+    CheckboxArgument("hasHeader", "Has Header")
+  ]
+  _extensions = ["xlsx", "xls"]
+
+
+class JsonFormat(CSVFormat):
+  _name = "json"
+  _description = _("Json")
+  _args = [
+    CheckboxArgument("hasHeader", "Has Header")
+  ]
+  _extensions = ["json"]
 
 
 class GzipFileReader(object):
@@ -621,6 +644,8 @@ class TextFileReader(object):
   def readlines(fileobj, encoding):
     try:
       data = fileobj.read(IMPORT_PEEK_SIZE)
+      if not isinstance(data, str):
+        data = data.decode('utf-8')
       return data, itertools.islice(csv.reader(string_io(data)), IMPORT_PEEK_NLINES)
     except UnicodeError:
       return None, None
@@ -669,7 +694,7 @@ class HiveFormat(CSVFormat):
       ))
 
     return cls(**{
-      "delimiter":',',
+      "delimiter": ',',
       "line_terminator": '\n',
       "quote_char": '"',
       "has_header": False,

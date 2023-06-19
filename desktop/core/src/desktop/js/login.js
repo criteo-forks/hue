@@ -14,6 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import 'regenerator-runtime/runtime';
 import 'jquery/jquery.login';
 import 'ext/bootstrap.2.3.2.min';
 import Dropzone from 'dropzone';
@@ -24,15 +25,17 @@ window.Dropzone = Dropzone;
 window.hueAnalytics = hueAnalytics;
 window.huePubSub = huePubSub;
 
-import Vue from 'vue';
+import { createApp } from 'vue';
 import TrademarkBanner from 'vue/components/login/TrademarkBanner.vue';
+import { createReactComponents } from './reactComponents/createRootElements';
 
 window.addEventListener('DOMContentLoaded', () => {
-  new Vue({
-    el: '#trademark',
+  createReactComponents('.login-page');
+
+  createApp({
     components: {
       'trademark-banner': TrademarkBanner
     },
-    data: {}
-  });
+    data: () => ({})
+  }).mount('#trademark');
 });

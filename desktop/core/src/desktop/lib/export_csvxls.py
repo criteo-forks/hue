@@ -31,14 +31,15 @@ import sys
 import tablib
 
 from django.http import StreamingHttpResponse, HttpResponse
-from django.utils.encoding import smart_text
-from django.utils.http import urlquote
+from django.utils.encoding import smart_str
 from desktop.lib import i18n
 
 if sys.version_info[0] > 2:
   from io import BytesIO as string_io
+  from urllib.parse import quote
 else:
   from StringIO import StringIO as string_io
+  from django.utils.http import urlquote as quote
 
 
 LOG = logging.getLogger(__name__)
@@ -66,14 +67,16 @@ def file_reader(fh):
 
 def encode_row(row, encoding=None, make_excel_links=False):
   encoded_row = []
+  encoding = encoding or i18n.get_site_encoding()
+
   for cell in row:
     if isinstance(cell, six.string_types):
       cell = re.sub(ILLEGAL_CHARS, '?', cell)
       if make_excel_links:
-        cell = re.compile('(https?://.+)', re.IGNORECASE).sub(r'=HYPERLINK("\1")', cell)
+        cell = re.compile('^(https?://.+)', re.IGNORECASE).sub(r'=HYPERLINK("\1")', cell)
     cell = nullify(cell)
     if not isinstance(cell, numbers.Number):
-      cell = smart_text(cell, encoding or i18n.get_site_encoding(), strings_only=True, errors='replace')
+      cell = smart_str(cell, encoding, strings_only=True, errors='replace')
     encoded_row.append(cell)
   return encoded_row
 
@@ -162,7 +165,7 @@ def make_response(generator, format, name, encoding=None, user_agent=None): #TOD
     format = format.encode('ascii')
     resp['Content-Disposition'] = b'attachment; filename="%s.%s"' % (name, format)
   except UnicodeEncodeError:
-    name = urlquote(name)
+    name = quote(name)
     if user_agent is not None and 'Firefox' in user_agent:
       # Preserving non-ASCII filename. See RFC https://tools.ietf.org/html/rfc6266#appendix-D, only FF works
       resp['Content-Disposition'] = 'attachment; filename*="%s.%s"' % (name, format)

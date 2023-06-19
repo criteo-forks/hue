@@ -14,18 +14,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import sqlAnalyzerRepository from 'catalog/analyzer/sqlAnalyzerRepository';
 import $ from 'jquery';
 import * as ko from 'knockout';
 
 import huePubSub from 'utils/huePubSub';
 import sqlUtils from 'sql/sqlUtils';
+import { findEditorConnector } from 'config/hueConfig';
 
-const findNameInHierarchy = (entry, searchCondition) => {
+const findNameInHierarchy = async (entry, searchCondition) => {
   while (entry && !searchCondition(entry)) {
     entry = entry.parent;
   }
   if (entry) {
-    return sqlUtils.backTickIfNeeded(entry.catalogEntry.getDialect(), entry.catalogEntry.name);
+    return await sqlUtils.backTickIfNeeded(
+      entry.catalogEntry.getConnector(),
+      entry.catalogEntry.name
+    );
   }
 };
 
@@ -51,6 +56,11 @@ class AssistDbEntry {
     self.navigationSettings = navigationSettings;
 
     self.sourceType = assistDbNamespace.sourceType;
+    self.phoenix_connector = findEditorConnector(connector => connector.dialect === 'phoenix');
+    self.importer_url =
+      self.phoenix_connector && self.sourceType === self.phoenix_connector.id
+        ? window.HUE_URLS.IMPORTER_CREATE_PHOENIX_TABLE
+        : window.HUE_URLS.IMPORTER_CREATE_TABLE;
 
     self.expandable = self.catalogEntry.hasPossibleChildren();
 
@@ -63,7 +73,7 @@ class AssistDbEntry {
     self.open = ko.observable(false);
     self.entries = ko.observableArray([]);
     self.statsVisible = ko.observable(false);
-
+https://datadoc.crto.in/dataset/hive/metrology
     self.hasErrors = ko.observable(false);
 
     self.iconClass = '';
@@ -74,6 +84,8 @@ class AssistDbEntry {
         self.iconClass = 'fa-sitemap';
       } else if (self.catalogEntry.isView()) {
         self.iconClass = 'fa-eye';
+      } else if (self.catalogEntry.isModel()) {
+        self.iconClass = 'fa-puzzle-piece';
       } else {
         self.iconClass = 'fa-table';
       }
@@ -93,7 +105,8 @@ class AssistDbEntry {
       // Only text match on tables/views or columns if flag is set
       const textMatch =
         (!self.catalogEntry.isDatabase() && !self.filterColumnNames()) ||
-        (!self.filter.querySpec().text || self.filter.querySpec().text.length === 0);
+        !self.filter.querySpec().text ||
+        self.filter.querySpec().text.length === 0;
 
       if (facetMatch && textMatch) {
         return self.entries();
@@ -111,7 +124,7 @@ class AssistDbEntry {
               (Object.keys(facets['type']).length === 1 &&
                 (facets['type']['table'] || facets['type']['view'])) ||
               facets['type'][entry.catalogEntry.getType()];
-          } else if (entry.catalogEntry.isTableOrView()) {
+          } else if (entry.catalogEntry.isTableOrViehttps://datadoc.crto.in/dataset/hive/metrologyw()) {
             match =
               (!facets['type']['table'] && !facets['type']['view']) ||
               (facets['type']['table'] && entry.catalogEntry.isTable()) ||
@@ -154,15 +167,19 @@ class AssistDbEntry {
       self.columnName = self.catalogEntry.name;
     }
 
-    self.editorText = ko.pureComputed(() => {
+    self.editorText = ko.observable();
+
+    const setEditorText = async () => {
       if (self.catalogEntry.isTableOrView()) {
-        return self.getTableName();
+        self.editorText(await self.getTableName());
+      } else if (self.catalogEntry.isColumn()) {
+        self.editorText((await self.getColumnName()) + ', ');
+      } else {
+        self.editorText((await self.getComplexName()) + ', ');
       }
-      if (self.catalogEntry.isColumn()) {
-        return self.getColumnName() + ', ';
-      }
-      return self.getComplexName() + ', ';
-    });
+    };
+
+    setEditorText();
   }
 
   knownFacetValues() {
@@ -195,19 +212,19 @@ class AssistDbEntry {
     return {};
   }
 
-  getDatabaseName() {
-    return findNameInHierarchy(this, entry => entry.catalogEntry.isDatabase());
+  async getDatabaseName() {
+    return await findNameInHierarchy(this, entry => entry.catalogEntry.isDatabase());
   }
 
-  getTableName() {
-    return findNameInHierarchy(this, entry => entry.catalogEntry.isTableOrView());
+  async getTableName() {
+    return await findNameInHierarchy(this, entry => entry.catalogEntry.isTableOrView());
   }
 
-  getColumnName() {
-    return findNameInHierarchy(this, entry => entry.catalogEntry.isColumn());
+  async getColumnName() {
+    return await findNameInHierarchy(this, entry => entry.catalogEntry.isColumn());
   }
 
-  getComplexName() {
+  async getComplexName() {
     let entry = this;
     const sourceType = entry.sourceType;
     const parts = [];
@@ -220,7 +237,12 @@ class AssistDbEntry {
           parts.push('[]');
         }
       } else {
-        parts.push(sqlUtils.backTickIfNeeded(sourceType, entry.catalogEntry.name));
+        parts.push(
+          await sqlUtils.backTickIfNeeded(
+            entry.catalogEntry.getConnector(),
+            entry.catalogEntry.name
+          )
+        );
         parts.push('.');
       }
       entry = entry.parent;
@@ -328,7 +350,7 @@ class AssistDbEntry {
       if (!sourceMeta.notFound) {
         self.catalogEntry
           .getChildren({ silenceErrors: self.navigationSettings.rightAssist })
-          .done(catalogEntries => {
+          .then(catalogEntries => {
             self.hasErrors(false);
             self.loading(false);
             self.loaded = true;
@@ -352,16 +374,18 @@ class AssistDbEntry {
               callback();
             }
           })
-          .fail(() => {
+          .catch(() => {
             self.loading(false);
             self.loaded = true;
             self.hasErrors(true);
           });
 
         if (!self.assistDbNamespace.nonSqlType) {
-          self.catalogEntry.loadNavigatorMetaForChildren({
-            silenceErrors: self.navigationSettings.rightAssist
-          });
+          self.catalogEntry
+            .loadNavigatorMetaForChildren({
+              silenceErrors: self.navigationSettings.rightAssist
+            })
+            .finally(() => {});
         }
       } else {
         self.hasErrors(true);
@@ -382,33 +406,38 @@ class AssistDbEntry {
 
     if (
       !self.navigationSettings.rightAssist &&
-      HAS_OPTIMIZER &&
+      window.HAS_SQL_ANALYZER &&
       (self.catalogEntry.isTable() || self.catalogEntry.isDatabase()) &&
       !self.assistDbNamespace.nonSqlType
     ) {
-      self.catalogEntry.loadOptimizerPopularityForChildren({ silenceErrors: true }).done(() => {
-        loadEntriesDeferred.done(() => {
-          if (!self.hasErrors()) {
-            self.entries().forEach(entry => {
-              if (entry.catalogEntry.optimizerPopularity) {
-                if (entry.catalogEntry.optimizerPopularity.popularity) {
-                  entry.popularity(entry.catalogEntry.optimizerPopularity.popularity);
-                } else if (entry.catalogEntry.optimizerPopularity.column_count) {
-                  entry.popularity(entry.catalogEntry.optimizerPopularity.column_count);
-                } else if (entry.catalogEntry.optimizerPopularity.selectColumn) {
-                  entry.popularity(entry.catalogEntry.optimizerPopularity.selectColumn.columnCount);
+      const sqlAnalyzer = sqlAnalyzerRepository.getSqlAnalyzer(self.catalogEntry.getConnector());
+      self.catalogEntry
+        .loadSqlAnalyzerPopularityForChildrhttps://datadoc.crto.in/dataset/hive/metrologyen({ silenceErrors: true, sqlAnalyzer })
+        .then(() => {
+          loadEntriesDeferred.done(() => {
+            if (!self.hasErrors()) {
+              self.entries().forEach(entry => {
+                if (entry.catalogEntry.sqlAnalyzerPopularity) {
+                  if (entry.catalogEntry.sqlAnalyzerPopularity.popularity) {
+                    entry.popularity(entry.catalogEntry.sqlAnalyzerPopularity.popularity);
+                  } else if (entry.catalogEntry.sqlAnalyzerPopularity.column_count) {
+                    entry.popularity(entry.catalogEntry.sqlAnalyzerPopularity.column_count);
+                  } else if (entry.catalogEntry.sqlAnalyzerPopularity.selectColumn) {
+                    entry.popularity(
+                      entry.catalogEntry.sqlAnalyzerPopularity.selectColumn.columnCount
+                    );
+                  }
                 }
-              }
-            });
-          }
+              });
+            }
+          });
         });
-      });
     }
 
     self.catalogEntry
       .getSourceMeta({ silenceErrors: self.navigationSettings.rightAssist })
-      .done(successCallback)
-      .fail(errorCallback);
+      .then(successCallback)
+      .catch(errorCallback);
   }
 
   /**
@@ -431,29 +460,29 @@ class AssistDbEntry {
     return self.catalogEntry.path.concat();
   }
 
-  dblClick() {
+  async dblClick() {
     const self = this;
     if (self.catalogEntry.isTableOrView()) {
       huePubSub.publish('editor.insert.table.at.cursor', {
-        name: self.getTableName(),
-        database: self.getDatabaseName()
+        name: await self.getTableName(),
+        database: await self.getDatabaseName()
       });
     } else if (self.catalogEntry.isColumn()) {
       huePubSub.publish('editor.insert.column.at.cursor', {
-        name: self.getColumnName(),
-        table: self.getTableName(),
-        database: self.getDatabaseName()
+        name: await self.getColumnName(),
+        table: await self.getTableName(),
+        database: await self.getDatabaseName()
       });
     } else {
       huePubSub.publish('editor.insert.column.at.cursor', {
-        name: self.getComplexName(),
-        table: self.getTableName(),
-        database: self.getDatabaseName()
+        name: await self.getComplexName(),
+        table: await self.getTableName(),
+        database: await self.getDatabaseName()
       });
     }
   }
 
-  explore(isSolr) {
+  async explore(isSolr) {
     const self = this;
     if (isSolr) {
       huePubSub.publish('open.link', '/hue/dashboard/browse/' + self.catalogEntry.name);
@@ -461,9 +490,9 @@ class AssistDbEntry {
       huePubSub.publish(
         'open.link',
         '/hue/dashboard/browse/' +
-          self.getDatabaseName() +
+          (await self.getDatabaseName()) +
           '.' +
-          self.getTableName() +
+          (await self.getTableName()) +
           '?engine=' +
           self.assistDbNamespace.sourceType
       );
@@ -477,7 +506,7 @@ class AssistDbEntry {
       url =
         '/metastore/tables/' +
         self.catalogEntry.name +
-        '?source_type=' +
+        '?connector_id=' +
         self.catalogEntry.getConnector().id +
         '&namespace=' +
         self.catalogEntry.namespace.id;
@@ -487,7 +516,7 @@ class AssistDbEntry {
         self.parent.catalogEntry.name +
         '/' +
         self.catalogEntry.name +
-        '?source_type=' +
+        '?connector_id=' +
         self.catalogEntry.getConnector().id +
         '&namespace=' +
         self.catalogEntry.namespace.id;

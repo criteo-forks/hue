@@ -25,7 +25,7 @@ Checked-in third party dependencies
 |Y|django-crequest|2018.5.11|BSD|https://pypi.org/project/django-crequest/|
 |Y|Django Extensions|1.5.0|New BSD|http://pypi.python.org/pypi/django-extensions/1.5.0|
 |Y|Django_nose (part of basie)|1.3|MIT|http://code.basieproject.org/trunk/apps/django_nose/nose_runner.py|
-|Y|django-webpack-loader|0.5.0|MIT|https://github.com/owais/django-webpack-loader/|
+|Y|django-webpack-loader|1.0.0|MIT|https://github.com/django-webpack/django-webpack-loader|
 |Y|djangosaml2|0.16.4|Apache ||
 |Y|dnspython|1.15.0|ISC|https://pypi.org/project/dnspython/1.15.0/|
 |Y|elementtree|1.2.6-20050316|Python(MIT)|http://effbot.org/downloads#elementtree|
@@ -131,8 +131,6 @@ Frontend third party dependencies (some checked in and some via npm)
 |ESLint config prettier|4.0.0|MIT|https://www.npmjs.com/package/eslint-config-prettier|
 |ESLint plugin prettier|3.0.1|MIT|https://www.npmjs.com/package/eslint-plugin-prettier|
 |Expose Loader|0.7.5|MIT|https://www.npmjs.com/package/expose-loader|
-|django-debug-panel|0.8.3|BSD|https://pypi.org/project/django-debug-panel/0.8.3/|
-|django-debug-toolbar|1.3.2|BSD|https://pypi.python.org/pypi/django-debug-toolbar/1.3.2|
 |filesize.js|4.0.0|BSD|https://github.com/avoidwork/filesize.js|
 |FileUploader|?|MIT|https://github.com/FineUploader/fine-uploader|
 |Freshereditor|?|None|https://github.com/mquan/freshereditor|
@@ -192,7 +190,6 @@ Frontend third party dependencies (some checked in and some via npm)
 |Sprintf-js|1.1.2|BSD|https://www.npmjs.com/package/sprintf-js|
 |Tether|0.6.5|MIT|https://github.com/HubSpot/tether|
 |TopoJSON|1.0.0|BSD|https://github.com/topojson/topojson|
-|TotalStorage|1.1.3|MIT|https://github.com/Upstatement/jquery-total-storage|
 |TouchSwipe|1.6.18|MIT|https://github.com/mattbryson/TouchSwipe-Jquery-Plugin|
 |tzdetect.js|?|MIT|https://github.com/Canop/tzdetect.js|
 |Webpack|4.29.0|MIT|https://www.npmjs.com/package/webpack|

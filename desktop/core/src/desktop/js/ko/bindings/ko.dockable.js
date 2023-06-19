@@ -18,10 +18,10 @@ import $ from 'jquery';
 import * as ko from 'knockout';
 
 import huePubSub from 'utils/huePubSub';
-import hueUtils from 'utils/hueUtils';
+import scrollbarWidth from 'utils/screen/scrollbarWidth';
 
 ko.bindingHandlers.dockable = {
-  init: function(element, valueAccessor) {
+  init: function (element, valueAccessor) {
     const options = valueAccessor() || {};
     const scrollable = options.scrollable ? options.scrollable : window;
     const triggerAdjust = options.triggerAdjust || 0;
@@ -30,7 +30,7 @@ ko.bindingHandlers.dockable = {
 
     let initialTopPosition = -1;
     let initialSize = {
-      w: $(element).width() - hueUtils.scrollbarWidth(),
+      w: $(element).width() - scrollbarWidth(),
       h: $(element).outerHeight() + (options.jumpCorrection || 0)
     };
 
@@ -71,7 +71,7 @@ ko.bindingHandlers.dockable = {
     function resetInitialStyle() {
       $(element).removeAttr('style');
       initialSize = {
-        w: $(element).width() - hueUtils.scrollbarWidth(),
+        w: $(element).width() - scrollbarWidth(),
         h: $(element).outerHeight() + (options.jumpCorrection || 0)
       };
       dock();

@@ -17,9 +17,8 @@
 
 from builtins import object
 import logging
+import sys
 import threading
-
-from django.utils.translation import ugettext as _
 
 from desktop.lib.exceptions import StructuredThriftTransportException
 from desktop.lib.exceptions_renderable import PopupException
@@ -27,6 +26,11 @@ from desktop.lib.exceptions_renderable import PopupException
 from libsentry.client2 import SentryClient
 from libsentry.sentry_ha import get_next_available_server, create_client
 from libsentry.sentry_site import get_sentry_server, is_ha_enabled
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -44,7 +48,7 @@ def ha_error_handler(func):
       if not is_ha_enabled():
         raise PopupException(_('Failed to connect to Sentry server %s, and Sentry HA is not enabled.') % args[0].client.host, detail=e)
       else:
-        LOG.warn("Failed to connect to Sentry server %s, will attempt to find next available host." % args[0].client.host)
+        LOG.warning("Failed to connect to Sentry server %s, will attempt to find next available host." % args[0].client.host)
         server, attempts = get_next_available_server(client_class=SentryClient, username=args[0].client.username, failed_host=args[0].client.host, component=args[0].client.component)
         if server is not None:
           args[0].client = create_client(SentryClient, args[0].client.username, server, args[0].client.component)

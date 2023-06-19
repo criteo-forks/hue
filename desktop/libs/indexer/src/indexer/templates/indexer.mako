@@ -15,10 +15,14 @@
 ## limitations under the License.
 
 <%!
-  from django.utils.translation import ugettext as _
+  import sys
 
   from desktop import conf
   from desktop.views import commonheader, commonfooter, commonshare, commonimportexport
+  if sys.version_info[0] > 2:
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="actionbar" file="actionbar.mako" />
@@ -842,7 +846,7 @@ ${ commonheader(_("Solr Indexes"), "search", user, request, "60px") | n,unicode 
           self.editorId(resp.history_id);
           self.jobId(resp.handle.id);
           $('#notebook').html($('#notebook-progress').html());
-          self.editorVM = new EditorViewModel(resp.history_uuid, '', {
+          self.editorVM = new window.NotebookViewModel(resp.history_uuid, '', {
             user: '${ user.username }',
             userId: ${ user.id },
             languages: [{name: "Java SQL", type: "java"}],
@@ -923,7 +927,10 @@ ${ commonheader(_("Solr Indexes"), "search", user, request, "60px") | n,unicode 
       self.apiHelper = window.apiHelper;
       self.assistAvailable = ko.observable(true);
       self.isLeftPanelVisible = ko.observable();
-      self.apiHelper.withTotalStorage('assist', 'assist_panel_visible', self.isLeftPanelVisible, true);
+      window.hueUtils.withLocalStorage('assist.assist_panel_visible', self.isLeftPanelVisible, true);
+      self.isLeftPanelVisible.subscribe(function () {
+        huePubSub.publish('assist.forceRender');
+      });
 
       // wizard related
       self.wizardEnabled = ko.observable(false);

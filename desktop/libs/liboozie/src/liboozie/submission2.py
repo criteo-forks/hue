@@ -19,12 +19,12 @@ from builtins import object
 import errno
 import logging
 import os
+import sys
 import time
 
 from string import Template
 
 from django.utils.functional import wraps
-from django.utils.translation import ugettext as _
 
 from beeswax.hive_site import get_hive_site_content
 from desktop.lib.exceptions_renderable import PopupException
@@ -43,6 +43,10 @@ from liboozie.conf import REMOTE_DEPLOYMENT_DIR, USE_LIBPATH_FOR_JARS
 from liboozie.credentials import Credentials
 from liboozie.oozie_api import get_oozie
 
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 LOG = logging.getLogger(__name__)
 
@@ -55,13 +59,14 @@ def submit_dryrun(run_func):
     jt_address = cluster.get_cluster_addr_for_job_submission()
 
     if deployment_dir is None:
-      self._update_properties(jt_address) # Needed as we need to set some properties like Credentials before
+      self._update_properties(jt_address)  # Needed as we need to set some properties like Credentials before
       deployment_dir = self.deploy()
 
     self._update_properties(jt_address, deployment_dir)
     if self.properties.get('dryrun'):
       self.api.dryrun(self.properties)
     return run_func(self, deployment_dir)
+
   return wraps(run_func)(decorate)
 
 
@@ -73,11 +78,12 @@ class Submission(object):
   - submit
   - rerun
   """
+
   def __init__(self, user, job=None, fs=None, jt=None, properties=None, oozie_id=None, local_tz=None):
     self.job = job
     self.user = user
     self.fs = fs
-    self.jt = jt # Deprecated with YARN, we now use logical names only for RM
+    self.jt = jt  # Deprecated with YARN, we now use logical names only for RM
     self.oozie_id = oozie_id
     self.api = get_oozie(self.user)
 
@@ -147,7 +153,7 @@ class Submission(object):
     if fail_nodes:
       self.properties.update({'oozie.wf.rerun.failnodes': fail_nodes})
     elif not skip_nodes:
-      self.properties.update({'oozie.wf.rerun.failnodes': 'false'}) # Case empty 'skip_nodes' list
+      self.properties.update({'oozie.wf.rerun.failnodes': 'false'})  # Case empty 'skip_nodes' list
     else:
       self.properties.update({'oozie.wf.rerun.skip.nodes': skip_nodes})
 
@@ -156,7 +162,6 @@ class Submission(object):
     LOG.info("Rerun: %s" % (self,))
 
     return self.oozie_id
-
 
   def rerun_coord(self, deployment_dir, params):
     jt_address = cluster.get_cluster_addr_for_job_submission()
@@ -186,7 +191,6 @@ class Submission(object):
 
     return self.oozie_id
 
-
   def deploy(self, deployment_dir=None):
     try:
       if not deployment_dir:
@@ -198,7 +202,7 @@ class Submission(object):
 
     if self.api.security_enabled:
       jt_address = cluster.get_cluster_addr_for_job_submission()
-      self._update_properties(jt_address) # Needed for coordinator deploying workflows with credentials
+      self._update_properties(jt_address)  # Needed for coordinator deploying workflows with credentials
 
     if hasattr(self.job, 'nodes'):
       for action in self.job.nodes:
@@ -210,12 +214,12 @@ class Submission(object):
           sub_deploy = Submission(self.user, workflow, self.fs, self.jt, self.properties)
           workspace = sub_deploy.deploy()
 
-          self.job.override_subworkflow_id(action, workflow.id) # For displaying the correct graph
-          self.properties['workspace_%s' % workflow.uuid] = workspace # For pointing to the correct workspace
+          self.job.override_subworkflow_id(action, workflow.id)  # For displaying the correct graph
+          self.properties['workspace_%s' % workflow.uuid] = workspace  # For pointing to the correct workspace
 
         elif action.data['type'] == 'altus' or \
-            (action.data['type'] == 'spark-document' and 'altus' in self.properties.get('cluster', '')) or \
-            (self.properties.get('auto-cluster') and 'document' in action.data['type']):
+          (action.data['type'] == 'spark-document' and 'altus' in self.properties.get('cluster', '')) or \
+          (self.properties.get('auto-cluster') and 'document' in action.data['type']):
           is_altus_job = 'altus' in self.properties.get('cluster', '') and action.data['type'] != 'altus'
           is_scheduled_altus_job = self.properties.get('auto-cluster')
 
@@ -231,27 +235,27 @@ python altus.py
 
           if is_altus_job:
             shell_script = self._generate_altus_job_action_script(
-                service='dataeng',
-                cluster=self.properties['cluster'],
-                jobs=[{
-                    'sparkJob': {
-                        'jars': [u's3a://datawarehouse-customer360/ETL/spark-examples.jar'],
-                        'mainClass': u'org.apache.spark.examples.SparkPi ',
-                        'applicationArguments': [u'10']
-                      },
-                    'name': None,
-                    'failureAction': 'NONE'
-                }],
-                auth_key_id=ALTUS.AUTH_KEY_ID.get(),
-                auth_key_secret=ALTUS.AUTH_KEY_SECRET.get().replace('\\n', '\n')
+              service='dataeng',
+              cluster=self.properties['cluster'],
+              jobs=[{
+                'sparkJob': {
+                  'jars': [u's3a://datawarehouse-customer360/ETL/spark-examples.jar'],
+                  'mainClass': u'org.apache.spark.examples.SparkPi ',
+                  'applicationArguments': [u'10']
+                },
+                'name': None,
+                'failureAction': 'NONE'
+              }],
+              auth_key_id=ALTUS.AUTH_KEY_ID.get(),
+              auth_key_secret=ALTUS.AUTH_KEY_SECRET.get().replace('\\n', '\n')
             )
           elif is_scheduled_altus_job:
             shell_script = self._generate_altus_job_action_script(
-                service='dataeng',
-                cluster=self.properties['auto-cluster'],
-                jobs=[],
-                auth_key_id=ALTUS.AUTH_KEY_ID.get(),
-                auth_key_secret=ALTUS.AUTH_KEY_SECRET.get().replace('\\n', '\n')
+              service='dataeng',
+              cluster=self.properties['auto-cluster'],
+              jobs=[],
+              auth_key_id=ALTUS.AUTH_KEY_ID.get(),
+              auth_key_secret=ALTUS.AUTH_KEY_SECRET.get().replace('\\n', '\n')
             )
           else:
             if action.data['properties'].get('service', '').lower().strip().startswith('query'):
@@ -263,13 +267,13 @@ python altus.py
               )
             else:
               shell_script = self._generate_altus_action_script(
-                  service=action.data['properties'].get('service'),
-                  command=action.data['properties'].get('command'),
-                  arguments=dict([arg.split('=', 1) for arg in action.data['properties'].get('arguments', [])]),
-                  auth_key_id=ALTUS.AUTH_KEY_ID.get(),
-                  auth_key_secret=ALTUS.AUTH_KEY_SECRET.get().replace('\\n', '\n')
+                service=action.data['properties'].get('service'),
+                command=action.data['properties'].get('command'),
+                arguments=dict([arg.split('=', 1) for arg in action.data['properties'].get('arguments', [])]),
+                auth_key_id=ALTUS.AUTH_KEY_ID.get(),
+                auth_key_secret=ALTUS.AUTH_KEY_SECRET.get().replace('\\n', '\n')
               )
-            
+
           self._create_file(deployment_dir, 'altus.py', shell_script)
 
           ext_py_lib_path = os.path.join(get_desktop_root(), 'core', 'ext-py')
@@ -317,12 +321,12 @@ export PYTHON_EGG_CACHE=./myeggs
 %(kinit)s
 
 impala-shell %(kerberos_option)s %(ssl_option)s -i %(impalad_host)s -f %(query_file)s""" % {
-  'impalad_host': action.data['properties'].get('impalad_host') or _get_impala_url(),
-  'kerberos_option': '-k' if self.api.security_enabled else '',
-  'ssl_option': '--ssl' if get_ssl_server_certificate() else '',
-  'query_file': script_name,
-  'kinit': kinit
-  }
+            'impalad_host': action.data['properties'].get('impalad_host') or _get_impala_url(),
+            'kerberos_option': '-k' if self.api.security_enabled else '',
+            'ssl_option': '--ssl' if get_ssl_server_certificate() else '',
+            'query_file': script_name,
+            'kinit': kinit
+          }
 
           self._create_file(deployment_dir, action.data['name'] + '.sh', shell_script)
 
@@ -343,7 +347,8 @@ WITH SERDEPROPERTIES (
    "quoteChar"     = "'",
    "escapeChar"    = "\\"
 )
-STORED AS TEXTFILE %s""" % (self.properties.get('send_result_path'), '\n\n\n'.join([snippet['statement_raw'] for snippet in notebook.get_data()['snippets']]))
+STORED AS TEXTFILE %s""" % (self.properties.get('send_result_path'),
+            '\n\n\n'.join([snippet['statement_raw'] for snippet in notebook.get_data()['snippets']]))
 
           if statements is not None:
             self._create_file(deployment_dir, action.data['name'] + '.sql', statements)
@@ -374,7 +379,8 @@ STORED AS TEXTFILE %s""" % (self.properties.get('send_result_path'), '\n\n\n'.jo
             hive_site_lib = Hdfs.join(deployment_dir + '/lib/', 'hive-site.xml')
             hive_site_content = get_hive_site_content()
             if not self.fs.do_as_user(self.user, self.fs.exists, hive_site_lib) and hive_site_content:
-              self.fs.do_as_user(self.user, self.fs.create, hive_site_lib, overwrite=True, permission=0o700, data=smart_str(hive_site_content))
+              self.fs.do_as_user(self.user, self.fs.create, hive_site_lib, overwrite=True, permission=0o755,
+                data=smart_str(hive_site_content))
           if action.data['type'] in ('sqoop', 'sqoop-document'):
             if CONFIG_JDBC_LIBS_PATH.get() and CONFIG_JDBC_LIBS_PATH.get() not in self.properties.get('oozie.libpath', ''):
               LOG.debug("Adding to oozie.libpath %s" % CONFIG_JDBC_LIBS_PATH.get())
@@ -390,9 +396,9 @@ STORED AS TEXTFILE %s""" % (self.properties.get('send_result_path'), '\n\n\n'.jo
 
   def _check_sqoop_statement(self, action):
     statement = ''
-    if action.data['type'] == 'sqoop' and 'command' in action.data['properties']:         # Sqoop Workflow
+    if action.data['type'] == 'sqoop' and 'command' in action.data['properties']:  # Sqoop Workflow
       statement = action.data['properties']['command']
-    elif action.data['type'] == 'sqoop-document' and 'uuid' in action.data['properties']: # Sqoop Editor
+    elif action.data['type'] == 'sqoop-document' and 'uuid' in action.data['properties']:  # Sqoop Editor
       from notebook.models import Notebook
       notebook = Notebook(document=Document2.objects.get_by_uuid(user=self.user, uuid=action.data['properties']['uuid']))
       statement = notebook.get_data()['snippets'][0]['statement_raw']
@@ -401,11 +407,13 @@ STORED AS TEXTFILE %s""" % (self.properties.get('send_result_path'), '\n\n\n'.jo
   def get_external_parameters(self, application_path):
     """From XML and job.properties HDFS files"""
     deployment_dir = os.path.dirname(application_path)
-    xml = self.fs.do_as_user(self.user, self.fs.read, application_path, 0, 1 * 1024**2)
+    xml = self.fs.do_as_user(self.user, self.fs.read, application_path, 0, 1 * 1024 ** 2)
+    xml = xml.decode('utf-8') if hasattr(xml, 'decode') else xml
 
     properties_file = deployment_dir + '/job.properties'
     if self.fs.do_as_user(self.user, self.fs.exists, properties_file):
-      properties = self.fs.do_as_user(self.user, self.fs.read, properties_file, 0, 1 * 1024**2)
+      properties = self.fs.do_as_user(self.user, self.fs.read, properties_file, 0, 1 * 1024 ** 2)
+      properties = properties.decode('utf-8') if hasattr(properties, 'decode') else properties
     else:
       properties = None
 
@@ -413,11 +421,12 @@ STORED AS TEXTFILE %s""" % (self.properties.get('send_result_path'), '\n\n\n'.jo
 
   def _get_external_parameters(self, xml, properties=None):
     from oozie.models import DATASET_FREQUENCY
-    parameters = dict([(var, '') for var in find_variables(xml, include_named=False) if not self._is_coordinator() or var not in DATASET_FREQUENCY])
+    parameters = dict(
+      [(var, '') for var in find_variables(xml, include_named=False) if not self._is_coordinator() or var not in DATASET_FREQUENCY])
 
     if properties:
       parameters.update(dict([line.strip().split('=')
-                              for line in properties.split('\n') if not line.startswith('#') and len(line.strip().split('=')) == 2]))
+        for line in properties.split('\n') if not line.startswith('#') and len(line.strip().split('=')) == 2]))
     return parameters
 
   def _update_properties(self, jobtracker_addr, deployment_dir=None):
@@ -450,7 +459,6 @@ STORED AS TEXTFILE %s""" % (self.properties.get('send_result_path'), '\n\n\n'.jo
 
       self._update_credentials_from_hive_action(credentials)
 
-
   def _update_credentials_from_hive_action(self, credentials):
     """
     Hive JDBC url from conf should be replaced when URL is set in hive action. Use _HOST from
@@ -459,15 +467,16 @@ STORED AS TEXTFILE %s""" % (self.properties.get('send_result_path'), '\n\n\n'.jo
     if hasattr(self.job, 'nodes'):
       for action in self.job.nodes:
         if action.data['type'] in ('hive2', 'hive-document') and \
-                        credentials.hiveserver2_name in self.properties['credentials'] and \
-                        action.data['properties']['jdbc_url'] and \
-                        len(action.data['properties']['jdbc_url'].split('//')) > 1:
+          credentials.hiveserver2_name in self.properties['credentials'] and \
+          action.data['properties']['jdbc_url'] and \
+          len(action.data['properties']['jdbc_url'].split('//')) > 1:
           try:
             hive_jdbc_url = action.data['properties']['jdbc_url']
             hive_host_from_action = hive_jdbc_url.split('//')[1].split(':')[0]
 
             hive_principal_from_conf = self.properties['credentials'][credentials.hiveserver2_name]['properties'][1][1]
-            updated_hive_principal = hive_principal_from_conf.split('/')[0] + '/' + hive_host_from_action + '@' + hive_principal_from_conf.split('@')[1]
+            updated_hive_principal = hive_principal_from_conf.split('/')[0] + '/' + hive_host_from_action + '@' + \
+                                     hive_principal_from_conf.split('@')[1]
 
             self.properties['credentials'][credentials.hiveserver2_name]['properties'] = [
               ('hive2.jdbc.url', hive_jdbc_url),
@@ -478,15 +487,15 @@ STORED AS TEXTFILE %s""" % (self.properties.get('send_result_path'), '\n\n\n'.jo
             LOG.error(msg)
             raise PopupException(message=_(msg), detail=str(ex))
 
-
-
   def _create_deployment_dir(self):
     """
     Return the job deployment directory in HDFS, creating it if necessary.
     The actual deployment dir should be 0711 owned by the user
     """
+    remote_deployment_dir = REMOTE_DEPLOYMENT_DIR.get().replace('$USER', self.user.username).replace('$TIME', str(time.time())).replace(
+      '$JOBID', str(self.job.id))
     # Automatic setup of the required directories if needed
-    create_directories(self.fs)
+    create_directories(self.fs, [], remote_deployment_dir)
 
     # Check if job owner owns the deployment directory.
     has_deployment_dir_access = False
@@ -496,7 +505,7 @@ STORED AS TEXTFILE %s""" % (self.properties.get('send_result_path'), '\n\n\n'.jo
 
     # Case of a shared job
     if self.job.document and self.user != self.job.document.owner or not has_deployment_dir_access:
-      path = REMOTE_DEPLOYMENT_DIR.get().replace('$USER', self.user.username).replace('$TIME', str(time.time())).replace('$JOBID', str(self.job.id))
+      path = remote_deployment_dir
       # Shared coords or bundles might not have any existing workspaces
       if self.fs.exists(self.job.deployment_dir):
         self.fs.copy_remote_dir(self.job.deployment_dir, path, owner=self.user)
@@ -547,9 +556,12 @@ STORED AS TEXTFILE %s""" % (self.properties.get('send_result_path'), '\n\n\n'.jo
       for node in self.job.nodes:
         jar_path = node.data['properties'].get('jar_path')
         if jar_path:
-          if not jar_path.startswith('/'): # If workspace relative path
-            jar_path = self.fs.join(self.job.deployment_dir, jar_path)
-          if not jar_path.startswith(lib_path): # If not already in lib
+          if not jar_path.startswith('/'):  # If workspace relative path
+            if jar_path.startswith('s3a://') or jar_path.startswith('abfs://'):
+              jar_path = jar_path
+            else:
+              jar_path = self.fs.join(self.job.deployment_dir, jar_path)
+          if not jar_path.startswith(lib_path):  # If not already in lib
             files.append(jar_path)
 
     if USE_LIBPATH_FOR_JARS.get():
@@ -565,12 +577,15 @@ STORED AS TEXTFILE %s""" % (self.properties.get('send_result_path'), '\n\n\n'.jo
       if files:
         for jar_file in files:
           LOG.debug("Updating %s" % jar_file)
-          jar_lib_path = self.fs.join(lib_path, self.fs.basename(jar_file))
+          if jar_file.startswith('s3a://') or jar_file.startswith('abfs://'):
+            jar_lib_path = jar_file
+          else:
+            jar_lib_path = self.fs.join(lib_path, self.fs.basename(jar_file))
           # Refresh if needed
           if self.fs.exists(jar_lib_path) and self.fs.exists(jar_file):
             stat_src = self.fs.stats(jar_file)
             stat_dest = self.fs.stats(jar_lib_path)
-            if stat_src.fileId != stat_dest.fileId:
+            if hasattr(stat_src, 'fileId') and hasattr(stat_dest, 'fileId') and stat_src.fileId != stat_dest.fileId:
               self.fs.remove(jar_lib_path, skip_trash=True)
           self.fs.copyfile(jar_file, jar_lib_path)
 
@@ -586,10 +601,10 @@ STORED AS TEXTFILE %s""" % (self.properties.get('send_result_path'), '\n\n\n'.jo
     """Delete the workflow deployment directory."""
     try:
       path = self.job.deployment_dir
-      if self._do_as(self.user.username , self.fs.exists, path):
-        self._do_as(self.user.username , self.fs.rmtree, path)
+      if self._do_as(self.user.username, self.fs.exists, path):
+        self._do_as(self.user.username, self.fs.rmtree, path)
     except Exception as ex:
-      LOG.warn("Failed to clean up workflow deployment directory for %s (owner %s). Caused by: %s", self.job.name, self.user, ex)
+      LOG.warning("Failed to clean up workflow deployment directory for %s (owner %s). Caused by: %s", self.job.name, self.user, ex)
 
   def _is_workflow(self):
     from oozie.models2 import Workflow
@@ -601,10 +616,16 @@ STORED AS TEXTFILE %s""" % (self.properties.get('send_result_path'), '\n\n\n'.jo
 
   def _create_file(self, deployment_dir, file_name, data, do_as=False):
     file_path = self.fs.join(deployment_dir, file_name)
+
+    # In Py3 because of i18n, the xml data is not properly utf-8 encoded for some languages.
+    # This can later throw UnicodeEncodeError exception for request body in HDFS or other FS API calls. To tackle this,
+    # We are converting the data into bytes by utf-8 encoding instead of str type.
+    data = smart_str(data).encode('utf-8') if sys.version_info[0] > 2 else smart_str(data)
+
     if do_as:
-      self.fs.do_as_user(self.user, self.fs.create, file_path, overwrite=True, permission=0o644, data=smart_str(data))
+      self.fs.do_as_user(self.user, self.fs.create, file_path, overwrite=True, permission=0o644, data=data)
     else:
-      self.fs.create(file_path, overwrite=True, permission=0o644, data=smart_str(data))
+      self.fs.create(file_path, overwrite=True, permission=0o644, data=data)
     LOG.debug("Created/Updated %s" % (file_path,))
 
   def _generate_altus_action_script(self, service, command, arguments, auth_key_id, auth_key_secret):
@@ -691,9 +712,9 @@ def _exec(service, command, parameters=None):
     raise e
 
 
-try:    
+try:
   handle = _exec('%(service)s', '%(command)s', arguments)
-  
+
   if 'create' in '%(command)s':
     handle = _exec('%(service)s', 'listJobs', {'clusterCrn': handle['cluster']['crn']})
 
@@ -701,13 +722,13 @@ try:
     job = handle['jobs'].pop(0)
     status = 'QUEUED'
     print 'Job submitted: %%(jobId)s' %% job
-  
+
     while status in ('QUEUED', 'RUNNING', 'SUBMITTING'):
       time.sleep(5)
-  
+
       print 'Checking status...'
       status = _exec('%(service)s', 'describeJob', {'jobId': job['jobId']})['job']['status']
-  
+
     if status != 'COMPLETED':
       raise Exception('Job %%s failed %%s' %% (job['jobId'], status))
     else:
@@ -718,7 +739,7 @@ except Exception, e:
 
 """ % {
       'service': service,
-      'hostname': hostname,      
+      'hostname': hostname,
       'command': command,
       'arguments': repr(arguments),
       'auth_key_id': auth_key_id,
@@ -809,9 +830,10 @@ print _exec('%(service)s', 'submitHueQuery', {'clusterCrn': cluster_crn, 'payloa
             }'''
     }
 
-def create_directories(fs, directory_list=[]):
+
+def create_directories(fs, directory_list=[], remote_deployment_dir=REMOTE_DEPLOYMENT_DIR.get()):
   # If needed, create the remote home, deployment and data directories
-  directories = [REMOTE_DEPLOYMENT_DIR.get()] + directory_list
+  directories = [remote_deployment_dir] + directory_list
 
   for directory in directories:
     if not fs.do_as_user(fs.DEFAULT_USER, fs.exists, directory):
@@ -821,4 +843,4 @@ def create_directories(fs, directory_list=[]):
         fs.do_as_user(fs.DEFAULT_USER, fs.create_home_dir, remote_home_dir)
       # Shared by all the users
       fs.do_as_user(fs.DEFAULT_USER, fs.mkdir, directory, 0o1777)
-      fs.do_as_user(fs.DEFAULT_USER, fs.chmod, directory, 0o1777) # To remove after https://issues.apache.org/jira/browse/HDFS-3491
+      fs.do_as_user(fs.DEFAULT_USER, fs.chmod, directory, 0o1777)  # To remove after https://issues.apache.org/jira/browse/HDFS-3491

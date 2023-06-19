@@ -39,8 +39,6 @@ sf_caption_position:
 slide_template:
   - default
 categories:
-  - Browsing
-  - Querying
 ---
 
 In the first installment of the demo series about [Hue][1] — the open source Web UI that makes [Apache Hadoop][2] easier to use — you learned how file operations are simplified via the File Browser application. In this installment, we’ll focus on analyzing data with Hue, using Apache Hive via Hue’s Beeswax and Catalog applications (based on [Hue 2.3][3] and later).
@@ -172,9 +170,9 @@ convert.py notes.txt READ_FIRST-Phoenix_Academic_Dataset_Agreement-3-11-13.pdf y
 
     Thank you for watching and hurry up, only one month before the end of the [Yelp contest][6]!
 
-[1]: http://cloudera.github.com/hue/
+[1]: https://gethue.com
 [2]: http://hadoop.apache.org/
-[3]: http://cloudera.github.io/hue/docs-2.3.0/release-notes/release-notes-2.3.0.html
+[3]: https://gethue.com
 [4]: http://www.yelp.com/dataset_challenge/
 [5]: https://github.com/romainr/yelp-data-analysis
 [6]: https://www.yelp.com/dataset_challenge/

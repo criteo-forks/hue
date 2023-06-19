@@ -33,6 +33,8 @@ import 'ko/bindings/charts/ko.pieChart';
 import 'ko/bindings/charts/ko.scatterChart';
 import 'ko/bindings/charts/ko.timelineChart';
 
+import 'ko/bindings/ko.vue.js';
+
 import 'ko/bindings/ace/ko.aceEditor';
 import 'ko/bindings/ace/ko.aceResizer';
 import 'ko/bindings/ko.appAwareTemplateContextMenu';
@@ -77,7 +79,6 @@ import 'ko/bindings/ko.highlight';
 import 'ko/bindings/ko.hiveChooser';
 import 'ko/bindings/ko.html';
 import 'ko/bindings/ko.hueach';
-import 'ko/bindings/ko.hueAppIcon';
 import 'ko/bindings/ko.hueCheckAll';
 import 'ko/bindings/ko.hueCheckbox';
 import 'ko/bindings/ko.hueChecked';
@@ -100,6 +101,7 @@ import 'ko/bindings/ko.onClickOutside';
 import 'ko/bindings/ko.oneClickSelect';
 import 'ko/bindings/ko.parseArguments';
 import 'ko/bindings/ko.publish';
+import 'ko/bindings/ko.reactWrapper';
 import 'ko/bindings/ko.readOnlyAce';
 import 'ko/bindings/ko.resizable';
 import 'ko/bindings/ko.select2';
@@ -160,17 +162,14 @@ import 'ko/components/ko.historyPanel';
 import 'ko/components/ko.importDocumentsModal';
 import 'ko/components/ko.inlineAutocomplete';
 import 'ko/components/ko.jobBrowserLinks';
-import 'ko/components/ko.multiClusterSidebar';
 import 'ko/components/ko.navProperties';
 import 'ko/components/ko.navTags';
-import 'ko/components/ko.performanceGraph';
 import 'ko/components/ko.pollingCatalogEntriesList';
 import 'ko/components/ko.quickQueryAction';
 import 'ko/components/ko.sentryPrivileges';
 import 'ko/components/ko.sessionAuthModal';
 import 'ko/components/ko.sessionPanel';
 import 'ko/components/ko.shareGistModal';
-import 'ko/components/ko.sidebar';
 import 'ko/components/ko.sqlColumnsTable';
 
 // TODO: Move to about app when it has it's own webpack entry

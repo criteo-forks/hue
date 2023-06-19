@@ -1,27 +1,22 @@
 ![alt text](https://raw.githubusercontent.com/cloudera/hue/master/docs/images/hue_logo.png "Hue Logo")
 
 
-The Hue project gladly welcomes [pull requests](https://github.com/cloudera/hue/pulls)!
+The Hue project gladly welcomes [improvements](https://github.com/cloudera/hue/pulls)!
 
-This document contains instructions on how to get involved in Hue improvement.
-
-In any case, feel free to ask here, on the [forum](https://discourse.gethue.com/) or [@gethue](https://twitter.com/gethue).
+This document contains instructions on how to get involved. In any case, feel free to ask [questions](https://github.com/cloudera/hue/discussions).
 
 # What to improve
 
-Here is some inspiration on which areas we would love to have some contributions:
+Here is some inspiration:
 
-1. Updating a small piece of [documentation](https://docs.gethue.com)
+1. Updating a small piece of [documentation](https://docs.gethue.com). Pick a page and click on "Edit The Page".
 2. High level [Roadmap](/docs/ROADMAP.md)
-3. Check [Github issues](https://github.com/cloudera/hue/issues) or [the bug tracking system](https://issues.cloudera.org/browse/HUE)
-4. Improving or creating SQL [autocompletes](https://docs.gethue.com/developer/parsers/) or [connectors](https://docs.gethue.com/developer/sdk/) are great projects
+3. Check [Github issues](https://github.com/cloudera/hue/issues), especially [Good First Issues](https://github.com/cloudera/hue/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22).
+4. Core areas: improving [SQL Components](https://docs.gethue.com/developer/components/) like Scratchpad and Parsers, [APIs](https://docs.gethue.com/developer/api/), Kubernetes service or [SQL connectors](https://docs.gethue.com/administrator/configuration/connectors/)
 
 # Submitting an improvement
 
-Here are some examples of changes:
-
-* [Pull request 842](https://github.com/cloudera/hue/pull/842)
-* [HUE-8802 [search] Deleting an index throws a js exception](https://issues.cloudera.org/browse/HUE-8802)
+Here is a good example of [Pull request](https://github.com/cloudera/hue/pull/2470) with code and unit test with mocks.
 
 ## Building
 
@@ -29,15 +24,9 @@ Have a look at [how to quick build](https://docs.gethue.com/developer/developmen
 
 ## Reviews
 
-It is flexible:
+It is flexible but Github Pull request are handy.
 
-* **Github Pull request**
-Preferred way. Just post the [pull request](https://github.com/cloudera/hue/pulls) and reviewers will start from there. The CI will run a basic set of tests for you.
-
-* **Review Board**
-For large changes. Create an account on Hue's [Review Board](https://review.cloudera.org/groups/hue).
-Post the patch against the "hue-rw" repository. Enter "hue" in the "groups" field.
-Example: [https://review.cloudera.org/r/4019/](https://review.cloudera.org/r/4019/). Blog posts about using [Code Reviews](http://gethue.com/rbtools-example-how-do-easily-do-code-reviews-with-review-board/) and the [extended process](http://gethue.com/the-hue-team-development-process/).
+Just post the [pull request](https://github.com/cloudera/hue/pulls) and reviewers will start from there. The CI will run a basic set of tests for you.
 
 ## Coding Style
 

@@ -16,8 +16,6 @@
 <%!
 import sys
 
-from django.utils.translation import ugettext as _
-
 from desktop.conf import ENABLE_ORGANIZATIONS
 from desktop.lib.django_util import extract_field_data
 from desktop.views import commonheader, commonfooter
@@ -25,8 +23,10 @@ from desktop.views import commonheader, commonfooter
 if sys.version_info[0] > 2:
   from urllib.parse import quote as urllib_quote
   unicode = str
+  from django.utils.translation import gettext as _
 else:
   from urllib import quote as urllib_quote
+  from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="layout" file="layout.mako" />
@@ -106,7 +106,7 @@ ${ layout.menubar(section='groups') }
     $("#id_members").jHueSelector({
       selectAllLabel: "${_('Select all')}",
       searchPlaceholder: "${_('Search')}",
-      noChoicesFound: "${_('No users found.')} <a href='${url('useradmin.views.edit_user')}'>${_('Create a new user now')} &raquo;</a>",
+      noChoicesFound: "${_('No users found.')} <a href='${url('useradmin:useradmin.views.edit_user')}'>${_('Create a new user now')} &raquo;</a>",
       width: 600,
       height: 240
     });

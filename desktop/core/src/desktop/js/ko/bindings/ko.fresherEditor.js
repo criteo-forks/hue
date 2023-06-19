@@ -17,10 +17,10 @@
 import $ from 'jquery';
 import * as ko from 'knockout';
 
-import hueUtils from 'utils/hueUtils';
+import stripHtmlFromFunctions from 'utils/html/stripHtmlForFunctions';
 
 ko.bindingHandlers.fresherEditor = {
-  init: function(element, valueAccessor) {
+  init: function (element, valueAccessor) {
     const _el = $(element);
     const options = $.extend(valueAccessor(), {});
     _el.html(options.data());
@@ -67,7 +67,7 @@ ko.bindingHandlers.fresherEditor = {
     });
 
     function updateValues() {
-      $('[data-template]')[0].editor.setValue(hueUtils.stripHtmlFromFunctions(_el.html()));
+      $('[data-template]')[0].editor.setValue(stripHtmlFromFunctions(_el.html()));
       valueAccessor().data(_el.html());
     }
 
@@ -121,10 +121,7 @@ ko.bindingHandlers.fresherEditor = {
       } else if (document.selection && document.selection.type !== 'Control') {
         // IE < 9
         if (_el.data('selection')) {
-          _el
-            .data('selection')
-            .createRange()
-            .pasteHTML(html);
+          _el.data('selection').createRange().pasteHTML(html);
         } else {
           document.selection.createRange().pasteHTML(html);
         }

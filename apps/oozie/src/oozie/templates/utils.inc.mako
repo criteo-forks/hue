@@ -29,7 +29,6 @@
   import time
 
   from django.template.defaultfilters import date, time as dtime
-  from django.utils.translation import ugettext as _
 
   from desktop.lib.view_util import format_duration_in_millis
   from hadoop.fs.hadoopfs import Hdfs
@@ -37,6 +36,10 @@
 
   if sys.version_info[0] > 2:
     unicode = str
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
+
 
   LOG = logging.getLogger(__name__)
 %>
@@ -484,12 +487,12 @@ var cron_i18n = {
     name_week: '${_('week')}',
     name_month: '${_('month')}',
     name_year: '${_('year')}',
-    text_period: '${_('Every')} <b />',
-    text_mins: ' ${_('at')} <b /> ${_('minutes past the hour')}',
-    text_time: ' ${_('at')} <b />:<b />',
-    text_dow: ' ${_('on')} <b />',
-    text_month: ' ${_('of')} <b />',
-    text_dom: ' ${_('on the')} <b />',
+    text_period: '${_('Every')} <b ></b>',
+    text_mins: ' ${_('at')} <b ></b> ${_('minutes past the hour')}',
+    text_time: ' ${_('at')} <b ></b>:<b ></b>',
+    text_dow: ' ${_('on')} <b ></b>',
+    text_month: ' ${_('of')} <b ></b>',
+    text_dom: ' ${_('on the')} <b ></b>',
     error1: '${_('The tag %s is not supported !')}',
     error2: '${_('Bad number of elements')}',
     error3: '${_('The jquery_element should be set into jqCron settings')}',

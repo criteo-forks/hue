@@ -17,6 +17,7 @@
 
 from builtins import range
 from builtins import object
+import ast
 import base64
 import datetime
 import json
@@ -26,7 +27,6 @@ import sys
 from django.db import models
 from django.contrib.contenttypes.fields import GenericRelation
 from django.urls import reverse
-from django.utils.translation import ugettext as _, ugettext_lazy as _t
 
 from enum import Enum
 from TCLIService.ttypes import TSessionHandle, THandleIdentifier, TOperationState, TOperationHandle, TOperationType
@@ -39,6 +39,11 @@ from useradmin.models import User
 
 from beeswax.design import HQLdesign
 
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _, gettext_lazy as _t
+else:
+  from django.utils.translation import ugettext as _, ugettext_lazy as _t
+
 
 LOG = logging.getLogger(__name__)
 
@@ -47,7 +52,7 @@ QUERY_SUBMISSION_TIMEOUT = datetime.timedelta(0, 60 * 60)               # 1 hour
 # Constants for DB fields, hue ini
 BEESWAX = 'beeswax'
 HIVE_SERVER2 = 'hiveserver2'
-QUERY_TYPES = (HQL, IMPALA, RDBMS, SPARK) = list(range(4))
+QUERY_TYPES = (HQL, IMPALA, RDBMS, SPARK, HPLSQL) = list(range(5))
 
 class QueryHistory(models.Model):
   """
@@ -64,14 +69,15 @@ class QueryHistory(models.Model):
                  (librdbms_dbms.MYSQL, 'MySQL'), (librdbms_dbms.POSTGRESQL, 'PostgreSQL'),
                  (librdbms_dbms.SQLITE, 'sqlite'), (librdbms_dbms.ORACLE, 'oracle'))
 
-  owner = models.ForeignKey(User, db_index=True)
+  owner = models.ForeignKey(User, on_delete=models.CASCADE, db_index=True)
   query = models.TextField()
 
   last_state = models.IntegerField(db_index=True)
   has_results = models.BooleanField(default=False)          # If true, this query will eventually return tabular results.
   submission_date = models.DateTimeField(auto_now_add=True)
   # In case of multi statements in a query, these are the id of the currently running statement
-  server_id = models.CharField(max_length=1024, null=True)  # Aka secret, only query in the "submitted" state is allowed to have no server_id
+  # Aka secret, only query in the "submitted" state is allowed to have no server_id
+  server_id = models.CharField(max_length=1024, null=True)
   server_guid = models.CharField(max_length=1024, null=True, default=None)
   statement_number = models.SmallIntegerField(default=0)    # The index of the currently running statement
   operation_type = models.SmallIntegerField(null=True)
@@ -84,7 +90,8 @@ class QueryHistory(models.Model):
   server_type = models.CharField(max_length=128, help_text=_('Type of the query server.'), default=BEESWAX, choices=SERVER_TYPE)
   query_type = models.SmallIntegerField(help_text=_('Type of the query.'), default=HQL, choices=((HQL, 'HQL'), (IMPALA, 'IMPALA')))
 
-  design = models.ForeignKey('SavedQuery', to_field='id', null=True) # Some queries (like read/create table) don't have a design
+  # Some queries (like read/create table) don't have a design
+  design = models.ForeignKey('SavedQuery', on_delete=models.CASCADE, to_field='id', null=True)
   notify = models.BooleanField(default=False)                        # Notify on completion
 
   is_redacted = models.BooleanField(default=False)
@@ -220,14 +227,14 @@ def make_query_context(type, info):
 class HiveServerQueryHistory(QueryHistory):
   # Map from (thrift) server state
   STATE_MAP = {
-    TOperationState.INITIALIZED_STATE : QueryHistory.STATE.submitted,
-    TOperationState.RUNNING_STATE     : QueryHistory.STATE.running,
-    TOperationState.FINISHED_STATE    : QueryHistory.STATE.available,
-    TOperationState.CANCELED_STATE    : QueryHistory.STATE.failed,
-    TOperationState.CLOSED_STATE      : QueryHistory.STATE.expired,
-    TOperationState.ERROR_STATE       : QueryHistory.STATE.failed,
-    TOperationState.UKNOWN_STATE      : QueryHistory.STATE.failed,
-    TOperationState.PENDING_STATE     : QueryHistory.STATE.submitted,
+    TOperationState.INITIALIZED_STATE: QueryHistory.STATE.submitted,
+    TOperationState.RUNNING_STATE: QueryHistory.STATE.running,
+    TOperationState.FINISHED_STATE: QueryHistory.STATE.available,
+    TOperationState.CANCELED_STATE: QueryHistory.STATE.failed,
+    TOperationState.CLOSED_STATE: QueryHistory.STATE.expired,
+    TOperationState.ERROR_STATE: QueryHistory.STATE.failed,
+    TOperationState.UKNOWN_STATE: QueryHistory.STATE.failed,
+    TOperationState.PENDING_STATE: QueryHistory.STATE.submitted,
   }
 
   node_type = HIVE_SERVER2
@@ -263,10 +270,10 @@ class SavedQuery(models.Model):
   DEFAULT_NEW_DESIGN_NAME = _('My saved query')
   AUTO_DESIGN_SUFFIX = _(' (new)')
   TYPES = QUERY_TYPES
-  TYPES_MAPPING = {'beeswax': HQL, 'hql': HQL, 'impala': IMPALA, 'rdbms': RDBMS, 'spark': SPARK}
+  TYPES_MAPPING = {'beeswax': HQL, 'hql': HQL, 'impala': IMPALA, 'rdbms': RDBMS, 'spark': SPARK, 'hplsql': HPLSQL}
 
   type = models.IntegerField(null=False)
-  owner = models.ForeignKey(User, db_index=True)
+  owner = models.ForeignKey(User, on_delete=models.CASCADE, db_index=True)
   # Data is a json of dictionary. See the beeswax.design module.
   data = models.TextField(max_length=65536)
   name = models.CharField(max_length=80)
@@ -425,7 +432,7 @@ class SessionManager(models.Manager):
           snippet_data = json.loads(doc.data)['snippets'][0]
         except (KeyError, IndexError):
           # data might not contain a 'snippets' field or it might be empty
-          LOG.warn('No snippets in Document2 object of type query-hive')
+          LOG.warning('No snippets in Document2 object of type query-hive')
           continue
         session_guid = snippet_data.get('result', {}).get('handle', {}).get('session_guid')
         status = snippet_data.get('status')
@@ -457,7 +464,7 @@ class Session(models.Model):
   """
   A sessions is bound to a user and an application (e.g. Bob with the Impala application).
   """
-  owner = models.ForeignKey(User, db_index=True)
+  owner = models.ForeignKey(User, on_delete=models.CASCADE, db_index=True)
   status_code = models.PositiveSmallIntegerField()  # ttypes.TStatusCode
   secret = models.TextField(max_length='100')
   guid = models.TextField(max_length='100')
@@ -469,10 +476,23 @@ class Session(models.Model):
   objects = SessionManager()
 
   def get_handle(self):
-    secret, guid = HiveServerQueryHandle.get_decoded(secret=self.secret, guid=self.guid)
+    secret, guid = self.get_adjusted_guid_secret()
+    secret, guid = HiveServerQueryHandle.get_decoded(secret=secret, guid=guid)
 
     handle_id = THandleIdentifier(secret=secret, guid=guid)
     return TSessionHandle(sessionId=handle_id)
+
+  def get_adjusted_guid_secret(self):
+    secret = self.secret
+    guid = self.guid
+    if sys.version_info[0] > 2 and not isinstance(self.secret, bytes) and not isinstance(self.guid, bytes):
+      # only for py3, after bytes saved, bytes wrapped in a string object
+      try:
+        secret = ast.literal_eval(secret)
+        guid = ast.literal_eval(guid)
+      except SyntaxError:
+        pass
+    return secret, guid
 
   def get_properties(self):
     return json.loads(self.properties) if self.properties else {}
@@ -485,7 +505,8 @@ class Session(models.Model):
 
 
 class QueryHandle(object):
-  def __init__(self, secret=None, guid=None, operation_type=None, has_result_set=None, modified_row_count=None, log_context=None, session_guid=None, session_id=None):
+  def __init__(self, secret=None, guid=None, operation_type=None,
+   has_result_set=None, modified_row_count=None, log_context=None, session_guid=None, session_id=None):
     self.secret = secret
     self.guid = guid
     self.operation_type = operation_type
@@ -521,11 +542,17 @@ class HiveServerQueryHandle(QueryHandle):
   def get_rpc_handle(self):
     secret, guid = self.get_decoded(self.secret, self.guid)
 
-    operation = getattr(TOperationType, TOperationType._NAMES_TO_VALUES.get(self.operation_type, 'EXECUTE_STATEMENT'))
-    return TOperationHandle(operationId=THandleIdentifier(guid=guid, secret=secret),
-                            operationType=operation,
-                            hasResultSet=self.has_result_set,
-                            modifiedRowCount=self.modified_row_count)
+    operation = getattr(
+      TOperationType,
+      TOperationType._VALUES_TO_NAMES.get(self.operation_type, 'EXECUTE_STATEMENT')
+    )
+
+    return TOperationHandle(
+        operationId=THandleIdentifier(guid=guid, secret=secret),
+        operationType=operation,
+        hasResultSet=self.has_result_set,
+        modifiedRowCount=self.modified_row_count
+    )
 
   @classmethod
   def get_decoded(cls, secret, guid):

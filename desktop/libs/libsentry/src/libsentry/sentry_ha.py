@@ -16,15 +16,19 @@
 # limitations under the License.
 
 import logging
+import sys
 import time
-
-from django.utils.translation import ugettext as _
 
 from desktop.lib.exceptions import StructuredThriftTransportException
 from desktop.lib.exceptions_renderable import PopupException
 
 from libsentry.client2 import SentryClient
 from libsentry.sentry_site import get_sentry_server
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -56,7 +60,7 @@ def get_next_available_server(client_class, username, failed_host=None, componen
   attempted_hosts = []
 
   while has_next:
-    LOG.warn('Could not connect to Sentry server %s, attempting to fetch next available client.' % current_host)
+    LOG.warning('Could not connect to Sentry server %s, attempting to fetch next available client.' % current_host)
     next_server = get_sentry_server(current_host=current_host)
     time.sleep(1)
     try:

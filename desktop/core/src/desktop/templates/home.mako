@@ -14,11 +14,16 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 <%!
+  import sys
   from desktop.views import commonheader, commonfooter, commonshare, _ko
-  from django.utils.translation import ugettext as _
 
   from desktop.conf import USE_NEW_EDITOR
   use_new_home = USE_NEW_EDITOR.get()
+
+  if sys.version_info[0] > 2:
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 
 ${ commonheader(_('Welcome Home'), "home", user, request) | n,unicode }
@@ -355,7 +360,7 @@ ${ commonshare() | n,unicode }
 
     viewModel.selectedTag.subscribe(function (value) {
       $("#searchInput").val("");
-      $.totalStorage("hueHomeSelectedTag", value.id());
+      hueUtils.hueLocalStorage("hueHomeSelectedTag", value.id());
     });
 
     function getFirstAvailableDoc() {
@@ -378,8 +383,8 @@ ${ commonshare() | n,unicode }
       return viewModel.history();
     }
 
-    if ($.totalStorage("hueHomeSelectedTag") != null) {
-      var _preselectedTag = viewModel.getTagById($.totalStorage("hueHomeSelectedTag"));
+    if (hueUtils.hueLocalStorage("hueHomeSelectedTag") != null) {
+      var _preselectedTag = viewModel.getTagById(hueUtils.hueLocalStorage("hueHomeSelectedTag"));
       if (_preselectedTag != null) {
         viewModel.filterDocs(_preselectedTag);
       }

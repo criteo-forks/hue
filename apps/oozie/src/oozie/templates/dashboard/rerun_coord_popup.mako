@@ -16,7 +16,11 @@
 ## limitations under the License.
 
 <%!
-  from django.utils.translation import ugettext as _
+  import sys
+  if sys.version_info[0] > 2:
+    from django.utils.translation import gettext as _
+  else:
+    from django.utils.translation import ugettext as _
 %>
 
 <%
@@ -95,7 +99,7 @@
     $('#submit-rerun-form${ SUFFIX }').submit(function (e) {
       $.ajax({
         type: "POST",
-        url: '${ action }',
+        url: window.HUE_BASE_URL + '${ action }', // window.HUE_BASE_URL is empty string when Knox is not enabled
         data: $('#submit-rerun-form${ SUFFIX }').serialize(),
         success: function (data) {
           huePubSub.publish('submit.rerun.popup.return${ SUFFIX }', data);

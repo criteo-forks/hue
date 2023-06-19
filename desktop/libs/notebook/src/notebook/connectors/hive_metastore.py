@@ -16,10 +16,9 @@
 # limitations under the License.
 
 import logging
+import sys
 
 from django.urls import reverse
-from django.utils.translation import ugettext as _
-
 
 from desktop.lib.exceptions import StructuredException
 from desktop.lib.exceptions_renderable import PopupException
@@ -27,6 +26,11 @@ from desktop.lib.i18n import force_unicode, smart_str
 from desktop.lib.rest.http_client import RestException
 
 from notebook.connectors.base import Api, QueryError, QueryExpired, OperationTimeout, OperationNotSupported
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -37,7 +41,7 @@ try:
   from beeswax.server import dbms
   from beeswax.server.dbms import get_query_server_config, QueryServerException
 except ImportError as e:
-  LOG.warn('Hive and HiveMetastoreServer interfaces are not enabled: %s' % e)
+  LOG.warning('Hive and HiveMetastoreServer interfaces are not enabled: %s' % e)
   hive_settings = None
 
 
@@ -63,7 +67,7 @@ def query_error_handler(func):
 class HiveMetastoreApi(Api):
 
   @query_error_handler
-  def autocomplete(self, snippet, database=None, table=None, column=None, nested=None):
+  def autocomplete(self, snippet, database=None, table=None, column=None, nested=None, operation=None):
     db = self._get_db(snippet, cluster=self.cluster)
 
     return _autocomplete(db, database, table, column, nested, query=None, cluster=self.cluster)

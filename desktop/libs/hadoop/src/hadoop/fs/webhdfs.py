@@ -33,7 +33,6 @@ import time
 import urllib.request, urllib.error
 
 from django.utils.encoding import smart_str
-from django.utils.translation import ugettext as _
 
 import hadoop.conf
 import desktop.conf
@@ -47,10 +46,12 @@ from hadoop.fs.webhdfs_types import WebHdfsStat, WebHdfsContentSummary
 from hadoop.hdfs_site import get_nn_sentry_prefixes, get_umask_mode, get_supergroup, get_webhdfs_ssl
 
 if sys.version_info[0] > 2:
-  from urllib.parse import unquote as urllib_quote, urlparse
+  from urllib.parse import unquote as urllib_unquote, urlparse
+  from django.utils.translation import gettext as _
 else:
-  from urllib import unquote as urllib_quote
+  from urllib import unquote as urllib_unquote
   from urlparse import urlparse
+  from django.utils.translation import ugettext as _
 
 
 DEFAULT_HDFS_SUPERUSER = desktop.conf.DEFAULT_HDFS_SUPERUSER.get()
@@ -89,7 +90,7 @@ class WebHdfs(Hdfs):
     self._logical_name = logical_name
     self._supergroup = hdfs_supergroup
     self._scheme = ""
-    self._netloc = "";
+    self._netloc = ""
     self._is_remote = False
     self._has_trash_support = True
     self.expiration = None
@@ -202,7 +203,7 @@ class WebHdfs(Hdfs):
     except WebHdfsException as e:
       exceptions = ['IllegalArgumentException', 'UnsupportedOperationException']
       if any(x in e.message for x in exceptions):
-        LOG.warn('WebHDFS operation GETTRASHROOT is not implemented, returning default trash path: %s' % trash_path)
+        LOG.warning('WebHDFS operation GETTRASHROOT is not implemented, returning default trash path: %s' % trash_path)
       else:
         raise e
     return trash_path
@@ -212,8 +213,8 @@ class WebHdfs(Hdfs):
 
   def _getparams(self):
     return {
-      "user.name" : WebHdfs.DEFAULT_USER,
-      "doas" : self.user
+      "user.name": WebHdfs.DEFAULT_USER,
+      "doas": self.user
     }
 
   def _getheaders(self):
@@ -246,7 +247,7 @@ class WebHdfs(Hdfs):
     #fs_normpath clears scheme:/ to scheme: which doesn't make sense
     split = urlparse(path)
     if not split.path:
-        path = split._replace(path="/").geturl()
+      path = split._replace(path="/").geturl()
     return path
 
   def netnormpath(self, path):
@@ -273,7 +274,7 @@ class WebHdfs(Hdfs):
     headers = self._getheaders()
     json = self._root.get(path, params, headers)
     filestatus_list = json['FileStatuses']['FileStatus']
-    return [ WebHdfsStat(st, path) for st in filestatus_list ]
+    return [WebHdfsStat(st, path) for st in filestatus_list]
 
   def listdir(self, path, glob=None):
     """
@@ -570,8 +571,8 @@ class WebHdfs(Hdfs):
           del params['doas']
         if 'user.name' in params:
           del params['user.name']
-    quoted_path = urllib_quote(smart_str(path))
-    return self._client._make_url(quoted_path, params)
+    unquoted_path = urllib_unquote(smart_str(path))
+    return self._client._make_url(unquoted_path, params)
 
   def read(self, path, offset, length, bufsize=None):
     """
@@ -660,45 +661,45 @@ class WebHdfs(Hdfs):
 
 
   def remove_acl_entries(self, path, aclspec):
-      path = self.strip_normpath(path)
-      params = self._getparams()
-      params['op'] = 'REMOVEACLENTRIES'
-      params['aclspec'] = aclspec
-      headers = self._getheaders()
-      return self._root.put(path, params, headers=headers)
+    path = self.strip_normpath(path)
+    params = self._getparams()
+    params['op'] = 'REMOVEACLENTRIES'
+    params['aclspec'] = aclspec
+    headers = self._getheaders()
+    return self._root.put(path, params, headers=headers)
 
 
   def remove_default_acl(self, path):
-      path = self.strip_normpath(path)
-      params = self._getparams()
-      params['op'] = 'REMOVEDEFAULTACL'
-      headers = self._getheaders()
-      return self._root.put(path, params, headers=headers)
+    path = self.strip_normpath(path)
+    params = self._getparams()
+    params['op'] = 'REMOVEDEFAULTACL'
+    headers = self._getheaders()
+    return self._root.put(path, params, headers=headers)
 
 
   def remove_acl(self, path):
-      path = self.strip_normpath(path)
-      params = self._getparams()
-      params['op'] = 'REMOVEACL'
-      headers = self._getheaders()
-      return self._root.put(path, params, headers=headers)
+    path = self.strip_normpath(path)
+    params = self._getparams()
+    params['op'] = 'REMOVEACL'
+    headers = self._getheaders()
+    return self._root.put(path, params, headers=headers)
 
 
   def set_acl(self, path, aclspec):
-      path = self.strip_normpath(path)
-      params = self._getparams()
-      params['op'] = 'SETACL'
-      params['aclspec'] = aclspec
-      headers = self._getheaders()
-      return self._root.put(path, params, headers=headers)
+    path = self.strip_normpath(path)
+    params = self._getparams()
+    params['op'] = 'SETACL'
+    params['aclspec'] = aclspec
+    headers = self._getheaders()
+    return self._root.put(path, params, headers=headers)
 
 
   def get_acl_status(self, path):
-      path = self.strip_normpath(path)
-      params = self._getparams()
-      params['op'] = 'GETACLSTATUS'
-      headers = self._getheaders()
-      return self._root.get(path, params, headers=headers)
+    path = self.strip_normpath(path)
+    params = self._getparams()
+    params['op'] = 'GETACLSTATUS'
+    headers = self._getheaders()
+    return self._root.get(path, params, headers=headers)
 
 
   def check_access(self, path, aclspec='rw-'):
@@ -711,7 +712,7 @@ class WebHdfs(Hdfs):
       return self._root.get(path, params, headers)
     except WebHdfsException as ex:
       if ex.code == 500 or ex.code == 400:
-        LOG.warn('Failed to check access to path %s, CHECKACCESS operation may not be supported.' % path)
+        LOG.warning('Failed to check access to path %s, CHECKACCESS operation may not be supported.' % path)
         return None
       else:
         raise ex
@@ -801,7 +802,7 @@ class WebHdfs(Hdfs):
     # changed below for directories to remain consistent
     if dir_mode is None:
       sb = self._stats(src)
-      dir_mode=oct(stat.S_IMODE(sb.mode))
+      dir_mode = oct(stat.S_IMODE(sb.mode))
 
     src = self.strip_normpath(src)
     dest = self.strip_normpath(dest)
@@ -1039,6 +1040,9 @@ def test_fs_configuration(fs_config):
   """
   This is a config validation method. Returns a list of [(config_variable, error_message)].
   """
+  if not fs_config.IS_ENABLED.get():
+    return []
+
   fs = WebHdfs.from_config(fs_config)
   fs.setuser(fs.superuser)
 

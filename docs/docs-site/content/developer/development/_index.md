@@ -12,30 +12,40 @@ This section goes into greater detail on how to build and reuse the components o
 
 ### Dependencies
 
-* The OS specific install instructions are listed in the [install guide](/administrator/installation/dependencies/)
-* Python 2.7+ (Python 3 support tracked in [HUE-8737](https://issues.cloudera.org/browse/HUE-8737))
-* Django (1.11 already included in the distribution)
-* Java (Java 1.8) (should go away after [HUE-8740](https://issues.cloudera.org/browse/HUE-8740))
-* Node.js ([10.0+](https://deb.nodesource.com/setup_10.x))
+* The OS specific packages are listed in the [install guide](/administrator/installation/dependencies/)
+* Python 3.6+ and Django 3 (or Python 2.7 with Django 1.11)
+* Vue.js 3
+* Node.js ([14.0+](https://deb.nodesource.com/setup_10.x))
 
 ### Build & Start
 
 Build once:
 
+    # If you are using Python 3.6+, set PYTHON_VER before the build, like
+    export PYTHON_VER=python3.8
+
+    # Mac user might need to set
+    export SKIP_PYTHONDEV_CHECK=true
+
     make apps
 
-Then start the dev server (which will auto reload):
+The [dependencies documentation](/administrator/installation/dependencies/) is here to help for troubleshooting build issues.
+
+Then start the dev server (which will auto reload on file changes):
 
     ./build/env/bin/hue runserver
 
-If you are changing Javascript or CSS files, also start:
+If you are changing JavaScript or CSS files, also start:
 
     npm run dev
 
-Then it is recommended to use MySQL or PostGres as the database.
+Persistence: Hue needs an existing database with transactions like MySQL to support concurrent requests and also not lose the registered users, saved queries, sharing permissions… when the server gets stopped.
 
-Open the `hue.ini` file in a text editor. Directly below the `[[database]]` line, add the following options (and modify accordingly for
-your MySQL setup):
+Once build, in order to avoid the `database is locked` errors, you also need to connect Hue to a transactional database. It is recommended to use MySQL or PostGreSQL for development.
+
+Open the `desktop/conf/pseudo-distributed.ini` file in a text editor. Add the following options (and modify accordingly) for your MySQL setup:
+
+Directly below the `[[database]]` line, add the following.
 
     host=localhost
     port=3306
@@ -44,16 +54,71 @@ your MySQL setup):
     password=secretpassword
     name=hue
 
+Read more about how [configurations work](/administrator/configuration/).
+
+### First SQL queries!
+
+Here is how to point the Editor to either MySql or [Apache Hive](https://hive.apache.org/) and execute your first SQL queries. For other supported databases refer to the [connectors](/administrator/configuration/connectors/).
+
+#### MySQL
+
+In `desktop/conf/pseudo-distributed.ini`, below the `[[interpreters]]` section of of `[notebook]`.
+
+    [[[mysql]]]
+    name=MySQL
+    interface=sqlalchemy
+    options='{"url": "mysql://${USER}:${PASSWORD}@localhost:3306/hue"}'
+
+#### Apache Hive
+
+You can connect to an existing Hive instance or setup a new one locally. An easy way to setup one is with Docker. You could use this [Hive 2 container](https://github.com/big-data-europe/docker-hive.).
+
+    git clone https://github.com/big-data-europe/docker-hive
+    cd docker-hive
+    docker-compose up -d
+
+Just follow the above 3 steps and you would have a running Hive instance on `jdbc:hive2://localhost:10000`.
+
+Now under Hue open `desktop/conf/pseudo-distributed.ini` file in a text editor, and modify the following properties:
+
+1. Directly below the `[[beeswax]]` line, add the following:
+
+        # Host where HiveServer2 is running.
+        hive_server_host=localhost
+        # Port where HiveServer2 Thrift server runs on.
+        hive_server_port=10000
+        thrift_version=7
+
+2. Below the `[[interpreters]]` of `[notebook]`, add:
+
+        [[[hive]]]
+        name=Hive
+        interface=hiveserver2
+
+And restart Hue, open the Editors and start typing your first queries!
+
 ### Dev environment
+
+#### Lint configs
+
+* [.eslintrc.js](https://github.com/cloudera/hue/blob/master/.eslintrc.js)
+* [.pylintrc](https://github.com/cloudera/hue/blob/master/.pylintrc)
+* [.prettierrc](https://github.com/cloudera/hue/blob/master/.prettierrc)
+* [Git hooks](https://github.com/cloudera/hue/blob/master/tools/githooks)
+
+For checking git commit message format automatically locally:
+
+    cp tools/githooks/* .git/hooks
+    chmod +x .git/hooks/*
 
 #### Visual Code
 
-Adding 'hue' as a workspace, then:
+Adding the 'hue' directory as a workspace, then:
 
 Recommended extensions:
 
 * Python - Microsoft
-* EsLint - Dirk Baeumur https://github.com/cloudera/hue/blob/master/.eslintrc.js
+* EsLint - Dirk Baeumur
 * Mako - tommorris
 * Docker - Microsoft
 
@@ -76,15 +141,95 @@ Second step is to configure the debug configuration
 ![Eclipse debug interpreter](/images/eclipse_debug_interpreter.png)
 
 
+## Development Process
+
+**Note:**
+
+During the development process if you are facing any problem then, it is recommended to search for information on the [Forum](https://discourse.gethue.com/) and in the [bug tracker](https://github.com/cloudera/hue/issues?q=is%3Aissue+).
+
+Here is a tutorial about how to sent a patch request for review.
+
+### Setup
+
+Hue project uses GitHub Pull Requests (PR) for code reviews. It also automatically runs the CI (syntax check, tests...) for you.
+
+If you've never used git and github before, there are bunch of things you need to [do](https://kbroman.org/github_tutorial/pages/first_time.html) before going further.
+
+Now, clone cloudera/hue:
+
+    git clone https://github.com/cloudera/hue
+
+Create a new branch with the Github issue GH-XXX or explicit name as the branch name:
+
+    git checkout master
+    git pull --rebase origin master
+    git checkout -b GH-XXX
+
+Then make your changes in code:
+
+    git add <file>
+    git diff --cached
+    git commit -m "GH-XXX <Ticket summary>"
+
+### Post a review
+
+Either post via the [GitHub CLI](https://github.com/cli/cli):
+
+    gh pr create --fill --assignee=romainr --web
+
+Or push to your branch in your repository fork, e.g. if you are 'bob':
+
+    git remote add bob https://github.com/bob/hue
+    git fetch bob
+
+    git push bob HEAD:GH-1000-fix
+
+And create the pull request to cloudera/hue via the button on the https://github.com/bob/hue/tree/GH-1000-fix page.
+
+**Note**:
+GitHub CLI is recommended for automating even more the process. e.g. for asking reviewers and auto merging when all the checks are green:
+
+    gh pr create --fill --assignee=romainr --reviewer=agl29,Harshg999
+    gh pr merge --auto -r 2494
+
+### Update a review
+
+Modify the previous commit diff:
+
+    git add <file>
+    git commit --amend
+
+Update the review:
+
+    git push bob HEAD:ISSUE-1000-fix -f
+
+And it will automatically kick the CI and notify reviewers.
+
+### Ship It
+
+Once we get ship it from at least one reviewer, we can push the changes to master
+
+    git rebase origin/master
+    git push origin HEAD:ci-commit-master-<yourname>
+
+* The push will auto run the tests and push it to master
+* It can be seen on https://circleci.com/gh/cloudera/workflows/hue
+  * Two builds would be made - One for Python 2.7 and another for Python 3.6
+  * If successful, the change would be auto merged to master
+  * On failure, we will get a mail
+  * Runs usually take 10-20 min
+* Once merged mark the review as submitted - **Close > Submitted**
+* Add the commit link to the ticket and mark it as resolved
+
+
+### Sum-up
+
+We hope that these commands will make your life easier and encourage you to [contribute to Hue](https://github.com/cloudera/hue/blob/master/CONTRIBUTING.md) 😉
+
+As usual feel free to send feedback on the [Forum](https://discourse.gethue.com/) list or [GitHub issues](https://github.com/cloudera/hue/issues)!
+
+
 ## API Server
-
-### From 30,000 feet
-
-![From up on high](/images/from30kfeet.png)
-
-Hue, as a "container" web application, sits in between your Hadoop installation
-and the browser.  It hosts all the Hue Apps, including the built-in ones, and
-ones that you may write yourself.
 
 ### The Hue Server
 
@@ -100,25 +245,6 @@ In addition to the web server, some Hue applications run
 daemon processes "on the side". Some examples are the `Celery Task Server`, `Celery Beat`.
 
 ![Reference Architecture](/images/hue_architecture.png)
-
-### Interacting with external services
-
-![Interacting with Hadoop](/images/interactingwithhadoop.png)
-
-Hue provides some APIs for interacting with external services like Databases of File storages.
-These APIs work by making REST or Thrift calls.
-
-### An Architectural View
-
-![Architecture](/images/architecture.png)
-
-A Hue application may span three tiers: (1) the UI and user interaction in the client's browser, (2) the
-core application logic in the Hue web server, and (3) external services with which applications may interact.
-
-The absolute minimum that you must implement (besides boilerplate), is a "Django [view](https://docs.djangoproject.com/en/1.11/#the-view-layer/)" function that processes the request and the associated template to render the response into HTML.
-
-Many apps will evolve to have a bit of custom JavaScript and CSS styles. Apps that need to talk to an external service
-will pull in the code necessary to talk to that service.
 
 ### File Layout
 
@@ -207,43 +333,6 @@ A `desktop.lib.conf.UnspecifiedConfigSection` object for `filesystems`, such as:
         each=ConfigSection(members=dict(
             nn_host=Config(key='namenode_host', required=True))
 
-An `UnspecifiedConfigSection` is useful when the children of the section are not known.
-When Hue loads your application's configuration, it binds all sub-sections. You can
-access the values by:
-
-    cluster1_val = FS['cluster_1'].nn_host.get()
-    all_clusters = FS.keys()
-    for cluster in all_clusters:
-        val = FS[cluster].nn_host.get()
-
-
-Application can automatically detect configuration problems and alert
-the admin. To take advantage of this feature, create a `config_validator`
-function in your `conf.py`:
-
-    def config_validator(user):
-      """
-      config_validator(user) -> [(config_variable, error_msg)] or None
-      Called by core check_config() view.
-      """
-      res = [ ]
-      if not REQUIRED_PROPERTY.get():
-        res.append((REQUIRED_PROPERTY, "This variable must be set"))
-      if MY_INT_PROPERTY.get() < 0:
-        res.append((MY_INT_PROPERTY, "This must be a non-negative number"))
-      return res
-
-
-<div class="note">
-  You should specify the <code>help="..."</code> argument to all configuration
-  related objects in your <code>conf.py</code>. The examples omit some for the
-  sake of space. But you and your application's users can view all the
-  configuration variables by doing:
-  <pre>
-    $ build/env/bin/hue config_help
-  </pre>
-</div>
-
 
 ### Saving documents
 
@@ -256,37 +345,6 @@ The `Document2` model provides automatically creation, sharing and saving. It pe
 `Document2` is based on [Django Models](https://docs.djangoproject.com/en/1.11/#the-model-layer)
 are Django's Object-Relational Mapping framework.
 
-
-### Walk-through of a Django View
-
-![Django Request](/images/django_request.png)
-
-
-Django is an MVC framework, except that the controller is called a
-"[view](https://docs.djangoproject.com/en/1.11/#the-view-layer)" and
-the "view" is called a "template".  For an application developer, the essential
-flow to understand is how the "urls.py" file provides a mapping between URLs (expressed as a
-regular expression, optionally with captured parameters) and view functions.
-These view functions typically use their arguments (for example, the captured parameters) and
-their request object (which has, for example, the POST and GET parameters) to
-prepare dynamic content to be rendered using a template.
-
-### Templates: Django and Mako
-
-In Hue, the typical pattern for rendering data through a template
-is:
-
-    from desktop.lib.django_util import render
-
-    def view_function(request):
-      return render('view_function.mako', request, dict(greeting="hello"))
-
-The `render()` function chooses a template engine (either Django or Mako) based on the
-extension of the template file (".html" or ".mako"). Mako templates are more powerful,
-in that they allow you to run arbitrary code blocks quite easily, and are more strict (some
-would say finicky); Django templates are simpler, but are less expressive.
-
-
 ### Authentication Backends
 
 Hue exposes a configuration flag ("auth") to configure a custom authentication [backend](https://github.com/cloudera/hue/blob/master/desktop/core/src/desktop/auth/backend.py).
@@ -294,25 +352,6 @@ See [writing an authentication backend](http://docs.djangoproject.com/en/dev/top
 for more details.
 
 In addition to that, backends may support a `manages_passwords_externally()` method, returning True or False, to tell the user manager application whether or not changing passwords within Hue is possible.
-
-### Authorization
-
-Applications may define permission sets for different actions. Administrators
-can assign permissions to user groups in the UserAdmin application. To define
-custom permission sets, modify your app's `settings.py` to create a list of
-`(identifier, description)` tuples:
-
-    PERMISSION_ACTIONS = [
-      ("delete", "Delete really important data"),
-      ("email", "Send email to the entire company"),
-      ("identifier", "Description of the permission")
-    ]
-
-Then you can use this decorator on your view functions to enforce permission:
-
-    @desktop.decorators.hue_permission_required("delete", "my_app_name")
-    def delete_financial_report(request):
-      ...
 
 ### Using and Installing Thrift
 
@@ -323,13 +362,11 @@ Please download from http://thrift.apache.org/.
 The modules using ``Thrift`` have some helper scripts like ``regenerate_thrift.sh``
 for regenerating the code from the interfaces.
 
-
 ### Upgrades
 
 After upgrading the version of Hue, running these two commands will make sure the database has the correct tables and fields.
 
     ./build/env/bin/hue migrate
-
 
 ### Debugging Tips and Tricks
 
@@ -376,14 +413,14 @@ Developing applications for Hue requires a minimal amount of CSS
 
 In a nutshell, front-end development is using:
 
-* [Mako](http://www.makotemplates.org/) is the templating language (Mako to be slowly removed in [HUE-9036](https://issues.cloudera.org/browse/HUE-9036))
-* [Bootstrap](http://twitter.github.com/bootstrap/) to layout your app
-* [Knockout js](http://knockoutjs.com/) to script the custom interactions
-
+* [Vue.js](https://vuejs.org/) to script the custom interactions
+* TypeScript
+* [Bootstrap](https://getbootstrap.com/) to layout your app
+* [Mako](http://www.makotemplates.org/) is the templating language (currently being removed in favor of Vue.js))
 
 ### Javascript
 
-The javascript files are currently being migrated to webpack bundles, during this process some files will live under src/desktop/static/ and some will live under src/dekstop/js
+The javascript files are currently being migrated to webpack bundles, during this process some files will live under src/desktop/static/ and some will live under src/desktop/js
 
 For changes to the files under src/desktop/js the following applies:
 
@@ -411,7 +448,7 @@ and possibly fix any issues it might report.
 
 ### CSS / LESS
 
-Hue uses [Bootstrap](http://twitter.github.com/bootstrap/) version 2.0 CSS
+Hue uses [Bootstrap](https://getbootstrap.com/) version 2.0 CSS
 styles and layouts. They are highly reusable and flexible. Your app doesn't
 have to use these styles, but if you do, it'll save you some time and make your
 app look at home in Hue.
@@ -434,14 +471,9 @@ You should create an icon for your application that is a transparent png sized
 24px by 24px. Your `settings.py` file should point to your icon via the `ICON`
 variable. The `create_desktop_app` command creates a default icon for you.
 
-<div class="note">
-  If you do not define an application icon, your application will not show up
-  in the navigation bar.
-</div>
+**NOTE:** If you do not define an application icon, your application will not show up in the navigation bar.
 
-Hue ships with Twitter Bootstrap and Font Awesome 3 (http://fortawesome.github.io/Font-Awesome/)
-so you have plenty of scalable icons to choose from. You can style your elements to use them
-like this (in your mako template):
+Hue ships with Twitter Bootstrap and Font Awesome 3 (https://fontawesome.com/v3/) so you have plenty of scalable icons to choose from. You can style your elements to use them like this (in your mako template):
 
     <!-- show a trash icon in a link -->
     <a href="#something"><i class="icon-trash"></i> Trash</a>
@@ -463,7 +495,7 @@ Run the API unit tests
 
     ./build/env/bin/hue test unit
 
-Open a pull request which will automaticlly trigger a [CircleCi](https://circleci.com/gh/cloudera/hue) unit test run.
+Open a pull request which will automatically trigger a [CircleCi](https://circleci.com/gh/cloudera/hue) unit test run.
 
 How to run just some parts of the tests, e.g.:
 
@@ -484,11 +516,7 @@ unittest frameworks, or you can just name your method with the word "test" at a 
 
 To run the unit tests (should take 5-10 minutes):
 
-    build/env/bin/hue test fast
-
-To run all the tests (unit and integration), use:
-
-    build/env/bin/hue test all
+    build/env/bin/hue test unit --with-xunit --with-cover
 
 To run only tests of a particular app, use:
 
@@ -512,6 +540,10 @@ To run a specific test in a class, use:
 
     build/env/bin/hue test specific <app><module>:<class><test_func>
 
+To run all the tests (unit and integration, will require some live clusters or services), use:
+
+    build/env/bin/hue test all
+
 Note:
 
 When running the tests and seeing an error similar to:
@@ -526,18 +558,18 @@ Re-building the collection of static files should fix it:
 
 ### Running the UI tests
 
-The tests are next to the file under test, the filename of the test has to end with `.test.js`.
+The tests are next to the file under test, the filename of the test has to end with `.test.ts` or `.test.js`.
 
     someFile.js         <- File under test
-    someFile.test.js    <- File containing tests
+    someFile.test.ts    <- File containing tests
 
 Run all the tests once with:
 
-    npm run test
+    npm test
 
 Run tests from a specific file once:
 
-    npm run test -- foo.test.js
+    npm test -- foo.test.js
 
 To run the tests in watch mode:
 
@@ -545,6 +577,9 @@ To run the tests in watch mode:
 
 While in watch mode Jest will detect changes to all files and re-run related tests. There are
 also options to target specific files or tests. Press 'w' in the console to see the options.
+
+In order to update the test snapshots, let the first checks of tests complete and then
+press 'u' in the console to update the snapshots.
 
 Note: on certain OS like Ubuntu, running the tests via a global jest seems to not hang your system
 
@@ -653,19 +688,19 @@ Those are tagged with `integration` either at the class or method level:
       @attr('integration')
       def test_add_ldap_users_case_sensitivity(self):
         if is_live_cluster():
-          raise SkipTest('HUE-2897: Cannot yet guarantee database is case sensitive')
+          raise SkipTest('GH-2897: Cannot yet guarantee database is case sensitive')
 
         ...
 
-Historically, the same thing used to be done with the `requires_hadoop` tag:
-
-    from nose.plugins.attrib import attr
-
-    @attr('requires_hadoop')
-    def your_test():
-      ...
-
 ## Releasing
+
+The checklist below details the steps. Then send the release notes to the [Forum](https://discourse.gethue.com/) and https://twitter.com/gethue!
+
+Also update https://wikipedia.org/wiki/Hue_(Software).
+
+### Version
+
+Here is an example of [release commit](https://github.com/cloudera/hue/commit/9de217d6b6).
 
 Update the versions to the next release (current release +1):
 
@@ -676,84 +711,132 @@ Update the versions to the next release (current release +1):
 
 How to count the number of commits since the last release:
 
-    git log --oneline --since=2019-08-01 | grep 'release' -n -i
+    git log --oneline --since=2020-01-01 | grep 'release' -n -i
     git log --oneline -449 > commits.txt
 
-    cat commits.txt | sed 's/\(HUE\-[[:digit:]][[:digit:]][[:digit:]][[:digit:]]\)/\[\1\]\(https:\/\/issues.cloudera.org\/browse\/\1\)/' | sed 's/^\(.*\)/* \1/' > commits.md
+    cat commits.txt | sed 's/^\([[:alnum:]]\{10\}\)/\[\1\]\(https:\/\/github.com\/cloudera\/hue\/commit\/\1\)/' | sed 's/^\(.*\)/* \1/' > commits.md
 
 And add them and the authors to the release notes:
 
     git log --pretty="%an" | sort | uniq | sed 's/^\(.*\)/* \1/' > authors.txt
 
+### Git
+
 Pushing the release branch:
 
-    git push origin HEAD:branch-4.7.0
+    git push origin HEAD:branch-4.11.0
 
 Tagging the release:
 
-    git tag -a release-4.7.0 -m "release-4.7.0"
-    git push origin release-4.7.0
+    git tag -a release-4.11.0 -m "release-4.11.0"
+    git push origin release-4.11.0
+
+Draft a new release on https://github.com/cloudera/hue/releases.
+
+Publish Github NPM package and Docker images at https://github.com/orgs/cloudera/packages?repo_name=hue.
+
+### Tarball
 
 Building the tarball release:
 
+    git checkout -b release-4.11.0 release-4.11.0
+    export PYTHON_VER=python3.8
     make prod
 
-Source of the release: https://github.com/cloudera/hue/archive/release-4.7.0.zip
+You might need to upgrade the [Mysqlclient](https://docs.gethue.com/administrator/installation/dependencies/#mysql--mariadb) if seeing:
+
+    _mysql.c:44:10: fatal error: my_config.h: No such file or directory
+      44 | #include "my_config.h"
+          |          ^~~~~~~~~~~~~
+
+Source of the release: https://github.com/cloudera/hue/archive/release-4.11.0.zip
 
 Push to the CDN:
 
-    scp hue-4.7.0.tgz root@cdn.gethue.com:/var/www/cdn.gethue.com/downloads
+    scp hue-4.11.0.tgz root@cdn.gethue.com:/var/www/cdn.gethue.com/downloads
 
-Other things to update:
+### Docker
 
-* In Jira, setting the [release as shipped](https://issues.cloudera.org/projects/HUE?selectedItem=com.atlassian.jira.jira-projects-plugin%3Arelease-page&status=all) and moving all non finished jiras to another target. Also archiving old releases.
-* Create the after next release tag in Jira and Blog
-* Update Docker image https://hub.docker.com/u/gethue/
-* Update release date on https://wikipedia.org/wiki/Hue_(Software)
+Docker images are at https://hub.docker.com/u/gethue/:
 
-Instructions:
-
-    docker build https://github.com/cloudera/hue.git#release-4.7.0 -t gethue/hue:4.7.0 -f tools/docker/hue/Dockerfile
-    docker tag gethue/hue:4.7.0 gethue/hue:latest
+    docker build https://github.com/cloudera/hue.git#release-4.11.0 -t gethue/hue:4.11.0 -f tools/docker/hue/Dockerfile
+    docker tag gethue/hue:4.11.0 gethue/hue:latest
     docker images
-    docker login
+    docker login -u gethue
     docker push gethue/hue
-    docker push gethue/hue:4.7.0
+    docker push gethue/hue:4.11.0
 
-    docker build . -t gethue/nginx:4.7.0 -f tools/docker/nginx/Dockerfile;
-    docker tag gethue/nginx:4.7.0 gethue/nginx:latest
+    docker build https://github.com/cloudera/hue.git#release-4.11.0 -t gethue/nginx:4.11.0 -f tools/docker/nginx/Dockerfile;
+    docker tag gethue/nginx:4.11.0 gethue/nginx:latest
     docker push gethue/nginx
-    docker push gethue/nginx:4.7.0
-
-Documentation
-
-[Build it](#Documentation) and push it to the docs host.
-
-Build the doc website:
-
-    cd docs/docs-site
-
-    hugo
-
-Release:
-
-    ssh root@docs.gethue.com
-    cd /var/www/docs.gethue.com
-    mkdir 4.7.0
-    rm latest; ln -s 4.7.0 latest
-
-    scp -r docs/docs-site/public/* root@docs.gethue.com:/var/www/docs.gethue.com/4.7.0
-
-    scp -r hue-4.6/build/release/prod/hue-4.7.0.tgz root@cdn.gethue.com:/var/www/cdn.gethue.com/downloads/
+    docker push gethue/nginx:4.11.0
 
 
-Then send release notes to the [Forum](https://discourse.gethue.com/), [hue-user](https://groups.google.com/a/cloudera.org/forum/#!forum/hue-user), https://twitter.com/gethue !
+### Kubernetes / Helm
+
+To build the chart, use the package command from the Helm root directory:
+
+    cd hue/tools/kubernetes/helm/
+    helm package hue
+
+Then to publish it to the outside via the current Apache server:
+
+    scp hue-1.0.1.tgz root@101.200.100.200:/var/www/helm.gethue.com
+
+Then connect to the server and index the package:
+
+    ssh root@101.200.100.200
+    cd /var/www/helm.gethue.com
+    helm repo index .
+
+### Pypi
+
+The Python API and CLI (and soon API) are being transitioned to https://github.com/gethue/compose which host the `compose` and `compose-admin` commands.
+
+How to update the repo https://pypi.org/project/gethue/:
+
+    rm -rf dist && python3 -m build && python3 -m twine upload dist/*
+
+    python3 -m pip install gethue --upgrade
+
+Note:
+
+A Pypi token will be needed. For doing a test release https://test.pypi.org/project/gethue/ is handy:
+
+    python3 -m pip install --upgrade build
+
+    rm -rf dist && python3 -m build && python3 -m twine upload --repository testpypi dist/*
+    python3 -m pip install --index-url https://test.pypi.org/simple/ gethue --upgrade
+
+Read more on [Python packaging](https://packaging.python.org/tutorials/packaging-projects/#generating-distribution-archives).
+
+### Documentation
+
+Documentation is currently being auto refreshed every morning of the week and run as a container.
+
+The manual process otherwise would be to [build it](#documentation-1) and push it to the docs host.
+
+The resources like images go to the CDN:
+
+    scp before_raz_adls.png after_raz_adls.png root@104.248.178.223:/var/www/cdn.gethue.com/uploads/2021/09/
+
+### NPM registry
+
+To publish gethue to the [NPM registry](https://www.npmjs.com/package/gethue), the following command would have to be run.
+
+    npm run publish-gethue
 
 ## Building
 
+### Custom Webpack Config
+
+You can make webpack build with custom configuration files by setting HUE_WEBPACK_CONFIG environment variable.
+
+    HUE_WEBPACK_CONFIG="webpack.config.custom.js" make apps
+
 ### Dev Docker
 
-Try basic changes in Hue without compiling it locally:
+Try basic changes [in 3 minutes](https://gethue.com/quick-start-a-hue-development-environment-in-3-minutes-with-docker/) without compiling Hue locally hence avoiding the setting up of [dependencies](/developer/):
 
     git clone https://github.com/cloudera/hue.git
     cd hue
@@ -761,7 +844,7 @@ Try basic changes in Hue without compiling it locally:
 
 Then edit the `[[database]]` section to specify a proper database, here MySql:
 
-    host=127.0.0.1 # Not localhost if Docker
+    host=127.0.0.1 # Don't use 'localhost' if Docker
     engine=mysql
     user=hue
     password=hue
@@ -792,11 +875,17 @@ Check for links not working (e.g. returning a 404) with muffet, a fast link chec
 
 The posts [manual](https://gethue.com/easily-checking-for-deadlinks-on-docs-gethue-com/) and [continuous integration](https://gethue.com/easily-checking-for-deadlinks-on-docs-gethue-com/) contain more information about it.
 
-### Blog & Website
+And then to build the static site just do:
 
-Like for the [Documentation](#Documentation) install hugo. The content for each language is in its [own directory](https://github.com/cloudera/hue/tree/master/docs/gethue/content).
+    hugo
 
-Blog posts are located in [docs/gethue/content/en/posts](https://github.com/cloudera/hue/tree/master/docs/gethue/content/en/posts).
+and grab the `public` directory.
+
+### gethue.com Blog & Website
+
+Like for the [Documentation](#documentation-1) install hugo. The content for each language is in its [own directory](https://github.com/cloudera/hue/tree/master/docs/gethue/content).
+
+Blog posts are located in [docs/gethue/content/en/posts](https://github.com/cloudera/hue/tree/master/docs/gethue/content/en/posts). Here is an example of the source of a [release post](https://github.com/cloudera/hue/commit/fcc0078a4ba59e450a2e081ad0cc27e482a8703b#diff-9b1261f162231be68d3c30329e73b458c874858c0d685cf0c213fdace3309679).
 
 Build it and see live changes:
 
@@ -805,6 +894,8 @@ Build it and see live changes:
     hugo serve
 
 Will automatically start one server for each language domain.
+
+gethue.com refresh is currently manually kicked but this will be automated soon.
 
 ### SQL Autocomplete
 
@@ -825,7 +916,7 @@ After modifying files under tools/ace-editor run the following to build ace.js
     npm install
     make ace
 
-### Embedded language references
+### Language references
 
 The tools for generating the embedded language reference manuals can be found under `hue/tools/sql-docs/`
 
@@ -862,3 +953,506 @@ How to create a new locale for an app:
 
     cd $APP_ROOT/src/$APP_NAME/locale
     $HUE_ROOT/build/env/bin/pybabel init -D django -i en_US.pot -d . -l fr
+
+## SQL Parsers
+
+The parsers are the flagship part of Hue and power extremely advanced autocompletes and other [SQL functionalities](/user/querying/#autocomplete). They are running on the client side and comes with just a few megabytes of JavaScript that are cached by the browser. This provides a very reactive experience to the end user and allows to [import them](#reusing-a-parser-in-your-project) as classic JavaScript modules for your own development needs.
+
+While the dynamic content like the list of tables, columns is obviously fetched via [remote endpoints](/administrator/configuration/connectors/), all the SQL knowledge of the statements is available.
+
+The main dialects are:
+
+*  Apache Hive
+*  Apache Impala
+*  Presto
+*  Apache Calcite
+
+But there are more! See all the currently shipped [SQL dialects](https://github.com/cloudera/hue/tree/master/desktop/core/src/desktop/js/parse/sql).
+
+This guide takes you through the steps necessary to create an autocompleter for any [SQL dialect](/administrator/configuration/connectors/#databases) in Hue. The major benefits are:
+
+* Proposing only valid syntax in the autocomplete
+* Getting the list of tables, columns, UDFs... automatically
+* Suggesting fixes
+* Diffing, formatting... queries
+
+**Looking at quick code examples?**
+
+- Adding `SHOW` syntax to Flink SQL [GH-1399](https://github.com/cloudera/hue/issues/1399)
+- Adding a Dask SQL parser and connector [GH-1480](https://github.com/cloudera/hue/issues/1480)
+
+### Parser Theory
+
+There are several parsers in Hue already (e.g. one for Impala, one for Hive..) and a generic SQL that is used for other dialects. The parsers are written using a [bison](https://www.gnu.org/software/bison/) grammar and are generated with [jison](https://github.com/zaach/jison). They are 100% Javascript and live on the client side, this gives the performance of a desktop editor in your browser.
+
+Building a dedicated work is more effort but it then allows a very rich end user experience, e.g.:
+
+* Handle invalid/incomplete queries and propose suggestions/fixes
+* date_column = <Date compatible UDF ...>
+* Language reference or data samples just by pointing the cursor on SQL identifiers
+* Leverage the parser for risk alerts (e.g. adding automatic LIMIT) or proper re-formatting
+
+#### Structure
+
+Normally parsers generate a parse tree but for our purposes we don’t really care about the statement itself but rather about what should happen when parts of a particular statement is encountered. During parsing the state is kept outside the parse tree and in case of syntax errors this enables us to provide some results up to the point of the error. There are two ways that incomplete/erroneous statements are handled, first we try to define most of the incomplete grammar and secondly we rely on the “error” token which allows the parser to recover.
+
+The parsers provide one function, parseSql, that accepts the text before the cursor and the text after the cursor as arguments. The function returns an object containing instructions on what to suggest given the input.
+
+As an example:
+
+    sqlParserRepository.getAutocompleteParser('impala').then(parser => {
+      console.log(parser.parseSql('SELECT * FROM customers'));
+    });
+
+Would output something like:
+
+    {
+      definitions: [],
+      locations: (6) [{…}, {…}, {…}, {…}, {…}, {…}],
+      lowerCase: false,
+      suggestAggregateFunctions: {tables: [Array(1)]},
+      suggestAnalyticFunctions: true,
+      suggestColumns: {source: "select", tables: [{identifierChain: [{name: "customers"}]}]},
+      suggestFunctions: {},
+      suggestKeywords: (8) [{…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}]
+    }
+
+We take this output and link it to various sources of metadata to provide the list of suggestions the user finally sees. In this case we’d use the data from “suggestColumns” to call the backend for all the columns of the “customers” table. We’d also use the functions library to list all the UDFs etc.
+
+Here’s a list of some of the different types of suggestions the parser can identify:
+
+    suggestAggregateFunctions
+    suggestAnalyticFunctions
+    suggestColRefKeywords
+    suggestColumnAliases
+    suggestColumns
+    suggestCommonTableExpressions
+    suggestDatabases
+    suggestFilters
+    suggestFunctions
+    suggestGroupBys	suggestHdfs
+    suggestIdentifiers
+    suggestJoinConditions
+    suggestJoins
+    suggestKeywords
+    suggestOrderBys
+    suggestSetOptions
+    suggestTables
+    suggestValues
+
+Parsers are generated and added to the repository using the command generateParsers.js under tools/jison/. To for instance generate all the Impala parsers you would run the following command in the hue folder:
+
+    cd tools/jison
+    node generateParsers.js impala
+
+In reality two parsers are generated per dialect, one for syntax and one for autocomplete. The syntax parsers is a subset of the autocomplete parser with no error recovery and without the autocomplete specific grammar.
+
+All the jison grammar files can be found [here](https://github.com/cloudera/hue/tree/master/desktop/core/src/desktop/js/parse/jison/sql) and the generated parsers are also committed together with their tests [here](https://github.com/cloudera/hue/tree/master/desktop/core/src/desktop/js/parse/sql).
+
+Parsers are sharing a maximum of the common syntax via some modules so that it is easy to improve the specificness of any of them while not starting from sratch.
+
+e.g. in [structure.json](https://github.com/cloudera/hue/blob/master/desktop/core/src/desktop/js/parse/jison/sql/hive/structure.json):
+
+    {
+      "lexer": "sql.jisonlex",
+      "autocomplete": [
+        "../generic/autocomplete_header.jison",
+        "abort/abort_transactions.jison",
+        "common/table_constraint.jison",
+        "alter/alter_common.jison",
+        "alter/alter_database.jison",
+        "alter/alter_index.jison",
+        "alter/alter_materialized_view.jison",
+        "alter/alter_table.jison",
+        "alter/alter_view.jison",
+        "analyze/analyze_table.jison",
+        ...
+      ],
+      "syntax": [
+        "../generic/syntax_header.jison",
+        "abort/abort_transactions.jison",
+        "common/table_constraint.jison",
+        "alter/alter_common.jison",
+        "alter/alter_database.jison",
+        "alter/alter_index.jison",
+        "alter/alter_materialized_view.jison",
+        ...
+      ]
+    }
+
+#### The grammar
+
+In a regular SQL parser you might define the grammar of a select statement like this:
+
+    SelectStatement
+      : 'SELECT' ColumnList 'FROM' Identifier
+      ;
+
+    ColumnList
+      : Identifier
+      | ColumnList ',' Identifier
+      ;
+
+This would be able to parse a statement like 'SELECT a, b, c FROM some_table' (depending on lexer definitions of course).
+
+#### Notion of cursor
+
+To turn this into an autocompleter we add the notion of a cursor. Often, the user has the cursor somewhere in the statement. In the previous section, we were assuming that the query was already typed and the user had not mouse cursor within it.
+
+The cursor is represented as an obscure character that is unlikely to be used in a statement. Currently '\u2020' was picked, the dagger, identified as 'CURSOR' in the lexer. The actual parsed string is therefore beforeCursor + '\u2020' + afterCursor.
+
+For the statement above we’d add an extra rule with an _EDIT postfix like this:
+
+    SelectStatement
+      : 'SELECT' ColumnList 'FROM' Identifier
+      ;
+
+    SelectStatement_EDIT
+      : 'CURSOR' --> { suggestKeywords: ['SELECT'] }
+      | 'SELECT' ColumnList_EDIT
+      | 'SELECT' ColumnList 'CURSOR' --> { suggestKeywords: ['FROM'] }
+      | 'SELECT' ColumnList 'FROM' 'CURSOR'  --> { suggestTables: {} }
+      | 'SELECT' ColumnList_EDIT 'FROM' Identifier --> { suggestColumns: { table: $4 } }
+      ;
+
+So for example if a cursor without any text is encountered, it will tell us to suggest the 'SELECT' keyword etc.
+
+#### Why an extra space
+
+The extra space is just for the documentation to show the complete output with locations, it should indeed be clarified a bit. The reason for the extra space is that the parser ignores partial words, consider the following where | denotes the cursor:
+
+    SELECT * FROM som|
+
+The parser will treat this as "SELECT * FROM |" and it leaves it up to the editor logic to filter any tables, starting with "som".
+
+### Tutorial: Creating a parser
+
+The goal is to create from scratch a new parser for the PostgreSQL database.
+
+#### Prerequisites
+
+Make sure you have [jison](/developer/development/#sql-autocomplete) installed and a [development](/administrator/installation/dependencies/) Hue. Then configure a [PostgreSQL interpreter](/administrator/configuration/connectors/#postgresql).
+
+In the Hue folder:
+
+    ./build/env/bin/pip install psycopg2-binary
+
+and edit your hue config desktop/conf/pseudo-distributed.ini to contain:
+
+    [notebook]
+    [[interpreters]]
+    [[[postgresql]]]
+    name = postgresql
+    interface=sqlalchemy
+    options='{"url": "postgresql://hue:hue@localhost:31335/hue"}'
+
+Our generateParsers tool can take an existing dialect and setup the source code for a new parsers based on that.
+
+In the hue folder run:
+
+    cd tools/jison
+    npm install
+    node generateParsers.js -new generic postgresql
+
+After the -new argument you specify an existing dialect to clone first and then the name of the new parser.
+
+Once executed the tool has cloned the generic parser with tests and generated a new postgresql parsers. The jison files can be found under `desktop/core/src/desktop/js/parse/jison/sql/postgresql/` and the testscan be found in `desktop/core/src/desktop/js/parse/sql/postgresql/test`.
+
+To regenerate the parsers after changes to the jison files run:
+
+    cd tools/jison
+    node generateParsers.js postgresql
+
+The tool will report any problems with the grammar. Note that it might still generate a parser if the grammar isn’t ambiguous but it’s likely that there will be test failures.
+
+#### Extending the grammar
+
+This gives you an idea on how to add custom syntax to the newly generated postgresql parser. For this example we’ll add the [REINDEX](https://www.postgresql.org/docs/9.1/sql-reindex.html) statement as it’s quite simple.
+
+    REINDEX { INDEX | TABLE | DATABASE | SYSTEM } name [ FORCE ]
+
+We’ll start by adding a test, in `postgresqlAutocompleteParser.test.js` in the test folder inside the main describe function before the first `it('should...`:
+
+    describe('REINDEX', () => {
+      it('should handle "REINDEX TABLE foo FORCE; |"', () => {
+        assertAutoComplete({
+          beforeCursor: 'REINDEX TABLE foo FORCE;  ',
+          afterCursor: '',
+          noErrors: true,
+          containsKeywords: ['SELECT'],
+          expectedResult: {
+            lowerCase: false
+          }
+        });
+      });
+
+      it('should suggest keywords for "REINDEX |"', () => {
+        assertAutoComplete({
+          beforeCursor: 'REINDEX ',
+          afterCursor: '',
+          noErrors: true,
+          containsKeywords: ['INDEX', 'DATABASE'],
+          expectedResult: {
+            lowerCase: false
+          }
+        });
+      });
+    });
+
+When we now run `npm run test -- postgresqlAutocompleteParser.test.js` there should be two failing tests.
+
+Alternatively, if using Jest directly and working on parsers currently being skipped in the CI, provide matching file names and an empty blacklist file pattern. e.g.:
+
+    jest calciteAutocompleteParser.Select.stream.test.js --testPathIgnorePatterns=[]
+    jest calciteAutocompleteParser --testPathIgnorePatterns=[]
+
+Next we’ll have to add the keyword to the lexer, let’s open `sql.jisonlex` in the jison folder for postgresql and add the following new tokens:
+
+    'REINDEX'                                  { parser.determineCase(yytext); return 'REINDEX'; }
+    'INDEX'                                    { return 'INDEX'; }
+    'SYSTEM'                                   { return 'SYSTEM'; }
+    'FORCE'                                    { return 'FORCE'; }
+
+Now let’s add the grammar, starting with the complete specification. For simplicity we’ll add it in `sql_main.jison`, at the bottom of the file add:
+
+    DataDefinition
+    : ReindexStatement
+    ;
+
+    ReindexStatement
+    : 'REINDEX' ReindexTarget RegularOrBacktickedIdentifier OptionalForce
+    ;
+
+    ReindexTarget
+    : 'INDEX'
+    | 'TABLE'
+    | 'DATABASE'
+    | 'SYSTEM'
+    ;
+
+    OptionalForce
+    :
+    | 'FORCE'
+    ;
+
+"DataDefinition" is an existing rule and this extends that rule with "ReindexStatement".
+
+Save the files and first run `node tools/jison/generateParsers.js postgresql` then `npm run test -- postgresqlAutocompleteParser.test.js` and we should be down to one failing test.
+
+For the next one we’ll add some keyword suggestions after the user has typed REINDEX, we’ll continue below the ReindexStatement in `sql_main.jison`:
+
+    DataDefinition_EDIT
+    : ReindexStatement_EDIT
+    ;
+
+    ReindexStatement_EDIT
+    : 'REINDEX' 'CURSOR'
+      {
+        parser.suggestKeywords(['DATABASE', 'INDEX', 'SYSTEM', 'TABLE']);
+      }
+    ;
+
+Again, run `cd  tools/jison/; node generateParsers.js postgresql` then `npm run test -- postgresqlAutocompleteParser.test.js` and the tests should both be green.
+
+We also want the autocompleter to suggest the keyword REINDEX when the user hasn’t typed anything, to do that let’s first add the following test with the other new ones in `postgresqlAutocompleteParser.test.js`:
+
+    it('should suggest REINDEX for "|"', () => {
+      assertAutoComplete({
+        beforeCursor: '',
+        afterCursor: '',
+        noErrors: true,
+        containsKeywords: ['REINDEX'],
+        expectedResult: {
+          lowerCase: false
+        }
+      });
+    });
+
+For this to pass we need to add REINDEX to the list of DDL and DML keywords in the file `sqlParseSupport.js` next to the generated parser (`desktop/core/src/desktop/js/parse/sql/postgresql/sqlParseSupport.js/`). Find the function `parser.suggestDdlAndDmlKeywords` and add ‘REINDEX’ to the keywords array. Now run `npm run test -- postgresqlAutocompleteParser.test.js` and the three tests should pass.
+
+Before you continue further, note that in this case there will be two new failing tests where the keyword ‘REINDEX’ has to be added.
+
+In order to use the newly generated parsers we have to add them to the webpack bundles:
+
+    npm run webpack
+    npm run webpack-workers
+
+While developing it will speed up if the webpack bundling runs in the background, for this open two terminal sessions and run `npm run dev` in one and `npm run dev-workers` in the other. It will then monitor changes to the files and build a lot quicker.
+
+After the bundling you can now test it directly in the editor!
+
+### Syntax highlighting
+
+New keywords might not be properly colored highlighted in the editor. This is especially true when adding a new language. Here is how to fix that.
+
+![Missing highlighting](https://cdn.gethue.com/docs/dev/syntax_highlighting_missing.png)
+
+Missing highlighting for 'REINDEX' keyword
+
+![With highlighting](https://cdn.gethue.com/docs/dev/syntax_highlighting_updated.png)
+
+With correct highlighting
+
+#### Updating keywords
+
+The Editor is currently visually powered by [Ace](https://ace.c9.io). The list of supported languages is found in the [mode](https://github.com/cloudera/hue/tree/master/tools/ace-editor/lib/ace/mode) directory.
+
+For each dialect, we have two files. e.g. with PostgreSQL:
+
+    pgsql.js
+    pgsql_highlight_rules.js
+
+The list of keywords is present in `*_highlight_rules.js` and can be updated there.
+
+    var keywords = (
+        "ALL|ALTER|REINDEX|..."
+    )
+
+Afterwards, run:
+
+    make ace
+
+And after refreshing the editor page, the updated mode will be activated.
+
+#### Adding new dialect
+
+To add a new dialect, it is recommended to copy the two files of the closest mode and rename all the names inside. For example, if we were creating a new `ksql` mode, `pgsql_highlight_rules.js` would become `ksql_highlight_rules.js` and we would rename all the references inside to `psql` to `ksql`. Same with `pgsql.js` to `ksql.js`. In particular, the name of the mode to be referenced later is in:
+
+    KsqlHighlightRules.metaData = {
+      fileTypes: ["ksql"],
+      name: "ksql",
+      scopeName: "source.ksql"
+    };
+
+Tip: inheritance of modes is supported by Ace, which make it handy for avoiding potential duplications.
+
+In the Editor, the mapping between Ace's modes and the type of snippets is happening in [editor_components.mako](https://github.com/cloudera/hue/blob/master/desktop/libs/notebook/src/notebook/templates/editor_components.mako#L2118).
+
+In the KSQL case we have:
+
+    ksql: {
+      placeHolder: '${ _("Example: SELECT * FROM stream, or press CTRL + space") }',
+      aceMode: 'ace/mode/ksql',
+      snippetIcon: 'fa-database',
+      sqlDialect: true
+    },
+
+And cf. above [prerequisites](#prerequisites), any interpreter snippet with `ksql` will pick-up the new highlighter:
+
+    [[[ksql]]]
+    name=KSQL Analytics
+    interface=ksql
+
+### Reusing a parser in your project
+
+The parsers ship as a pluggable [component](/developer/components/parsers).
+
+
+## Connectors
+
+Connectors provide pluggable integration to any external data service so that an admin can easily allow end users to interact with them.
+
+* List of all the [existing connectors](/administrator/configuration/connectors/)
+* Check "Potential connectors" ideas in each section
+* Feel free to contact the [community](https://discourse.gethue.com/c/developer-sdk-api)
+
+### Databases
+
+#### SqlAlchemy
+
+[SqlAlchemy](https://www.sqlalchemy.org) is the prefered way if the Hive API is not supported by the database. The core implementation is in [`sql_alchemy.py`](https://github.com/cloudera/hue/blob/master/desktop/libs/notebook/src/notebook/connectors/sql_alchemy.py) and relies on each respective SqlAlchemy dialect.
+
+#### Hive Interface
+
+This [asynchronous API](https://github.com/cloudera/hue/tree/master/apps/beeswax) based on the Thrift API of Hive is very mature and powers an excellent integration of Apache Hive and Apache Impala.
+
+#### Custom
+
+If the built-in HiveServer2 (Hive, Impala, Spark SQL), SqlAlchemy (MySQL, PostgreSQL, Oracle, Presto...) don’t meet your needs, you can implement your own connector to the notebook app:
+
+* List of [all connectors](https://github.com/cloudera/hue/tree/master/desktop/libs/notebook/src/notebook/connectors)
+* Each connector API subclasses the [Base API](https://github.com/cloudera/hue/blob/master/desktop/libs/notebook/src/notebook/connectors/base.py) and must implement the methods defined within. Refer to the [JDBC](https://github.com/cloudera/hue/blob/master/desktop/libs/notebook/src/notebook/connectors/jdbc.py) or [RdbmsApi](https://github.com/cloudera/hue/blob/master/desktop/libs/notebook/src/notebook/connectors/rdbms.py) for representative examples
+
+* [Kafka SQL](https://github.com/cloudera/hue/blob/master/desktop/libs/notebook/src/notebook/connectors/ksql.py)
+* [Solr SQL](https://github.com/cloudera/hue/blob/master/desktop/libs/notebook/src/notebook/connectors/solr.py)
+* [JDBC](https://github.com/cloudera/hue/blob/master/desktop/libs/notebook/src/notebook/connectors/jdbc.py)
+
+The JDBC API relies on a small JDBC proxy running next to the Hue API. By default it won't be built without setting the `BUILD_DB_PROXY` flag, e.g.:
+
+    export BUILD_DB_PROXY=true make install
+
+**Note** In the long term, SqlAlchemy is prefered as more "Python native".
+
+#### Potential connectors
+
+It is recommended to develop an SqlAlchemy connector if yours is not already [existing](/administrator/configuration/connectors/#databases).
+
+### Catalogs
+
+The backends is pluggable by providing alternative [client interfaces](https://github.com/cloudera/hue/tree/master/desktop/libs/metadata/src/metadata/catalog):
+
+* [Apache Atlas](https://atlas.apache.org/)
+* Cloudera Navigator
+* Dummy (skeleton for integrating new catalogs)
+
+#### Apache Atlas
+
+* [Client API](https://github.com/cloudera/hue/tree/master/desktop/libs/metadata/src/metadata/catalog/atlas_client.py)
+
+#### Potential connectors
+
+* [Linkedin DataHub](https://github.com/linkedin/datahub)
+* [Lift Amundsen](https://github.com/lyft/amundsen)
+* AWS Glue
+* Google Cloud Data Catalog
+* Alation
+
+### Storages
+
+Various storage systems can be interacted with. The [`fsmanager.py`](https://github.com/cloudera/hue/blob/master/desktop/core/src/desktop/lib/fsmanager.py) is the main router to each API.
+
+**Note** Apache Ozone as well as Ceph can be used via the S3 browser.
+
+#### Hadoop HDFS
+
+* [WebHdfs API](https://github.com/cloudera/hue/blob/master/desktop/libs/hadoop/src/hadoop/fs/webhdfs.py)
+
+#### AWS S3
+
+* [S3 API](https://github.com/cloudera/hue/blob/master/desktop/libs/aws/src/aws/s3)
+
+#### Azure ADLS
+
+* [ADLS v2](https://github.com/cloudera/hue/blob/master/desktop/libs/azure/src/azure/abfs)
+* [ADLS v1](https://github.com/cloudera/hue/blob/master/desktop/libs/azure/src/azure/adls)
+
+#### HBase / Key Value Stores
+
+With just a few changes in the [Python API](https://github.com/cloudera/hue/blob/master/apps/hbase/src/hbase/api.py), the HBase browser could be compatible with Apache Kudu or Google Big Table.
+
+#### Potential connectors
+
+* Google Cloud Storage is currently a work in progress with [HUE-8978](https://issues.cloudera.org/browse/HUE-8978)
+
+### Jobs
+
+#### Apache Spark / Livy
+
+Based on the [Livy REST API](/administrator/configuration/connectors/#apache-spark).
+
+* [Notebook connector](https://github.com/cloudera/hue/blob/master/desktop/libs/notebook/src/notebook/connectors/spark_shell.py)
+  * PySpark
+  * Scala
+  * Spark SQL
+* [Batch connector](https://github.com/cloudera/hue/blob/master/desktop/libs/notebook/src/notebook/connectors/spark_batch.py)
+
+#### Schedulers
+
+Currently only Apache Oozie is supported for your Datawarehouse, but the API is getting generic with [HUE-3797](https://issues.cloudera.org/browse/HUE-3797).
+
+#### Potential connectors
+
+* Elastic Search: a connector similar to Solr for Searching [HUE-7828](https://issues.cloudera.org/browse/HUE-7828). SQL querying is already supported.
+* [Livy Browser API](https://github.com/cloudera/hue/blob/master/apps/jobbrowser/src/jobbrowser/apis/livy_api.py)
+* [Celery API](https://github.com/cloudera/hue/blob/master/desktop/core/src/desktop/lib/scheduler/lib/beat.py)
+* Apache Hive native support of query scheduling [HIVE-21884](https://issues.apache.org/jira/browse/HIVE-21884)

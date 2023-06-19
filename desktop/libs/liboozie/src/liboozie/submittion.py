@@ -20,10 +20,10 @@ import errno
 import logging
 import os
 import re
+import sys
 import time
 
 from django.utils.functional import wraps
-from django.utils.translation import ugettext as _
 
 from desktop.lib.exceptions_renderable import PopupException
 from desktop.lib.i18n import smart_str
@@ -34,6 +34,11 @@ from hadoop.fs.hadoopfs import Hdfs
 from liboozie.oozie_api import get_oozie
 from liboozie.conf import REMOTE_DEPLOYMENT_DIR
 from liboozie.credentials import Credentials
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 LOG = logging.getLogger(__name__)
 
@@ -311,7 +316,7 @@ class Submission(object):
       if self._do_as(self.user.username , self.fs.exists, path):
         self._do_as(self.user.username , self.fs.rmtree, path)
     except Exception as ex:
-      LOG.warn("Failed to clean up workflow deployment directory for "
+      LOG.warning("Failed to clean up workflow deployment directory for "
                "%s (owner %s). Caused by: %s",
                self.job.name, self.user, ex)
 

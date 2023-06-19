@@ -34,7 +34,7 @@ export const DOCUMENT_CONTEXT_TEMPLATE = `
       <!-- ko with: details -->
       <div class="context-popover-doc-header-link" ><a href="javascript:void(0)" data-bind="hueLink: link, click: function () { $parents[1].close(); }"><!-- ko template: { name: 'document-icon-template', data: { document: $data, showShareAddon: false } } --><!-- /ko --> <span data-bind="text:name"></span></a></div>
       <!-- ko if: description -->
-      <div class="context-popover-doc-description" data-bind="toggleOverflow: { height: 60 }"><div data-bind="html: description"></div></div>
+      <div class="context-popover-doc-description" data-bind="toggleOverflow: { height: 60 }"><div data-bind="text: description"></div></div>
       <!-- /ko -->
       <!-- /ko -->
       <!-- ko with: documentContents -->
@@ -62,7 +62,7 @@ export const DOCUMENT_CONTEXT_TEMPLATE = `
     <br/>
     <span data-bind="text: window.DOCUMENT_TYPE_I18n[type] || type"></span>
     <!-- ko if: description -->
-    <div class="context-popover-doc-description" data-bind="html: description"></div>
+    <div class="context-popover-doc-description" data-bind="text: description"></div>
     <!-- /ko -->
   </div>
 </script>
@@ -90,6 +90,7 @@ class DocumentContext {
     self.errorText = ko.observable();
     self.template = TEMPLATE_NAME;
 
+    self.documentId = ko.observable();
     self.documentContents = ko.observable();
     self.loadDocument();
 
@@ -103,6 +104,14 @@ class DocumentContext {
     self.disposals.push(() => {
       showInAssistPubSub.remove();
     });
+  }
+
+  download() {
+    if (this.documentId()) {
+      window.location.href = `${
+        window.HUE_BASE_URL
+      }/desktop/api2/doc/export?documents=[${this.documentId()}]`;
+    }
   }
 
   open(entry) {
@@ -129,6 +138,7 @@ class DocumentContext {
         silenceErrors: true
       })
       .done(response => {
+        this.documentId(response.document?.id);
         self.documentContents(response.data);
         self.loading(false);
       })

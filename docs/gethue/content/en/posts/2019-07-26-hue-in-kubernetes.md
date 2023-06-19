@@ -39,11 +39,13 @@ sf_remove_promo_bar:
 ampforwp-amp-on-off:
   - default
 categories:
-  - Administration
   - Version 4
   # - Version 4.5
 
 ---
+
+**Note** This post has been replaced by a more [recent Howto](/quickstart-hue-in-kubernetes/).
+
 Let&#8217;s see how to automate the deployment further and run this into a container orchestration like [Kubernetes][1].
 
 &nbsp;
@@ -56,7 +58,7 @@ In a Shell, after installing Helm, just execute these three instructions to boot
 
 <pre><code class="bash">helm repo add gethue https://helm.gethue.com
 helm repo update
-helm install gethue/hue
+helm install hue gethue/hue
 </code></pre>
 
 <a href="https://cdn.gethue.com/uploads/2017/12/Screen-Shot-2017-11-15-at-3.34.20-PM.png"><img src="https://cdn.gethue.com/uploads/2017/12/Screen-Shot-2017-11-15-at-3.34.20-PM.png" /></a>

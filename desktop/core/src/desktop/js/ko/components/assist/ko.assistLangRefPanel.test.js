@@ -16,11 +16,10 @@
 
 import * as ko from 'knockout';
 
+import * as apiUtils from 'api/utils';
 import AssistLangRefPanel from './ko.assistLangRefPanel';
-import apiHelper from 'api/apiHelper';
-import $ from 'jquery';
-import { refreshConfig } from 'utils/hueConfig';
-import { sleep } from 'utils/hueUtils';
+import { refreshConfig } from 'config/hueConfig';
+import sleep from 'utils/timing/sleep';
 
 describe('ko.assistLangRefPanel.js', () => {
   beforeAll(() => {
@@ -29,17 +28,15 @@ describe('ko.assistLangRefPanel.js', () => {
   });
 
   it('should handle cluster config updates', async () => {
-    const spy = jest.spyOn(apiHelper, 'getClusterConfig').mockImplementation(() =>
-      $.Deferred()
-        .resolve({
-          status: 0,
-          app_config: {
-            editor: {
-              interpreters: [{ dialect: 'hive' }, { dialect: 'impala' }, { dialect: 'banana' }]
-            }
+    const spy = jest.spyOn(apiUtils, 'post').mockImplementation(async () =>
+      Promise.resolve({
+        status: 0,
+        app_config: {
+          editor: {
+            interpreters: [{ dialect: 'hive' }, { dialect: 'impala' }, { dialect: 'banana' }]
           }
-        })
-        .promise()
+        }
+      })
     );
     await refreshConfig();
     const connector = ko.observable({ dialect: 'impala' });
@@ -51,18 +48,17 @@ describe('ko.assistLangRefPanel.js', () => {
 
     spy.mockRestore();
 
-    const changeSpy = jest.spyOn(apiHelper, 'getClusterConfig').mockImplementation(() =>
-      $.Deferred()
-        .resolve({
-          status: 0,
-          app_config: {
-            editor: {
-              interpreters: [{ dialect: 'impala' }]
-            }
+    const changeSpy = jest.spyOn(apiUtils, 'post').mockImplementation(async () =>
+      Promise.resolve({
+        status: 0,
+        app_config: {
+          editor: {
+            interpreters: [{ dialect: 'impala' }]
           }
-        })
-        .promise()
+        }
+      })
     );
+
     await refreshConfig();
     expect(changeSpy).toHaveBeenCalled();
     changeSpy.mockRestore();

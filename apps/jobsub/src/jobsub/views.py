@@ -27,14 +27,14 @@ is a "job submission".  Submissions can be "watched".
 
 from builtins import str
 import logging
+import sys
 import time as py_time
-
-from django.utils.translation import ugettext as _
 
 from desktop import appmanager
 from desktop.lib.django_util import render, render_json
 from desktop.lib.exceptions import StructuredException
 from desktop.lib.exceptions_renderable import PopupException
+from desktop.lib.view_util import is_ajax
 from desktop.log.access import access_warn
 from desktop.models import Document
 
@@ -44,6 +44,11 @@ from oozie.utils import model_to_dict, format_dict_field_values,\
                         sanitize_node_dict
 
 from desktop.auth.backend import is_admin
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 
 LOG = logging.getLogger(__name__)
 MAX_DESIGNS = 250
@@ -98,7 +103,7 @@ def list_designs(request):
   owner = request.GET.get('owner', '')
   name = request.GET.get('name', '')
 
-  if request.is_ajax():
+  if is_ajax(request):
     return render_json({
       'designs': _list_designs(request, owner, name)
     }, js_safe=True)

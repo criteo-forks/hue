@@ -16,12 +16,18 @@
 
 <%!
 import datetime
+import sys
+
 from django.template.defaultfilters import urlencode, stringformat, filesizeformat, date, time, escape
 from desktop.lib.django_util import reverse_with_get, extract_field_data
 from django.utils.encoding import smart_str
-from django.utils.translation import ugettext as _
 
 from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
+
+if sys.version_info[0] > 2:
+  from django.utils.translation import gettext as _
+else:
+  from django.utils.translation import ugettext as _
 %>
 
 <%namespace name="edit" file="editor_components.mako" />
@@ -631,7 +637,7 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
   <div id="submit-wf-modal" class="modal hide"></div>
 
   <script id="fileTemplate" type="text/html">
-    <tr class="row-animated" style="cursor: pointer" data-bind="drop: { enabled: name !== '.' && type !== 'file' && (!$root.isS3() || ($root.isS3() && !$root.isS3Root())), value: $data }, event: { mouseover: toggleHover, mouseout: toggleHover, contextmenu: showContextMenu }, click: $root.viewFile, css: { 'row-selected': selected(), 'row-highlighted': highlighted(), 'row-deleted': deleted() }">
+    <tr class="row-animated" style="cursor: pointer" data-bind="visible: !(name == '..' && window.RAZ_IS_ENABLED), drop: { enabled: name !== '.' && type !== 'file' && (!$root.isS3() || ($root.isS3() && !$root.isS3Root())), value: $data }, event: { mouseover: toggleHover, mouseout: toggleHover, contextmenu: showContextMenu }, click: $root.viewFile, css: { 'row-selected': selected(), 'row-highlighted': highlighted(), 'row-deleted': deleted() }">
       <td class="center" data-bind="click: name !== '..' ? handleSelect : void(0)" style="cursor: default">
         <div data-bind="multiCheck: '#fileBrowserTable', visible: name != '..', css: { 'hue-checkbox': name != '..', 'fa': name != '..', 'fa-check': selected }"></div>
       </td>
@@ -795,16 +801,6 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
       return (bytes / Math.pow(k, i)).toPrecision(dm) + ' ' + sizes[i];
     }
 
-    var updateHash = function (hash) {
-      hash = encodeURI(decodeURIComponent(hash));
-      %if not is_embeddable:
-      window.location.hash = hash;
-      %else:
-      hueUtils.changeURL('#' + hash);
-      huePubSub.publish('fb.update.hash');
-      %endif
-    }
-
     var Page = function (page) {
       if (page != null) {
         return {
@@ -910,11 +906,10 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
               if (this.url == null || this.url == "") {
                 // forcing root on empty breadcrumb url
                 this.url = "/";
-              }
-
-              fileBrowserViewModel.targetPageNum(1);
-              fileBrowserViewModel.targetPath("${url('filebrowser.views.view', path='')}" + stripHashes(this.url));
-              updateHash(this.url);
+              }              
+              fileBrowserViewModel.targetPageNum(1);              
+              const pathPrefix = "${url('filebrowser:filebrowser.views.view', path='')}";
+              huePubSub.publish('open.filebrowserlink', { pathPrefix, decodedPath: this.url, fileBrowserModel: fileBrowserViewModel});              
             }
             else {
               window.open($(e.target).attr('href'));
@@ -929,7 +924,7 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
 
       self.page = ko.observable(new Page(page));
       self.recordsPerPageChoices = ["15", "30", "45", "60", "100", "200", "1000"],
-      self.recordsPerPage = ko.observable(apiHelper.getFromTotalStorage('fb', 'records_per_page', 45));
+      self.recordsPerPage = ko.observable(hueUtils.hueLocalStorage('fb.records_per_page') || 45);
       self.targetPageNum = ko.observable(1);
       self.targetPath = ko.observable("${current_request_path | n,unicode }");
       self.sortBy = ko.observable("name");
@@ -1049,7 +1044,8 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
       };
 
       self.currentPath = ko.observable(currentDirPath);
-      self.currentPath.subscribe(function (path) {
+
+      self.currentPath.subscribe(function (path) {        
         $(document).trigger('currPathLoaded', { path: path });
       });
 
@@ -1156,7 +1152,7 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
       self.showSummary = function () {
         self.isLoadingSummary(true);
         $("#contentSummaryModal").modal("show");
-        $.getJSON("${url('content_summary', path='')}" + self.selectedFile().path, function (data) {
+        $.getJSON("${url('filebrowser:content_summary', path='')}" + encodeURIComponent(self.selectedFile().path), function (data) {
           if (data.status == 0) {
             self.contentSummary(ko.mapping.fromJS(data.summary));
             self.isLoadingSummary(false);
@@ -1176,8 +1172,8 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
 
       self.retrieveData = function (clearAssistCache) {
         self.isLoading(true);
-
-        $.getJSON(self.targetPath() + (self.targetPath().indexOf('?') > 0 ? '&' : '?') + "pagesize=" + self.recordsPerPage() + "&pagenum=" + self.targetPageNum() + "&filter=" + self.searchQuery() + "&sortby=" + self.sortBy() + "&descending=" + self.sortDescending() + "&format=json", function (data) {
+        const encodedSearchFilter = encodeURIComponent(self.searchQuery());
+        $.getJSON(self.targetPath() + (self.targetPath().indexOf('?') > 0 ? '&' : '?') + "pagesize=" + self.recordsPerPage() + "&pagenum=" + self.targetPageNum() + "&filter=" + encodedSearchFilter + "&sortby=" + self.sortBy() + "&descending=" + self.sortDescending() + "&format=json", function (data) {
           if (data.error){
             $(document).trigger("error", data.error);
             self.isLoading(false);
@@ -1263,7 +1259,7 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
       };
 
       self.recordsPerPage.subscribe(function (newValue) {
-        apiHelper.setInTotalStorage('fb', 'records_per_page', newValue)
+        window.hueUtils.hueLocalStorage('fb.records_per_page', newValue)
         self.retrieveData();
       });
 
@@ -1333,12 +1329,11 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
             e.stopPropagation();
             e.preventDefault();
             fileBrowserViewModel.targetPageNum(1);
-            fileBrowserViewModel.targetPath("${url('filebrowser.views.view', path='')}?" + folderPath);
-            updateHash('');
+            fileBrowserViewModel.targetPath("${url('filebrowser:filebrowser.views.view', path='')}?" + folderPath);
             fileBrowserViewModel.retrieveData();
           }
           else {
-            window.open("${url('filebrowser.views.view', path='')}?" + folderPath);
+            window.open("${url('filebrowser:filebrowser.views.view', path='')}?" + folderPath);
           }
         }
       }
@@ -1353,28 +1348,23 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
 
       self.viewFile = function (file, e) {
         e.stopImmediatePropagation();
+        const decodedPath = file.path;
+        const pathPrefix = "${url('filebrowser:filebrowser.views.view', path='')}";
+
         if (file.type == "dir") {
           // Reset page number so that we don't hit a page that doesn't exist
-          self.targetPageNum(1);
+          self.targetPageNum(1);        
           self.enableFilterAfterSearch = false;
           self.searchQuery("");
-          self.targetPath(file.url);
-          updateHash(stripHashes(file.path));
+          huePubSub.publish('open.filebrowserlink', { pathPrefix, decodedPath, fileBrowserModel: self });
         } else {
-          %if is_embeddable:
-          huePubSub.publish('open.link', file.url);
-          %else:
-          window.location.href = file.url;
-          %endif
-        }
-      };
-
-      self.editFile = function () {
-        huePubSub.publish('open.link', self.selectedFile().url.replace("${url('filebrowser.views.view', path='')}", "${url('filebrowser_views_edit', path='')}"));
+          huePubSub.publish('open.filebrowserlink', { pathPrefix, decodedPath });
+        }        
       };
 
       self.downloadFile = function () {
-        huePubSub.publish('open.link', self.selectedFile().url.replace("${url('filebrowser.views.view', path='')}", "${url('filebrowser_views_download', path='')}"));
+        huePubSub.publish('ignore.next.unload');
+        huePubSub.publish('open.filebrowserlink', { pathPrefix: '/filebrowser/download=', decodedPath: self.selectedFile().path });  
       };
 
       self.renameFile = function () {
@@ -1384,7 +1374,7 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
 
         $("#newNameInput").val(self.selectedFile().name);
 
-        $("#renameForm").attr("action", "/filebrowser/rename?next=${url('filebrowser.views.view', path='')}" + self.currentPath());
+        $("#renameForm").attr("action", "/filebrowser/rename?next=${url('filebrowser:filebrowser.views.view', path='')}" + encodeURIComponent(self.currentPath()));
 
         $('#renameForm').ajaxForm({
           dataType:  'json',
@@ -1406,7 +1396,7 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
 
         $("#setReplFileName").text(self.selectedFile().path);
 
-        $("#setReplicationFactorForm").attr("action", "/filebrowser/set_replication?next=${url('filebrowser.views.view', path='')}" + self.currentPath());
+        $("#setReplicationFactorForm").attr("action", "/filebrowser/set_replication?next=${url('filebrowser:filebrowser.views.view', path='')}" + encodeURIComponent(self.currentPath()));
 
         $('#setReplicationFactorForm').ajaxForm({
           dataType: 'json',
@@ -1442,7 +1432,7 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
 
         if (!isMoveOnSelf){
           hiddenFields($("#moveForm"), "src_path", paths);
-          $("#moveForm").attr("action", "/filebrowser/move?next=${url('filebrowser.views.view', path='')}" + self.currentPath());
+          $("#moveForm").attr("action", "/filebrowser/move?next=${url('filebrowser:filebrowser.views.view', path='')}" + encodeURIComponent(self.currentPath()));
           $('#moveForm').ajaxForm({
             dataType:  'json',
             success: function() {
@@ -1500,7 +1490,7 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
 
         hiddenFields($("#copyForm"), "src_path", paths);
 
-        $("#copyForm").attr("action", "/filebrowser/copy?next=${url('filebrowser.views.view', path='')}" + self.currentPath());
+        $("#copyForm").attr("action", "/filebrowser/copy?next=${url('filebrowser:filebrowser.views.view', path='')}" + encodeURIComponent(self.currentPath()));
 
         $("#copyModal").modal({
           keyboard:true,
@@ -1552,7 +1542,7 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
 
           hiddenFields($("#chownForm"), 'path', paths);
 
-          $("#chownForm").attr("action", "/filebrowser/chown?next=${url('filebrowser.views.view', path='')}" + self.currentPath());
+          $("#chownForm").attr("action", "/filebrowser/chown?next=${url('filebrowser:filebrowser.views.view', path='')}" + encodeURIComponent(self.currentPath()));
 
           $("select[name='user']").val(self.selectedFile().stats.user);
 
@@ -1604,7 +1594,7 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
 
           hiddenFields($("#chmodForm"), 'path', paths);
 
-          $("#chmodForm").attr("action", "/filebrowser/chmod?next=${url('filebrowser.views.view', path='')}" + self.currentPath());
+          $("#chmodForm").attr("action", "/filebrowser/chmod?next=${url('filebrowser:filebrowser.views.view', path='')}" + encodeURIComponent(self.currentPath()));
 
           $("#changePermissionModal").modal({
             keyboard: true,
@@ -1652,7 +1642,7 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
 
         $("#deleteForm").attr("action", "/filebrowser/rmtree" + "?" +
           (self.skipTrash() ? "skip_trash=true&" : "") +
-          "next=${url('filebrowser.views.view', path='')}" + self.currentPath());
+          "next=${url('filebrowser:filebrowser.views.view', path='')}" + encodeURIComponent(self.currentPath()));
 
         $("#deleteModal").modal({
           keyboard:true,
@@ -1693,6 +1683,17 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
         self.skipTrash(true);
         deleteSelected();
       };
+
+      self.copyPath = function () {
+        const path = $('<input>').val(self.selectedFile().path).appendTo('body').select()
+        document.execCommand('copy');
+        path.remove();
+        $.jHueNotify.info('${_('Path copied successfully to the clipboard')}');
+      }
+
+      self.openInImporter = function () {
+        huePubSub.publish('open.in.importer', self.selectedFile().path);
+      }
 
       self.trashSelected = function () {
         self.skipTrash(false);
@@ -1806,7 +1807,7 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
       };
 
       self.createDirectory = function (formElement) {
-        $(formElement).attr("action", "/filebrowser/mkdir?next=${url('filebrowser.views.view', path='')}" + self.currentPath());
+        $(formElement).attr("action", "/filebrowser/mkdir?next=${url('filebrowser:filebrowser.views.view', path='')}" + encodeURIComponent(self.currentPath()));
         if ($.trim($("#newDirectoryNameInput").val()) == "") {
           $("#directoryNameRequiredAlert").show();
           $("#newDirectoryNameInput").addClass("fieldError");
@@ -1843,7 +1844,7 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
       };
 
       self.createFile = function (formElement) {
-        $(formElement).attr("action", "/filebrowser/touch?next=${url('filebrowser.views.view', path='')}" + self.currentPath());
+        $(formElement).attr("action", "/filebrowser/touch?next=${url('filebrowser:filebrowser.views.view', path='')}" + encodeURIComponent(self.currentPath()));
         if ($.trim($("#newFileNameInput").val()) == "") {
           $("#fileNameRequiredAlert").show();
           $("#newFileNameInput").addClass("fieldError");
@@ -1882,7 +1883,7 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
 
         hiddenFields($("#restoreTrashForm"), 'path', paths);
 
-        $("#restoreTrashForm").attr("action", "/filebrowser/trash/restore?next=${url('filebrowser.views.view', path='')}" + self.currentPath());
+        $("#restoreTrashForm").attr("action", "/filebrowser/trash/restore?next=${url('filebrowser:filebrowser.views.view', path='')}" + encodeURIComponent(self.currentPath()));
 
         $("#restoreTrashModal").modal({
           keyboard:true,
@@ -1911,7 +1912,7 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
 
         hiddenFields($("#purgeTrashForm"), 'path', paths);
 
-        $("#purgeTrashForm").attr("action", "/filebrowser/trash/purge?next=${url('filebrowser.views.view', path='')}" + fileBrowserViewModel.homeDir() + "/.Trash");
+        $("#purgeTrashForm").attr("action", "/filebrowser/trash/purge?next=${url('filebrowser:filebrowser.views.view', path='')}" + fileBrowserViewModel.homeDir() + "/.Trash");
 
         $("#purgeTrashModal").modal({
           keyboard:true,
@@ -2116,6 +2117,7 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
               dest: ops.path
             },
             autoDiscover: false,
+            timeout: 300000,
             maxFilesize: 5000000,
             previewsContainer: '#progressStatusContent',
             previewTemplate: '<div class="progress-row">' +
@@ -2435,39 +2437,7 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
 
       $("*[rel='tooltip']").tooltip({ placement:"bottom" });
 
-      var hashchange = function () {
-        if (window.location.pathname.indexOf('/filebrowser') > -1) {
-          var targetPath = "";
-          var hash = decodeURI(window.location.hash.substring(1));
-          if (hash != null && hash != "" && hash.indexOf('/') > -1) {
-            targetPath = "${url('filebrowser.views.view', path='')}";
-            if (hash.indexOf("!!") != 0) {
-              targetPath += stripHashes(encodeURIComponent(hash));
-            }
-            else {
-              targetPath = fileBrowserViewModel.targetPath() + encodeURI(hash);
-            }
-            fileBrowserViewModel.targetPageNum(1)
-          }
-          if (window.location.href.indexOf("#") == -1) {
-            fileBrowserViewModel.targetPageNum(1);
-            targetPath = "${current_request_path | n,unicode }";
-          }
-          if (targetPath != "") {
-            fileBrowserViewModel.targetPath(targetPath);
-            fileBrowserViewModel.retrieveData();
-          }
-        }
-      }
-
-      huePubSub.subscribe('fb.update.hash', hashchange, 'filebrowser');
-
-      if (window.location.hash != null && window.location.hash.length > 1) {
-        hashchange();
-      }
-      else {
-        fileBrowserViewModel.retrieveData();
-      }
+      fileBrowserViewModel.retrieveData();
 
 
       $("#editBreadcrumb").click(function (e) {
@@ -2483,17 +2453,19 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
         root: fileBrowserViewModel.rootTarget(),
         skipKeydownEvents: true,
         onEnter: function (el) {
-          fileBrowserViewModel.targetPath("${url('filebrowser.views.view', path='')}" + stripHashes(el.val()));
+          var target_path = stripHashes(el.val());
+          if (el.val().split('/')[2] === '' && window.RAZ_IS_ENABLED){
+            $.jHueNotify.warn("${ _('Listing of buckets is not allowed. Redirecting to the home directory.') }");
+            target_path = window.USER_HOME_DIR;
+          } 
+          fileBrowserViewModel.targetPath("${url('filebrowser:filebrowser.views.view', path='')}" + encodeURIComponent(target_path)); 
           fileBrowserViewModel.getStats(function (data) {
-            if (data.type != null && data.type == "file") {
-              %if is_embeddable:
-              huePubSub.publish('open.link', data.url);
-              %else:
-              huePubSub.publish('open.link', data.url);
-              %endif
+            const pathPrefix = "${url('filebrowser:filebrowser.views.view', path='')}";
+            if (data.type != null && data.type == "file") {              
+              huePubSub.publish('open.filebrowserlink', { pathPrefix, decodedPath: target_path});              
               return false;
             } else {
-              updateHash(stripHashes(el.val()));
+              huePubSub.publish('open.filebrowserlink', { pathPrefix, decodedPath: target_path, fileBrowserModel: fileBrowserViewModel});
             }
             $("#jHueHdfsAutocomplete").hide();
           });
@@ -2520,7 +2492,6 @@ from filebrowser.conf import ENABLE_EXTRACT_UPLOADED_ARCHIVE
         }
       });
 
-      $(window).bind("hashchange.fblist", hashchange);
 
       $(".actionbar").data("originalWidth", $(".actionbar").width());
 

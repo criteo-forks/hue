@@ -283,6 +283,9 @@ class MockFs(object):
         self.isDir = True
     return MockWebHdfsStat()
 
+  def filebrowser_action(self):
+    return None
+
 
 class OozieMockBase(object):
 
@@ -384,7 +387,7 @@ class OozieMockBase(object):
 
     wf = Workflow.objects.new_workflow(self.user)
     wf.name = name
-    wf.save()
+    # wf.save()
     wf.start.workflow = wf
     wf.end.workflow = wf
     wf.start.save()
@@ -3336,13 +3339,13 @@ my_prop_not_filtered=10
     # With http pool the http connection is reused and so new connection count is 0
     superuser_client = make_logged_in_client(is_superuser=True)
     start_log = "--START HTTP POOL TEST--"
-    LOG.warn(start_log)
+    LOG.warning(start_log)
     superuser_client.get(reverse('oozie:list_oozie_workflows'))
     superuser_client.get(reverse('oozie:list_oozie_workflows') + "?format=json")
     superuser_client.get(reverse('oozie:list_oozie_workflows') + "?format=json&status=RUNNING&status=PREP&status=SUSPENDED")
     superuser_client.get(reverse('oozie:list_oozie_workflows') + "?format=json&status=KILLED&status=FAILED")
     end_log = "--END HTTP POOL TEST--"
-    LOG.warn(end_log)
+    LOG.warning(end_log)
     response = superuser_client.get(reverse(views.log_view))
 
     s1 = response._container[0].index(start_log)

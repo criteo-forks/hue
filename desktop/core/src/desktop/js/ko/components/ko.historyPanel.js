@@ -18,7 +18,7 @@ import $ from 'jquery';
 import * as ko from 'knockout';
 
 import dataCatalog from 'catalog/dataCatalog';
-import EditorViewModel from 'apps/notebook/editorViewModel';
+import NotebookViewModel from 'apps/notebook/NotebookViewModel';
 import componentUtils from './componentUtils';
 import huePubSub from 'utils/huePubSub';
 import I18n from 'utils/i18n';
@@ -169,10 +169,13 @@ class HistoryPanel {
       self.historyPanelVisible(false);
     });
 
-    self.editorViewModel = new EditorViewModel(null, '', {
+    self.editorViewModel = new NotebookViewModel(null, '', {
       user: window.LOGGED_USERNAME,
       userId: window.LOGGED_USER_ID,
-      languages: [{ name: 'Java', type: 'java' }, { name: 'Hive SQL', type: 'hive' }], // TODO reuse
+      languages: [
+        { name: 'Java', type: 'java' },
+        { name: 'Hive SQL', type: 'hive' }
+      ], // TODO reuse
       snippetViewSettings: {
         hive: {
           placeHolder: I18n('Example: SELECT * FROM tablename, or press CTRL + space'),
@@ -184,6 +187,18 @@ class HistoryPanel {
           placeHolder: I18n('Example: SELECT * FROM tablename, or press CTRL + space'),
           aceMode: 'ace/mode/impala',
           snippetImage: window.STATIC_URLS['impala/art/icon_impala_48.png'],
+          sqlDialect: true
+        },
+        phoenix: {
+          placeHolder: I18n('Example: SELECT * FROM tablename, or press CTRL + space'),
+          aceMode: 'ace/mode/phoenix',
+          snippetImage: window.STATIC_URLS['rdbms/art/icon_rdbms_48.png'],
+          sqlDialect: true
+        },
+        mysql: {
+          placeHolder: I18n('Example: SELECT * FROM tablename, or press CTRL + space'),
+          aceMode: 'ace/mode/mysql',
+          snippetImage: window.STATIC_URLS['rdbms/art/icon_rdbms_48.png'],
           sqlDialect: true
         },
         java: {
@@ -207,7 +222,7 @@ class HistoryPanel {
     self.$toggleElement;
     const $container = $('body');
 
-    self.reposition = function() {
+    self.reposition = function () {
       self.top(self.$toggleElement.offset().top + self.$toggleElement.height() + 15 + 'px');
       self.left($container.offset().left + $container.width() - 630 + 'px');
     };
@@ -278,7 +293,7 @@ class HistoryPanel {
                       connector: snippet.connector(),
                       path: []
                     })
-                    .done(entry => {
+                    .then(entry => {
                       entry.clearCache({ cascade: true, silenceErrors: true });
                     });
                 } else if (notebook.onSuccessUrl()) {
@@ -286,8 +301,7 @@ class HistoryPanel {
                 }
                 notebook.close(); // TODO: Don't close when onSuccessUrl is editor?
               } else {
-                // Perform last DROP statement execute
-                snippet.execute();
+                snippet.execute(true);
               }
             }
           });

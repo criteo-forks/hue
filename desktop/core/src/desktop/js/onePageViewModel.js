@@ -19,10 +19,14 @@ import _ from 'lodash';
 import * as ko from 'knockout';
 import page from 'page';
 
-import hueUtils from 'utils/hueUtils';
+import { CONFIG_REFRESHED_TOPIC, GET_KNOWN_CONFIG_TOPIC } from 'config/events';
 import huePubSub from 'utils/huePubSub';
 import I18n from 'utils/i18n';
-import { CONFIG_REFRESHED_EVENT, GET_KNOWN_CONFIG_EVENT } from 'utils/hueConfig';
+import waitForObservable from 'utils/timing/waitForObservable';
+import waitForVariable from 'utils/timing/waitForVariable';
+import getParameter from 'utils/url/getParameter';
+import getSearchParameter from 'utils/url/getSearchParameter';
+import { ASSIST_GET_DATABASE_EVENT, ASSIST_GET_SOURCE_EVENT } from 'ko/components/assist/events';
 
 class OnePageViewModel {
   constructor() {
@@ -35,7 +39,7 @@ class OnePageViewModel {
     self.isLoadingEmbeddable = ko.observable(false);
     self.extraEmbeddableURLParams = ko.observable('');
 
-    self.getActiveAppViewModel = function(callback) {
+    self.getActiveAppViewModel = function (callback) {
       const checkInterval = window.setInterval(() => {
         const $koElement = $('#' + self.currentApp() + 'Components');
         if (
@@ -49,10 +53,10 @@ class OnePageViewModel {
       }, 25);
     };
 
-    self.changeEditorType = function(type) {
+    self.changeEditorType = function (type) {
       self.getActiveAppViewModel(viewModel => {
         if (viewModel && viewModel.selectedNotebook) {
-          hueUtils.waitForObservable(viewModel.selectedNotebook, () => {
+          waitForObservable(viewModel.selectedNotebook, () => {
             if (viewModel.editorType() !== type) {
               viewModel.selectedNotebook().selectedSnippet(type);
               if (!window.ENABLE_NOTEBOOK_2) {
@@ -101,17 +105,17 @@ class OnePageViewModel {
     huePubSub.subscribe('open.importer.query', data => {
       self.loadApp('importer');
       self.getActiveAppViewModel(viewModel => {
-        hueUtils.waitForVariable(viewModel.createWizard, () => {
-          hueUtils.waitForVariable(viewModel.createWizard.prefill, () => {
+        waitForVariable(viewModel.createWizard, () => {
+          waitForVariable(viewModel.createWizard.prefill, () => {
             viewModel.createWizard.prefill.source_type(data['source_type']);
             viewModel.createWizard.prefill.target_type(data['target_type']);
             viewModel.createWizard.prefill.target_path(data['target_path']);
             viewModel.createWizard.destination.outputFormat(data['target_type']);
           });
-          hueUtils.waitForVariable(viewModel.createWizard.source.query, () => {
+          waitForVariable(viewModel.createWizard.source.query, () => {
             viewModel.createWizard.source.query({ id: data.id, name: data.name });
           });
-          hueUtils.waitForVariable(viewModel.createWizard.loadSampleData, () => {
+          waitForVariable(viewModel.createWizard.loadSampleData, () => {
             viewModel.createWizard.loadSampleData(data);
           });
         });
@@ -164,20 +168,20 @@ class OnePageViewModel {
     const loadedCss = [];
     const loadedApps = [];
 
-    $('script[src]').each(function() {
+    $('script[src]').each(function () {
       loadedJs.push($(this).attr('src'));
     });
 
-    $('link[href]').each(function() {
+    $('link[href]').each(function () {
       loadedCss.push($(this).attr('href'));
     });
 
-    const loadScript = function(scriptUrl) {
+    const loadScript = function (scriptUrl) {
       const deferred = $.Deferred();
       $.ajax({
         url: scriptUrl,
         converters: {
-          'text script': function(text) {
+          'text script': function (text) {
             return text;
           }
         }
@@ -192,7 +196,7 @@ class OnePageViewModel {
       return deferred.promise();
     };
 
-    const loadScripts = function(scriptUrls) {
+    const loadScripts = function (scriptUrls) {
       const promises = [];
       while (scriptUrls.length) {
         const scriptUrl = scriptUrls.shift();
@@ -204,7 +208,7 @@ class OnePageViewModel {
       return promises;
     };
 
-    const addGlobalCss = function($el) {
+    const addGlobalCss = function ($el) {
       const cssFile = $el.attr('href').split('?')[0];
       if (loadedCss.indexOf(cssFile) === -1) {
         loadedCss.push(cssFile);
@@ -219,23 +223,23 @@ class OnePageViewModel {
     };
 
     // Only load CSS and JS files that are not loaded before
-    self.processHeaders = function(response) {
+    self.processHeaders = function (response) {
       const promise = $.Deferred();
       const $rawHtml = $('<span>').html(response);
 
       const $allScripts = $rawHtml.find('script[src]');
       const scriptsToLoad = $allScripts
-        .map(function() {
+        .map(function () {
           return $(this).attr('src');
         })
         .toArray();
       $allScripts.remove();
 
-      $rawHtml.find('link[href]').each(function() {
+      $rawHtml.find('link[href]').each(function () {
         addGlobalCss($(this)); // Also removes the elements;
       });
 
-      $rawHtml.find('a[href]').each(function() {
+      $rawHtml.find('a[href]').each(function () {
         let link = $(this).attr('href');
         if (link.startsWith('/') && !link.startsWith('/hue')) {
           link = window.HUE_BASE_URL + '/hue' + link;
@@ -243,11 +247,9 @@ class OnePageViewModel {
         $(this).attr('href', link);
       });
 
-      $rawHtml.unwrap('span');
-
       const scriptPromises = loadScripts(scriptsToLoad);
 
-      const evalScriptSync = function() {
+      const evalScriptSync = function () {
         if (scriptPromises.length) {
           // Evaluate the scripts in the order they were defined in the page
           const nextScriptPromise = scriptPromises.shift();
@@ -259,7 +261,7 @@ class OnePageViewModel {
           });
         } else {
           // All evaluated
-          promise.resolve($rawHtml);
+          promise.resolve($rawHtml.children());
         }
       };
 
@@ -315,9 +317,6 @@ class OnePageViewModel {
       huePubSub.publish('hue.datatable.search.hide');
       huePubSub.publish('hue.scrollleft.hide');
       huePubSub.publish('context.panel.visible', false);
-      if (app === 'filebrowser') {
-        $(window).unbind('hashchange.fblist');
-      }
       if (app.startsWith('oozie')) {
         huePubSub.clearAppSubscribers('oozie');
       }
@@ -374,11 +373,11 @@ class OnePageViewModel {
             (baseURL.indexOf('?') > -1 ? '&' : '?') +
             'is_embeddable=true' +
             self.extraEmbeddableURLParams(),
-          beforeSend: function(xhr) {
+          beforeSend: function (xhr) {
             xhr.setRequestHeader('X-Requested-With', 'Hue');
           },
           dataType: 'html',
-          success: function(response, status, xhr) {
+          success: function (response, status, xhr) {
             const type = xhr.getResponseHeader('Content-Type');
             if (type.indexOf('text/') > -1) {
               window.clearAppIntervals(app);
@@ -406,7 +405,7 @@ class OnePageViewModel {
               window.location.href = window.HUE_BASE_URL + baseURL;
             }
           },
-          error: function(xhr) {
+          error: function (xhr) {
             console.error('Route loading problem', xhr);
             if ((xhr.status === 401 || xhr.status === 403) && app !== '403') {
               self.loadApp('403');
@@ -433,7 +432,7 @@ class OnePageViewModel {
       huePubSub.publish('resize.form.actions');
     };
 
-    self.dropzoneError = function(filename) {
+    self.dropzoneError = function (filename) {
       self.loadApp('importer');
       self.getActiveAppViewModel(vm => {
         vm.createWizard.source.path(DROPZONE_HOME_DIR + '/' + filename);
@@ -441,14 +440,45 @@ class OnePageViewModel {
       $('.dz-drag-hover').removeClass('dz-drag-hover');
     };
 
-    const openImporter = function(path) {
+    const openImporter = function (path) {
+      let databasename = '';
+      let interpreter = '';
+      const table = path
+        .substring(path.lastIndexOf(':') + 1, path.lastIndexOf(';'))
+        .slice(0, -4)
+        .replace(/[^a-zA-Z0-9]/g, '_');
       self.loadApp('importer');
+      huePubSub.publish(ASSIST_GET_SOURCE_EVENT, source => {
+        interpreter = source;
+      });
+      huePubSub.publish(ASSIST_GET_DATABASE_EVENT, {
+        connector: { id: interpreter },
+        callback: databaseDef => {
+          databasename = databaseDef.name;
+        }
+      });
       self.getActiveAppViewModel(vm => {
         vm.createWizard.source.path(path);
+        vm.currentStep(2);
+        vm.createWizard.source.interpreter(interpreter);
+        vm.createWizard.destination.name(databasename + '.' + table);
+        waitForObservable(vm.createWizard.destination.name, () => {
+          vm.createWizard.indexFile();
+        });
       });
     };
 
-    self.dropzoneComplete = function(path) {
+    const openImporterFilebrowser = function (path) {
+      self.loadApp('importer');
+      self.getActiveAppViewModel(vm => {
+        vm.createWizard.source.inputFormat('file');
+        window.setTimeout(() => {
+          vm.createWizard.source.path(path);
+        }, 0);
+      });
+    };
+
+    self.dropzoneComplete = function (path) {
       if (path.toLowerCase().endsWith('.csv')) {
         openImporter(path);
       } else {
@@ -457,12 +487,12 @@ class OnePageViewModel {
       $('.dz-drag-hover').removeClass('dz-drag-hover');
     };
 
-    huePubSub.subscribe('open.in.importer', openImporter);
+    huePubSub.subscribe('open.in.importer', openImporterFilebrowser);
 
     huePubSub.subscribe('assist.dropzone.complete', self.dropzoneComplete);
 
     // prepend /hue to all the link on this page
-    $('a[href]').each(function() {
+    $('a[href]').each(function () {
       let link = $(this).attr('href');
       if (link.startsWith('/') && !link.startsWith('/hue')) {
         link = window.HUE_BASE_URL + '/hue' + link;
@@ -472,7 +502,7 @@ class OnePageViewModel {
 
     page.base(window.HUE_BASE_URL + '/hue');
 
-    const getUrlParameter = name => window.location.getParameter(name) || '';
+    const getUrlParameter = name => getParameter(name) || '';
 
     self.lastContext = null;
 
@@ -483,20 +513,20 @@ class OnePageViewModel {
       { url: '/about/admin_wizard', app: 'admin_wizard' },
       {
         url: '/accounts/logout',
-        app: function() {
+        app: function () {
           location.href = window.HUE_BASE_URL + '/accounts/logout';
         }
       },
       {
         url: '/dashboard/admin/collections',
-        app: function(ctx) {
+        app: function (ctx) {
           page('/home/?type=search-dashboard');
         }
       },
       { url: '/dashboard/*', app: 'dashboard' },
       {
         url: '/desktop/api/desktop/api2/doc/export*',
-        app: function() {
+        app: function () {
           const documents = getUrlParameter('documents');
           location.href = window.HUE_BASE_URL + '/desktop/api2/doc/export?documents=' + documents;
         }
@@ -504,7 +534,7 @@ class OnePageViewModel {
       { url: '/desktop/dump_config', app: 'dump_config' },
       {
         url: '/desktop/debug/threads',
-        app: function() {
+        app: function () {
           self.loadApp('threads');
           self.getActiveAppViewModel(viewModel => {
             viewModel.fetchThreads();
@@ -513,14 +543,14 @@ class OnePageViewModel {
       },
       {
         url: '/gist',
-        app: function() {
+        app: function () {
           const uuid = getUrlParameter('uuid');
           location.href = '/desktop/api2/gist/open?uuid=' + uuid;
         }
       },
       {
         url: '/desktop/metrics',
-        app: function() {
+        app: function () {
           self.loadApp('metrics');
           self.getActiveAppViewModel(viewModel => {
             viewModel.fetchMetrics();
@@ -529,13 +559,13 @@ class OnePageViewModel {
       },
       {
         url: '/desktop/connectors',
-        app: function() {
+        app: function () {
           self.loadApp('connectors');
         }
       },
       {
         url: '/desktop/analytics',
-        app: function() {
+        app: function () {
           self.loadApp('analytics');
           self.getActiveAppViewModel(viewModel => {
             viewModel.fetchAnalytics();
@@ -544,13 +574,13 @@ class OnePageViewModel {
       },
       {
         url: '/desktop/download_logs',
-        app: function() {
+        app: function () {
           location.href = window.HUE_BASE_URL + '/desktop/download_logs';
         }
       },
       {
         url: '/editor',
-        app: function() {
+        app: function () {
           // Defer to allow window.location param update
           _.defer(() => {
             if (typeof self.embeddable_cache['editor'] === 'undefined') {
@@ -580,20 +610,14 @@ class OnePageViewModel {
       },
       {
         url: '/notebook/editor',
-        app: function(ctx) {
+        app: function (ctx) {
           page('/editor?' + ctx.querystring);
         }
       },
       { url: '/filebrowser/view=*', app: 'filebrowser' },
       {
-        url: '/filebrowser/download=*',
-        app: function(ctx) {
-          location.href = window.HUE_BASE_URL + '/filebrowser/download=' + ctx.params[0];
-        }
-      },
-      {
         url: '/filebrowser/*',
-        app: function() {
+        app: function () {
           page('/filebrowser/view=' + DROPZONE_HOME_DIR);
         }
       },
@@ -601,7 +625,7 @@ class OnePageViewModel {
       { url: '/help', app: 'help' },
       {
         url: '/home2*',
-        app: function(ctx) {
+        app: function (ctx) {
           page(ctx.path.replace(/home2/gi, 'home'));
         }
       },
@@ -615,7 +639,7 @@ class OnePageViewModel {
       { url: '/indexer/importer/', app: 'importer' },
       {
         url: '/indexer/importer/prefill/*',
-        app: function(ctx) {
+        app: function (ctx) {
           self.loadApp('importer');
           self.getActiveAppViewModel(viewModel => {
             const _params = ctx.path.match(
@@ -624,8 +648,8 @@ class OnePageViewModel {
             if (!_params) {
               console.warn('Could not match ' + ctx.path);
             }
-            hueUtils.waitForVariable(viewModel.createWizard, () => {
-              hueUtils.waitForVariable(viewModel.createWizard.prefill, () => {
+            waitForVariable(viewModel.createWizard, () => {
+              waitForVariable(viewModel.createWizard.prefill, () => {
                 viewModel.createWizard.prefill.source_type(_params && _params[1] ? _params[1] : '');
                 viewModel.createWizard.prefill.target_type(_params && _params[2] ? _params[2] : '');
                 viewModel.createWizard.prefill.target_path(_params && _params[3] ? _params[3] : '');
@@ -636,17 +660,17 @@ class OnePageViewModel {
       },
       {
         url: '/jobbrowser/jobs/job_*',
-        app: function(ctx) {
+        app: function (ctx) {
           page.redirect(
-            '/jobbrowser#!id=application_' + _.trimRight(ctx.params[0], '/').split('/')[0]
+            '/jobbrowser#!id=application_' + _.trimEnd(ctx.params[0], '/').split('/')[0]
           );
         }
       },
       {
         url: '/jobbrowser/jobs/application_*',
-        app: function(ctx) {
+        app: function (ctx) {
           page.redirect(
-            '/jobbrowser#!id=application_' + _.trimRight(ctx.params[0], '/').split('/')[0]
+            '/jobbrowser#!id=application_' + _.trimEnd(ctx.params[0], '/').split('/')[0]
           );
         }
       },
@@ -654,16 +678,16 @@ class OnePageViewModel {
       { url: '/logs', app: 'logs' },
       {
         url: '/metastore',
-        app: function() {
+        app: function () {
           page('/metastore/tables');
         }
       },
       { url: '/metastore/*', app: 'metastore' },
       {
         url: '/notebook',
-        app: function(ctx) {
+        app: function (ctx) {
           self.loadApp('notebook');
-          const notebookId = hueUtils.getSearchParameter('?' + ctx.querystring, 'notebook');
+          const notebookId = getSearchParameter('?' + ctx.querystring, 'notebook');
           if (notebookId !== '') {
             self.getActiveAppViewModel(viewModel => {
               self.isLoadingEmbeddable(true);
@@ -682,33 +706,33 @@ class OnePageViewModel {
       },
       {
         url: '/notebook/notebook',
-        app: function(ctx) {
+        app: function (ctx) {
           page('/notebook?' + ctx.querystring);
         }
       },
       {
         url: '/notebook/notebooks',
-        app: function(ctx) {
+        app: function (ctx) {
           page('/home/?' + ctx.querystring);
         }
       },
       {
         url: '/oozie/editor/bundle/list',
-        app: function(ctx) {
+        app: function (ctx) {
           page('/home/?type=oozie-bundle');
         }
       },
       { url: '/oozie/editor/bundle/*', app: 'oozie_bundle' },
       {
         url: '/oozie/editor/coordinator/list',
-        app: function(ctx) {
+        app: function (ctx) {
           page('/home/?type=oozie-coordinator');
         }
       },
       { url: '/oozie/editor/coordinator/*', app: 'oozie_coordinator' },
       {
         url: '/oozie/editor/workflow/list',
-        app: function(ctx) {
+        app: function (ctx) {
           page('/home/?type=oozie-workflow');
         }
       },
@@ -716,13 +740,13 @@ class OnePageViewModel {
       { url: '/oozie/list_oozie_info', app: 'oozie_info' },
       {
         url: '/oozie/list_oozie_sla',
-        app: function() {
+        app: function () {
           page.redirect('/jobbrowser/#!slas');
         }
       },
       {
         url: '/pig',
-        app: function() {
+        app: function () {
           self.loadApp('editor');
           self.changeEditorType('pig');
         }
@@ -730,7 +754,7 @@ class OnePageViewModel {
       { url: '/search/*', app: 'dashboard' },
       {
         url: '/security/hdfs',
-        app: function(ctx) {
+        app: function (ctx) {
           if (self.lastContext == null || ctx.path !== self.lastContext.path) {
             self.loadApp('security_hdfs');
           }
@@ -739,7 +763,7 @@ class OnePageViewModel {
       },
       {
         url: '/security/hive',
-        app: function(ctx) {
+        app: function (ctx) {
           if (self.lastContext == null || ctx.path !== self.lastContext.path) {
             self.loadApp('security_hive');
           }
@@ -748,7 +772,7 @@ class OnePageViewModel {
       },
       {
         url: '/security/hive2',
-        app: function(ctx) {
+        app: function (ctx) {
           if (self.lastContext == null || ctx.path !== self.lastContext.path) {
             self.loadApp('security_hive2');
           }
@@ -757,7 +781,7 @@ class OnePageViewModel {
       },
       {
         url: '/security/solr',
-        app: function(ctx) {
+        app: function (ctx) {
           if (self.lastContext == null || ctx.path !== self.lastContext.path) {
             self.loadApp('security_solr');
           }
@@ -766,7 +790,7 @@ class OnePageViewModel {
       },
       {
         url: '/security',
-        app: function() {
+        app: function () {
           page('/security/hive');
         }
       },
@@ -798,13 +822,31 @@ class OnePageViewModel {
       });
     });
 
+    const getModifiedCtxParamForFilePath = (ctx, mappingUrl) => {
+      // FIX. The page library decodes the ctx.params differently than it decodes
+      // the ctx.path, e.g. '+' is turned into ' ' which we don't want. Therefore we use
+      // the path to extract the params manually and get the correct characters.
+      const pathWithoutParams = mappingUrl.slice(0, -1);
+      const paramsOnly = ctx.path.replace(pathWithoutParams, '');
+      const filePathParam = decodeURIComponent(paramsOnly);
+
+      // Unfortunate hack needed since % has to be double encoded since the page library
+      // decodes it twice. This is temporarily double encoding only between the
+      // huePubSub.publish('open.link', fullUrl); and the onePgeViewModel.js.
+      return filePathParam.replaceAll('%25', '%');
+    };
+
     pageMapping.forEach(mapping => {
       page(
         mapping.url,
         _.isFunction(mapping.app)
           ? mapping.app
           : ctx => {
-              self.currentContextParams(ctx.params);
+              const ctxParams =
+                mapping.app === 'filebrowser'
+                  ? { 0: getModifiedCtxParamForFilePath(ctx, mapping.url) }
+                  : ctx.params;
+              self.currentContextParams(ctxParams);
               self.currentQueryString(ctx.querystring);
               self.loadApp(mapping.app);
             }
@@ -822,8 +864,8 @@ class OnePageViewModel {
       page();
     };
 
-    huePubSub.publish(GET_KNOWN_CONFIG_EVENT, configUpdated);
-    huePubSub.subscribe(CONFIG_REFRESHED_EVENT, configUpdated);
+    huePubSub.publish(GET_KNOWN_CONFIG_TOPIC, configUpdated);
+    huePubSub.subscribe(CONFIG_REFRESHED_TOPIC, configUpdated);
 
     huePubSub.subscribe('open.link', href => {
       if (href) {
@@ -844,6 +886,37 @@ class OnePageViewModel {
         }
       } else {
         console.warn('Received an open.link without href.');
+      }
+    });
+
+    huePubSub.subscribe('open.filebrowserlink', ({ pathPrefix, decodedPath, fileBrowserModel }) => {
+      if (pathPrefix.includes('download=')) {
+        // The download view on the backend requires the slashes not to
+        // be encoded in order for the file to be correctly named.
+        const encodedPath = encodeURIComponent(decodedPath).replaceAll('%2F', '/');
+        const possibleKnoxUrlPathPrefix = window.HUE_BASE_URL;
+        window.location = possibleKnoxUrlPathPrefix + pathPrefix + encodedPath;
+        return;
+      }
+
+      const appPrefix = '/hue';
+      const urlEncodedPercentage = '%25';
+      // Fix. The '%' character needs to be encoded twice due to a bug in the page library
+      // that decodes the url twice. Even when we don't directly call pag() we still need this
+      // fix since the user can reload the page which will trigger a call to page().
+      const pageFixedEncodedPath = encodeURIComponent(
+        decodedPath.replaceAll('%', urlEncodedPercentage)
+      );
+      const href = window.HUE_BASE_URL + appPrefix + pathPrefix + pageFixedEncodedPath;
+
+      // We don't want reload the entire filebrowser when navigating between folders
+      // and already on the listdir_components page.
+      if (fileBrowserModel) {
+        fileBrowserModel.targetPath(pathPrefix + encodeURIComponent(decodedPath));
+        window.history.pushState(null, '', href);
+        fileBrowserModel.retrieveData();
+      } else {
+        page(href);
       }
     });
   }

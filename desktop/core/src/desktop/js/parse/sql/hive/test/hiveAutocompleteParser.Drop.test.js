@@ -17,7 +17,7 @@
 import hiveAutocompleteParser from '../hiveAutocompleteParser';
 describe('hiveAutocompleteParser.js DROP statements', () => {
   beforeAll(() => {
-    hiveAutocompleteParser.yy.parseError = function(msg) {
+    hiveAutocompleteParser.yy.parseError = function (msg) {
       throw Error(msg);
     };
   });
@@ -34,28 +34,6 @@ describe('hiveAutocompleteParser.js DROP statements', () => {
     ).toEqualDefinition(testDefinition);
   };
 
-  it('should suggest keywords for "|"', () => {
-    assertAutoComplete({
-      beforeCursor: '',
-      afterCursor: '',
-      containsKeywords: ['ABORT'],
-      expectedResult: {
-        lowerCase: false
-      }
-    });
-  });
-
-  it('should suggest keywords for "ABORT |"', () => {
-    assertAutoComplete({
-      beforeCursor: 'ABORT ',
-      afterCursor: '',
-      expectedResult: {
-        lowerCase: false,
-        suggestKeywords: ['TRANSACTIONS']
-      }
-    });
-  });
-
   it('should suggest keywords for "DROP |"', () => {
     assertAutoComplete({
       beforeCursor: 'DROP ',
@@ -63,11 +41,13 @@ describe('hiveAutocompleteParser.js DROP statements', () => {
       expectedResult: {
         lowerCase: false,
         suggestKeywords: [
+          'CONNECTOR',
           'DATABASE',
           'FUNCTION',
           'INDEX',
           'MATERIALIZED VIEW',
           'ROLE',
+          'SCHEDULED QUERY',
           'SCHEMA',
           'TABLE',
           'TEMPORARY FUNCTION',
@@ -204,6 +184,41 @@ describe('hiveAutocompleteParser.js DROP statements', () => {
             types: ['COLREF'],
             tables: [{ identifierChain: [{ name: 'boo' }, { name: 'baa' }] }]
           }
+        }
+      });
+    });
+  });
+
+  describe('DROP CONNECTOR', () => {
+    it('should handle "DROP CONNECTOR IF EXISTS foo; |"', () => {
+      assertAutoComplete({
+        beforeCursor: 'DROP CONNECTOR IF EXISTS foo;',
+        afterCursor: '',
+        containsKeywords: ['SELECT'],
+        expectedResult: {
+          lowerCase: false
+        }
+      });
+    });
+
+    it('should suggest databases for "DROP CONNECTOR |"', () => {
+      assertAutoComplete({
+        beforeCursor: 'DROP CONNECTOR ',
+        afterCursor: '',
+        expectedResult: {
+          lowerCase: false,
+          suggestKeywords: ['IF EXISTS']
+        }
+      });
+    });
+
+    it('should suggest databases for "DROP CONNECTOR IF |"', () => {
+      assertAutoComplete({
+        beforeCursor: 'DROP CONNECTOR IF ',
+        afterCursor: '',
+        expectedResult: {
+          lowerCase: false,
+          suggestKeywords: ['EXISTS']
         }
       });
     });
@@ -624,54 +639,6 @@ describe('hiveAutocompleteParser.js DROP statements', () => {
         expectedResult: {
           lowerCase: false,
           suggestTables: { identifierChain: [{ name: 'boo' }], onlyViews: true }
-        }
-      });
-    });
-  });
-
-  describe('TRUNCATE TABLE', () => {
-    it('should handle "TRUNCATE TABLE boo PARTITION (baa=1, boo = \'baa\'); |"', () => {
-      assertAutoComplete({
-        beforeCursor: "TRUNCATE TABLE boo PARTITION (baa=1, boo = 'baa'); ",
-        afterCursor: '',
-        containsKeywords: ['SELECT'],
-        noErrors: true,
-        expectedResult: {
-          lowerCase: false
-        }
-      });
-    });
-
-    it('should suggest keywords for "TRUNCATE |"', () => {
-      assertAutoComplete({
-        beforeCursor: 'TRUNCATE ',
-        afterCursor: '',
-        expectedResult: {
-          lowerCase: false,
-          suggestKeywords: ['TABLE']
-        }
-      });
-    });
-
-    it('should suggest tables for "TRUNCATE TABLE |"', () => {
-      assertAutoComplete({
-        beforeCursor: 'TRUNCATE TABLE ',
-        afterCursor: '',
-        expectedResult: {
-          lowerCase: false,
-          suggestTables: {},
-          suggestDatabases: { appendDot: true }
-        }
-      });
-    });
-
-    it('should suggest keywords for "TRUNCATE TABLE boo |"', () => {
-      assertAutoComplete({
-        beforeCursor: 'TRUNCATE TABLE boo ',
-        afterCursor: '',
-        expectedResult: {
-          lowerCase: false,
-          suggestKeywords: ['PARTITION']
         }
       });
     });

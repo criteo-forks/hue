@@ -24,8 +24,6 @@ import re
 import sys
 import urllib.request, urllib.parse, urllib.error
 
-from django.utils.translation import ugettext as _
-
 from desktop.auth.backend import is_admin
 from desktop.lib.django_util import JsonResponse, render
 
@@ -38,9 +36,11 @@ from hbase.server.hbase_lib import get_thrift_type
 
 if sys.version_info[0] > 2:
   from io import StringIO as string_io
+  from django.utils.translation import gettext as _
 else:
   from cStringIO import StringIO as string_io
   from avro import datafile, io
+  from django.utils.translation import ugettext as _
 
 
 LOG = logging.getLogger(__name__)
@@ -101,7 +101,10 @@ def api_dump(response):
         #detect if avro file
         if(data[:3] == '\x4F\x62\x6A'):
           #write data to file in memory
-          output = io.StringIO()
+          try:
+            output = io.StringIO()
+          except:
+            output = string_io()
           output.write(data)
 
           #read and parse avro

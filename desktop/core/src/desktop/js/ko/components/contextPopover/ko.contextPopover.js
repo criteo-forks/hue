@@ -16,25 +16,27 @@
 
 import $ from 'jquery';
 import * as ko from 'knockout';
+import { CancellablePromise } from '../../../api/cancellablePromise';
 
-import apiHelper from 'api/apiHelper';
 import AsteriskContextTabs from './asteriskContextTabs';
 import CollectionContextTabs from './collectionContextTabs';
-import contextCatalog from 'catalog/contextCatalog';
-import dataCatalog from 'catalog/dataCatalog';
 import DataCatalogContext from './dataCatalogContext';
 import DocumentContext, { DOCUMENT_CONTEXT_TEMPLATE } from './documentContext';
 import FunctionContextTabs, { FUNCTION_CONTEXT_TEMPLATE } from './functionContext';
-import huePubSub from 'utils/huePubSub';
-import I18n from 'utils/i18n';
+import { DOCUMENT_CONTEXT_FOOTER } from './ko.documentContextFooter';
 import LangRefContext from './langRefContext';
 import PartitionContext, { PARTITION_CONTEXT_TEMPLATE } from './partitionContext';
 import ResizeHelper from './resizeHelper';
 import StorageContext from './storageContext';
+import { getNamespaces } from 'catalog/contextCatalog';
+import dataCatalog from 'catalog/dataCatalog';
+import { GET_KNOWN_CONFIG_TOPIC } from 'config/events';
+import { findEditorConnector } from 'config/hueConfig';
 import { ASSIST_KEY_COMPONENT } from 'ko/components/assist/ko.assistKey';
 import componentUtils from 'ko/components/componentUtils';
-import { findEditorConnector, GET_KNOWN_CONFIG_EVENT } from 'utils/hueConfig';
-import { DOCUMENT_CONTEXT_FOOTER } from './ko.documentContextFooter';
+import huePubSub from 'utils/huePubSub';
+import I18n from 'utils/i18n';
+import { getFromLocalStorage } from 'utils/storageUtils';
 
 export const CONTEXT_POPOVER_CLASS = 'hue-popover';
 export const HIDE_CONTEXT_POPOVER_EVENT = 'context.popover.hide';
@@ -54,10 +56,13 @@ const SUPPORT_TEMPLATES = `
         </a>
         <!-- ko if: isDocument -->
         <!-- ko with: contents -->
+        <!-- ko if: documentId -->
+        <a href="javascript: void(0);" class="inactive-action" data-bind="click: download">
+          <i style="font-size: 11px;" title="${I18n('Download')}" class="fa fa-download"></i> ${I18n('Download')}
+        </a>
+        <!-- /ko -->
         <a href="javascript: void(0);" class="inactive-action" data-bind="click: open">
-          <i style="font-size: 11px;" title="${I18n('Open')}" class="fa fa-file-o"></i> ${I18n(
-  'Open'
-)}
+          <i style="font-size: 11px;" title="${I18n('Open')}" class="fa fa-file-o"></i> ${I18n('Open')}
         </a>
         <!-- /ko -->
         <!-- /ko -->
@@ -259,7 +264,7 @@ const SUPPORT_TEMPLATES = `
 
   <script type="text/html" id="context-lang-ref-contents">
     <div class="context-popover-content">
-      <div class="context-popover-flex-fill context-popover-docs-details" data-bind="html: body"></div>
+      <div class="context-popover-flex-fill context-popover-docs-details" data-bind="htmlUnsecure: body"></div>
       <div class="context-popover-flex-bottom-links">
         <div class="context-popover-link-row">
           <a class="inactive-action pointer" data-bind="click: openInRightAssist">
@@ -274,7 +279,31 @@ const SUPPORT_TEMPLATES = `
 
   <script type="text/html" id="context-catalog-entry-title">
     <div class="hue-popover-title">
-      <i class="hue-popover-title-icon fa muted" data-bind="css: catalogEntry() && catalogEntry().isView() ? 'fa-eye' : 'fa-table'"></i>
+      <!-- ko if: catalogEntry().isTable() -->
+        <span class="hue-popover-title-secondary-icon-container">
+          <!-- ko hueSpinner: { spin: loading, inline: true } --><!-- /ko -->
+          <!-- ko ifnot: loading -->  
+            <!-- ko if:catalogEntry().isIcebergTable() -->  
+              <i class="hue-popover-title-icon fa muted fa-snowflake-o"  title="${I18n(
+                'Iceberg table'
+              )}"></i>
+            <!-- /ko -->
+            <!-- ko ifnot:catalogEntry().isIcebergTable() -->  
+              <i class="hue-popover-title-icon fa muted fa-table"></i>
+            <!-- /ko -->            
+          <!-- /ko -->
+        </span>
+      <!-- /ko -->
+      <!-- ko ifnot: catalogEntry().isTable() -->
+        <i class="hue-popover-title-icon fa muted" data-bind="css: 
+        catalogEntry() && (catalogEntry().isView() || parentIsView()) 
+        ? 'fa-eye' 
+        : (catalogEntry().isDatabase() 
+        ? 'fa-database' 
+        : (catalogEntry().isModel() 
+        ? 'fa-puzzle-piece' 
+        : 'fa-table'))"></i>      
+      <!-- /ko -->
       <span class="hue-popover-title-text" data-bind="foreach: breadCrumbs">
         <!-- ko ifnot: isActive --><div><a href="javascript: void(0);" data-bind="click: makeActive, text: name"></a>.</div><!-- /ko -->
         <!-- ko if: isActive -->
@@ -549,7 +578,7 @@ const HALF_ARROW = 6;
 
 let preventHide = false;
 
-const hidePopover = function() {
+const hidePopover = function () {
   if (!preventHide) {
     const $contextPopover = $('#contextPopover');
     if ($contextPopover.length > 0) {
@@ -569,7 +598,7 @@ class ContextPopoverViewModel {
     self.left = ko.observable(0);
     self.top = ko.observable(0);
 
-    const popoverSize = apiHelper.getFromTotalStorage('assist', 'popover.size', {
+    const popoverSize = getFromLocalStorage('assist.popover.size', {
       width: 450,
       height: 400
     });
@@ -581,6 +610,7 @@ class ContextPopoverViewModel {
     self.topAdjust = ko.observable(0);
 
     self.data = params.data;
+    self.connector = params.connector;
     self.sourceType = params.sourceType;
     self.namespace = params.namespace;
     self.compute = params.compute;
@@ -612,7 +642,7 @@ class ContextPopoverViewModel {
     }
 
     const windowWidth = $(window).width();
-    const fitHorizontally = function() {
+    const fitHorizontally = function () {
       let left =
         params.source.left +
         Math.round((params.source.right - params.source.left) / 2) -
@@ -630,7 +660,7 @@ class ContextPopoverViewModel {
     };
 
     const windowHeight = $(window).height();
-    const fitVertically = function() {
+    const fitVertically = function () {
       let top =
         params.source.top +
         Math.round((params.source.bottom - params.source.top) / 2) -
@@ -715,7 +745,7 @@ class ContextPopoverViewModel {
       self.titleTemplate = 'context-catalog-entry-title';
       self.contentsTemplate = 'context-catalog-entry-contents';
     } else if (self.isFunction) {
-      self.contents = new FunctionContextTabs(self.data, self.sourceType);
+      self.contents = new FunctionContextTabs(self.data, self.connector);
       self.title = self.data.function;
       self.iconClass = 'fa-superscript';
     } else if (self.isStorageEntry) {
@@ -729,7 +759,7 @@ class ContextPopoverViewModel {
     } else if (self.isAsterisk) {
       self.contents = new AsteriskContextTabs(
         self.data,
-        self.sourceType,
+        self.connector,
         self.namespace,
         self.compute,
         self.defaultDatabase
@@ -755,7 +785,7 @@ class ContextPopoverViewModel {
 
     if (params.delayedHide) {
       let hideTimeout = -1;
-      const onLeave = function() {
+      const onLeave = function () {
         hideTimeout = window.setTimeout(() => {
           $('.hue-popover').fadeOut(200, () => {
             hidePopover();
@@ -763,7 +793,7 @@ class ContextPopoverViewModel {
         }, 1000);
       };
 
-      const onEnter = function() {
+      const onEnter = function () {
         window.clearTimeout(hideTimeout);
       };
 
@@ -772,7 +802,7 @@ class ContextPopoverViewModel {
         .on('mouseleave', onLeave)
         .on('mouseenter', onEnter);
 
-      const keepPopoverOpenOnClick = function() {
+      const keepPopoverOpenOnClick = function () {
         window.clearTimeout(hideTimeout);
         $(params.delayedHide)
           .add($('.hue-popover'))
@@ -791,7 +821,7 @@ class ContextPopoverViewModel {
       });
     }
 
-    const closeOnEsc = function(e) {
+    const closeOnEsc = function (e) {
       if (e.keyCode === 27) {
         hidePopover();
       }
@@ -911,7 +941,7 @@ class SqlContextContentsGlobalSearch {
     let connectorId = params.data.sourceType && params.data.sourceType.toLowerCase();
 
     if (!connectorId || connectorId === 'hive') {
-      huePubSub.publish(GET_KNOWN_CONFIG_EVENT, clusterConfig => {
+      huePubSub.publish(GET_KNOWN_CONFIG_TOPIC, clusterConfig => {
         if (clusterConfig) {
           const defaultEditor = clusterConfig['default_sql_interpreter'];
           if (!connectorId || (connectorId === 'hive' && defaultEditor === 'impala')) {
@@ -929,22 +959,26 @@ class SqlContextContentsGlobalSearch {
         // TODO: Global search results are referring to dialect and not type
         connector = findEditorConnector(connector => connector.dialect === connectorId);
       }
-      contextCatalog.getNamespaces({ connector: connector }).done(context => {
-        dataCatalog
-          .getEntry({
-            namespace: context.namespaces[0],
-            compute: context.namespaces[0].computes[0],
-            connector: connector,
-            path: path,
-            definition: { type: params.data.type.toLowerCase() }
-          })
-          .done(catalogEntry => {
-            catalogEntry.navigatorMeta = params.data;
-            catalogEntry.navigatorMetaPromise = $.Deferred().resolve(catalogEntry.navigatorMeta);
-            catalogEntry.saveLater();
-            self.contents(new DataCatalogContext({ popover: self, catalogEntry: catalogEntry }));
-          });
-      });
+      getNamespaces({ connector })
+        .then(context => {
+          dataCatalog
+            .getEntry({
+              namespace: context.namespaces[0],
+              compute: context.namespaces[0].computes[0],
+              connector: connector,
+              path: path,
+              definition: { type: params.data.type.toLowerCase() }
+            })
+            .then(catalogEntry => {
+              catalogEntry.navigatorMeta = params.data;
+              catalogEntry.navigatorMetaPromise = CancellablePromise.resolve(
+                catalogEntry.navigatorMeta
+              );
+              catalogEntry.saveLater();
+              self.contents(new DataCatalogContext({ popover: self, catalogEntry: catalogEntry }));
+            });
+        })
+        .catch();
     } else if (self.isDocument) {
       self.contents(new DocumentContext(params.data));
     } else if (self.isPartition) {

@@ -18,7 +18,7 @@ import impalaAutocompleteParser from '../impalaAutocompleteParser';
 
 describe('impalaAutocompleteParser.js SHOW statements', () => {
   beforeAll(() => {
-    impalaAutocompleteParser.yy.parseError = function(msg) {
+    impalaAutocompleteParser.yy.parseError = function (msg) {
       throw Error(msg);
     };
   });
@@ -482,7 +482,30 @@ describe('impalaAutocompleteParser.js SHOW statements', () => {
       afterCursor: '',
       expectedResult: {
         lowerCase: false,
-        suggestKeywords: ['DATABASE', 'SERVER', 'TABLE', 'URI']
+        suggestKeywords: ['COLUMN', 'DATABASE', 'SERVER', 'TABLE', 'URI']
+      }
+    });
+  });
+
+  it('should suggest tables for "SHOW GRANT ROLE usr ON COLUMN |"', () => {
+    assertAutoComplete({
+      beforeCursor: 'SHOW GRANT ROLE usr ON COLUMN ',
+      afterCursor: '',
+      expectedResult: {
+        lowerCase: false,
+        suggestDatabases: { appendDot: true },
+        suggestTables: {}
+      }
+    });
+  });
+
+  it('should suggest tables for "SHOW GRANT ROLE usr ON COLUMN db.|"', () => {
+    assertAutoComplete({
+      beforeCursor: 'SHOW GRANT ROLE usr ON COLUMN db.',
+      afterCursor: '',
+      expectedResult: {
+        lowerCase: false,
+        suggestTables: { identifierChain: [{ name: 'db' }] }
       }
     });
   });

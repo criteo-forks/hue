@@ -18,7 +18,7 @@ import hiveAutocompleteParser from '../hiveAutocompleteParser';
 
 describe('hiveAutocompleteParser.js ALTER statements', () => {
   beforeAll(() => {
-    hiveAutocompleteParser.yy.parseError = function(msg) {
+    hiveAutocompleteParser.yy.parseError = function (msg) {
       throw Error(msg);
     };
   });
@@ -35,10 +35,92 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
     ).toEqualDefinition(testDefinition);
   };
 
+  describe('ALTER CONNECTOR', () => {
+    it('should handle "ALTER CONNECTOR foo SET URL \'banana\'; |"', () => {
+      assertAutoComplete({
+        beforeCursor: "ALTER CONNECTOR foo SET URL 'banana'; ",
+        afterCursor: '',
+        noErrors: true,
+        containsKeywords: ['SELECT'],
+        expectedResult: {
+          lowerCase: false
+        }
+      });
+    });
+
+    it('should handle "ALTER CONNECTOR foo SET OWNER banana; |"', () => {
+      assertAutoComplete({
+        beforeCursor: 'ALTER CONNECTOR foo SET OWNER banana; ',
+        afterCursor: '',
+        noErrors: true,
+        containsKeywords: ['SELECT'],
+        expectedResult: {
+          lowerCase: false
+        }
+      });
+    });
+
+    it("should handle \"ALTER CONNECTOR foo SET DCPROPERTIES ('foo'='bar'); |\"", () => {
+      assertAutoComplete({
+        beforeCursor: "ALTER CONNECTOR foo SET  DCPROPERTIES ('foo'='bar'); ",
+        afterCursor: '',
+        noErrors: true,
+        containsKeywords: ['SELECT'],
+        expectedResult: {
+          lowerCase: false
+        }
+      });
+    });
+
+    it('should suggest keywords for "ALTER |"', () => {
+      assertAutoComplete({
+        beforeCursor: 'ALTER ',
+        afterCursor: '',
+        containsKeywords: ['CONNECTOR'],
+        expectedResult: {
+          lowerCase: false
+        }
+      });
+    });
+
+    it('should suggest keywords for "ALTER CONNECTOR foo |"', () => {
+      assertAutoComplete({
+        beforeCursor: 'ALTER CONNECTOR foo ',
+        afterCursor: '',
+        expectedResult: {
+          lowerCase: false,
+          suggestKeywords: ['SET DCPROPERTIES', 'SET OWNER', 'SET URL']
+        }
+      });
+    });
+
+    it('should suggest keywords for "ALTER CONNECTOR foo SET |"', () => {
+      assertAutoComplete({
+        beforeCursor: 'ALTER CONNECTOR foo SET ',
+        afterCursor: '',
+        expectedResult: {
+          lowerCase: false,
+          suggestKeywords: ['DCPROPERTIES', 'OWNER', 'URL']
+        }
+      });
+    });
+
+    it('should suggest keywords for "ALTER CONNECTOR foo SET OWNER |"', () => {
+      assertAutoComplete({
+        beforeCursor: 'ALTER CONNECTOR foo SET OWNER ',
+        afterCursor: '',
+        expectedResult: {
+          lowerCase: false,
+          suggestKeywords: ['ROLE', 'USER']
+        }
+      });
+    });
+  });
+
   describe('ALTER DATABASE', () => {
-    it("should handle \"ALTER DATABASE baa SET DBPROPERTIES ('boo'=1, 'baa'=2);|\"", () => {
+    it("should handle \"ALTER DATABASE baa SET DBPROPERTIES ('boo'=1, 'baa'=2); |\"", () => {
       assertAutoComplete({
-        beforeCursor: "ALTER DATABASE baa SET DBPROPERTIES ('boo'=1, 'baa'=2);",
+        beforeCursor: "ALTER DATABASE baa SET DBPROPERTIES ('boo'=1, 'baa'=2); ",
         afterCursor: '',
         noErrors: true,
         containsKeywords: ['SELECT'],
@@ -48,9 +130,9 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
       });
     });
 
-    it('should handle "ALTER SCHEMA baa SET OWNER ROLE boo;|"', () => {
+    it('should handle "ALTER SCHEMA baa SET OWNER ROLE boo; |"', () => {
       assertAutoComplete({
-        beforeCursor: 'ALTER SCHEMA baa SET OWNER ROLE boo;',
+        beforeCursor: 'ALTER SCHEMA baa SET OWNER ROLE boo; ',
         afterCursor: '',
         noErrors: true,
         containsKeywords: ['SELECT'],
@@ -60,9 +142,21 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
       });
     });
 
-    it('should handle "ALTER DATABASE baa SET LOCATION \'/baa/boo\';|"', () => {
+    it('should handle "ALTER DATABASE baa SET LOCATION \'/baa/boo\'; |"', () => {
       assertAutoComplete({
-        beforeCursor: "ALTER DATABASE baa SET LOCATION '/baa/boo';",
+        beforeCursor: "ALTER DATABASE baa SET LOCATION '/baa/boo'; ",
+        afterCursor: '',
+        noErrors: true,
+        containsKeywords: ['SELECT'],
+        expectedResult: {
+          lowerCase: false
+        }
+      });
+    });
+
+    it('should handle "ALTER DATABASE baa SET MANAGEDLOCATION \'/baa/boo\'; |"', () => {
+      assertAutoComplete({
+        beforeCursor: "ALTER DATABASE baa SET MANAGEDLOCATION '/baa/boo'; ",
         afterCursor: '',
         noErrors: true,
         containsKeywords: ['SELECT'],
@@ -111,7 +205,7 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
         afterCursor: '',
         expectedResult: {
           lowerCase: false,
-          suggestKeywords: ['SET DBPROPERTIES', 'SET LOCATION', 'SET OWNER']
+          suggestKeywords: ['SET DBPROPERTIES', 'SET LOCATION', 'SET MANAGEDLOCATION', 'SET OWNER']
         }
       });
     });
@@ -122,7 +216,7 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
         afterCursor: '',
         expectedResult: {
           lowerCase: false,
-          suggestKeywords: ['DBPROPERTIES', 'LOCATION', 'OWNER']
+          suggestKeywords: ['DBPROPERTIES', 'LOCATION', 'MANAGEDLOCATION', 'OWNER']
         }
       });
     });
@@ -148,12 +242,23 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
         }
       });
     });
+
+    it('should suggest hdfs for "ALTER DATABASE boo SET MANAGEDLOCATION \'/|"', () => {
+      assertAutoComplete({
+        beforeCursor: "ALTER DATABASE boo SET MANAGEDLOCATION '/",
+        afterCursor: '',
+        expectedResult: {
+          lowerCase: false,
+          suggestHdfs: { path: '/' }
+        }
+      });
+    });
   });
 
   describe('ALTER INDEX', () => {
-    it('should handle "ALTER INDEX baa ON boo.ba PARTITION (bla=1) REBUILD;|"', () => {
+    it('should handle "ALTER INDEX baa ON boo.ba PARTITION (bla=1) REBUILD; |"', () => {
       assertAutoComplete({
-        beforeCursor: 'ALTER INDEX baa ON boo.ba PARTITION (bla=1) REBUILD;',
+        beforeCursor: 'ALTER INDEX baa ON boo.ba PARTITION (bla=1) REBUILD; ',
         afterCursor: '',
         noErrors: true,
         containsKeywords: ['SELECT'],
@@ -302,6 +407,106 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
   });
 
   describe('ALTER TABLE', () => {
+    it('should handle "ALTER TABLE foo SET PARTITION SPEC (month(ts)); |"', () => {
+      assertAutoComplete({
+        beforeCursor: 'ALTER TABLE foo SET PARTITION SPEC (month(ts)); ',
+        afterCursor: '',
+        noErrors: true,
+        containsKeywords: ['SELECT'],
+        expectedResult: {
+          lowerCase: false
+        }
+      });
+    });
+
+    it('should handle "ALTER TABLE default.part_test SET PARTITION SPEC(year(year_field), month(month_field), day(day_field)); |"', () => {
+      assertAutoComplete({
+        beforeCursor:
+          'ALTER TABLE default.part_test SET PARTITION SPEC(year(year_field), month(month_field), day(day_field)); ',
+        afterCursor: '',
+        noErrors: true,
+        containsKeywords: ['SELECT'],
+        expectedResult: {
+          lowerCase: false
+        }
+      });
+    });
+
+    it('should handle "ALTER TABLE default.customers ADD COLUMNS (newintcol int, newstringcol string COMMENT \'Column with description\'); |"', () => {
+      assertAutoComplete({
+        beforeCursor:
+          "ALTER TABLE default.customers ADD COLUMNS (newintcol int, newstringcol string COMMENT 'Column with description'); ",
+        afterCursor: '',
+        noErrors: true,
+        containsKeywords: ['SELECT'],
+        expectedResult: {
+          lowerCase: false
+        }
+      });
+    });
+
+    it('should handle "ALTER TABLE default.customers CHANGE COLUMN last_name family_name string COMMENT \'This is family name\'; |"', () => {
+      assertAutoComplete({
+        beforeCursor:
+          "ALTER TABLE default.customers CHANGE COLUMN last_name family_name string COMMENT 'This is family name'; ",
+        afterCursor: '',
+        noErrors: true,
+        containsKeywords: ['SELECT'],
+        expectedResult: {
+          lowerCase: false
+        }
+      });
+    });
+
+    it('should handle "ALTER TABLE customers CHANGE COLUMN last_name family_name string AFTER customer_id; |"', () => {
+      assertAutoComplete({
+        beforeCursor:
+          'ALTER TABLE customers CHANGE COLUMN last_name family_name string AFTER customer_id; ',
+        afterCursor: '',
+        noErrors: true,
+        containsKeywords: ['SELECT'],
+        expectedResult: {
+          lowerCase: false
+        }
+      });
+    });
+
+    it('should handle "ALTER TABLE customers CHANGE COLUMN family_name family_name string FIRST; |"', () => {
+      assertAutoComplete({
+        beforeCursor: 'ALTER TABLE customers CHANGE COLUMN family_name family_name string FIRST; ',
+        afterCursor: '',
+        noErrors: true,
+        containsKeywords: ['SELECT'],
+        expectedResult: {
+          lowerCase: false
+        }
+      });
+    });
+
+    it('should handle "ALTER TABLE customers UPDATE COLUMNS; |"', () => {
+      assertAutoComplete({
+        beforeCursor: 'ALTER TABLE customers UPDATE COLUMNS; ',
+        afterCursor: '',
+        noErrors: true,
+        containsKeywords: ['SELECT'],
+        expectedResult: {
+          lowerCase: false
+        }
+      });
+    });
+
+    it("should handle \"ALTER TABLE customers UNSET TBLPROPERTIES('dummy'='dummy'); |\"", () => {
+      assertAutoComplete({
+        beforeCursor: "ALTER TABLE customers UNSET TBLPROPERTIES('dummy'='dummy'); ",
+        afterCursor: '',
+        noErrors: true,
+        containsKeywords: ['SELECT'],
+        expectedResult: {
+          lowerCase: false
+        }
+      });
+    });
+
     it('should suggest keywords for "ALTER |"', () => {
       assertAutoComplete({
         beforeCursor: 'ALTER ',
@@ -336,10 +541,10 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
       });
     });
 
-    it('should handle "ALTER TABLE foo PARTITION (ds=\'2008-04-08\', hr) CHANGE COLUMN dec_column_name dec_column_name DECIMAL;|"', () => {
+    it('should handle "ALTER TABLE foo PARTITION (ds=\'2008-04-08\', hr) CHANGE COLUMN dec_column_name dec_column_name DECIMAL; |"', () => {
       assertAutoComplete({
         beforeCursor:
-          "ALTER TABLE foo PARTITION (ds='2008-04-08', hr) CHANGE COLUMN dec_column_name dec_column_name DECIMAL;",
+          "ALTER TABLE foo PARTITION (ds='2008-04-08', hr) CHANGE COLUMN dec_column_name dec_column_name DECIMAL; ",
         afterCursor: '',
         containsKeywords: ['SELECT'],
         expectedResult: {
@@ -348,9 +553,9 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
       });
     });
 
-    it("should handle \"ALTER TABLE page_view DROP PARTITION (dt='2008-08-08', country='us');|\"", () => {
+    it("should handle \"ALTER TABLE page_view DROP PARTITION (dt='2008-08-08', country='us'); |\"", () => {
       assertAutoComplete({
-        beforeCursor: "ALTER TABLE page_view DROP PARTITION (dt='2008-08-08', country='us');",
+        beforeCursor: "ALTER TABLE page_view DROP PARTITION (dt='2008-08-08', country='us'); ",
         afterCursor: '',
         containsKeywords: ['SELECT'],
         expectedResult: {
@@ -359,10 +564,10 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
       });
     });
 
-    it("should handle \"ALTER TABLE page_view ADD PARTITION (dt='2008-08-08', country='us') location '/path/to/us/part080808'\nPARTITION (dt='2008-08-09', country='us') location '/path/to/us/part080809';|\"", () => {
+    it("should handle \"ALTER TABLE page_view ADD PARTITION (dt='2008-08-08', country='us') location '/path/to/us/part080808'\nPARTITION (dt='2008-08-09', country='us') location '/path/to/us/part080809'; |\"", () => {
       assertAutoComplete({
         beforeCursor:
-          "ALTER TABLE page_view ADD PARTITION (dt='2008-08-08', country='us') location '/path/to/us/part080808'\nPARTITION (dt='2008-08-09', country='us') location '/path/to/us/part080809';",
+          "ALTER TABLE page_view ADD PARTITION (dt='2008-08-08', country='us') location '/path/to/us/part080808'\nPARTITION (dt='2008-08-09', country='us') location '/path/to/us/part080809'; ",
         afterCursor: '',
         containsKeywords: ['SELECT'],
         expectedResult: {
@@ -371,9 +576,9 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
       });
     });
 
-    it('should handle "ALTER TABLE bar SET OWNER ROLE boo;|"', () => {
+    it('should handle "ALTER TABLE bar SET OWNER ROLE boo; |"', () => {
       assertAutoComplete({
-        beforeCursor: 'ALTER TABLE bar SET OWNER ROLE boo;',
+        beforeCursor: 'ALTER TABLE bar SET OWNER ROLE boo; ',
         afterCursor: '',
         noErrors: true,
         containsKeywords: ['SELECT'],
@@ -413,13 +618,17 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
             'SET FILEFORMAT',
             'SET LOCATION',
             'SET OWNER',
+            'SET PARTITION SPEC',
             'SET SERDE',
             'SET SERDEPROPERTIES',
             'SET SKEWED LOCATION',
             'SET TBLPROPERTIES',
             'SKEWED BY',
             'TOUCH',
-            'UNARCHIVE PARTITION'
+            'UNARCHIVE PARTITION',
+            'UNSET SERDEPROPERTIES',
+            'UNSET TBLPROPERTIES',
+            'UPDATE COLUMNS'
           ]
         }
       });
@@ -465,6 +674,17 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
         expectedResult: {
           lowerCase: false,
           suggestKeywords: ['CASCADE', 'RESTRICT']
+        }
+      });
+    });
+
+    it('should suggest keywords for "ALTER TABLE bar ADD CONSTRAINT boo |"', () => {
+      assertAutoComplete({
+        beforeCursor: 'ALTER TABLE bar ADD CONSTRAINT boo ',
+        afterCursor: '',
+        expectedResult: {
+          lowerCase: false,
+          suggestKeywords: ['CHECK', 'FOREIGN KEY', 'PRIMARY KEY', 'UNIQUE']
         }
       });
     });
@@ -702,28 +922,6 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
         expectedResult: {
           lowerCase: false,
           suggestColumns: { tables: [{ identifierChain: [{ name: 'bar' }] }] }
-        }
-      });
-    });
-
-    it('should suggest columns for "ALTER TABLE bar CHANGE boo baa INT FIRST |"', () => {
-      assertAutoComplete({
-        beforeCursor: 'ALTER TABLE bar CHANGE boo baa INT FIRST ',
-        afterCursor: '',
-        expectedResult: {
-          lowerCase: false,
-          suggestColumns: { tables: [{ identifierChain: [{ name: 'bar' }] }] }
-        }
-      });
-    });
-
-    it('should suggest keywords for "ALTER TABLE bar CHANGE boo baa INT FIRST ba |"', () => {
-      assertAutoComplete({
-        beforeCursor: 'ALTER TABLE bar CHANGE boo baa INT FIRST ba ',
-        afterCursor: '',
-        expectedResult: {
-          lowerCase: false,
-          suggestKeywords: ['CASCADE', 'RESTRICT']
         }
       });
     });
@@ -1025,7 +1223,8 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
             'SET FILEFORMAT',
             'SET LOCATION',
             'SET SERDE',
-            'SET SERDEPROPERTIES'
+            'SET SERDEPROPERTIES',
+            'UNSET SERDEPROPERTIES'
           ]
         }
       });
@@ -1194,28 +1393,6 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
         expectedResult: {
           lowerCase: false,
           suggestColumns: { tables: [{ identifierChain: [{ name: 'bar' }] }] }
-        }
-      });
-    });
-
-    it('should suggest columns for "ALTER TABLE bar PARTITION (col=\'val\') CHANGE boo baa INT FIRST |"', () => {
-      assertAutoComplete({
-        beforeCursor: "ALTER TABLE bar PARTITION (col='val') CHANGE boo baa INT FIRST ",
-        afterCursor: '',
-        expectedResult: {
-          lowerCase: false,
-          suggestColumns: { tables: [{ identifierChain: [{ name: 'bar' }] }] }
-        }
-      });
-    });
-
-    it('should suggest keywords for "ALTER TABLE bar PARTITION (col=\'val\') CHANGE boo baa INT FIRST ba |"', () => {
-      assertAutoComplete({
-        beforeCursor: "ALTER TABLE bar PARTITION (col='val') CHANGE boo baa INT FIRST ba ",
-        afterCursor: '',
-        expectedResult: {
-          lowerCase: false,
-          suggestKeywords: ['CASCADE', 'RESTRICT']
         }
       });
     });
@@ -1439,11 +1616,23 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
             'FILEFORMAT',
             'LOCATION',
             'OWNER',
+            'PARTITION SPEC',
             'SERDE',
             'SERDEPROPERTIES',
             'SKEWED LOCATION',
             'TBLPROPERTIES'
           ]
+        }
+      });
+    });
+
+    it('should suggest keywords for "ALTER TABLE bar SET PARTITION |"', () => {
+      assertAutoComplete({
+        beforeCursor: 'ALTER TABLE bar SET PARTITION ',
+        afterCursor: '',
+        expectedResult: {
+          lowerCase: false,
+          suggestKeywords: ['SPEC']
         }
       });
     });
@@ -1634,12 +1823,23 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
         }
       });
     });
+
+    it('should suggest keywords for "ALTER TABLE bar UNSET |"', () => {
+      assertAutoComplete({
+        beforeCursor: 'ALTER TABLE bar UNSET ',
+        afterCursor: '',
+        expectedResult: {
+          lowerCase: false,
+          suggestKeywords: ['SERDEPROPERTIES', 'TBLPROPERTIES']
+        }
+      });
+    });
   });
 
   describe('ALTER VIEW', () => {
-    it('should handle "ALTER VIEW baa.boo AS SELECT * FROM bla;|"', () => {
+    it('should handle "ALTER VIEW baa.boo AS SELECT * FROM bla; |"', () => {
       assertAutoComplete({
-        beforeCursor: 'ALTER VIEW baa.boo AS SELECT * FROM bla;',
+        beforeCursor: 'ALTER VIEW baa.boo AS SELECT * FROM bla; ',
         afterCursor: '',
         noErrors: true,
         containsKeywords: ['SELECT'],
@@ -1717,9 +1917,9 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
       });
     });
 
-    it('should handle "ALTER VIEW boo SET TBLPROPERTIES ("baa"=\'boo\');|"', () => {
+    it('should handle "ALTER VIEW boo SET TBLPROPERTIES ("baa"=\'boo\'); |"', () => {
       assertAutoComplete({
-        beforeCursor: 'ALTER VIEW boo SET TBLPROPERTIES ("baa"=\'boo\');',
+        beforeCursor: 'ALTER VIEW boo SET TBLPROPERTIES ("baa"=\'boo\'); ',
         afterCursor: '',
         noErrors: true,
         containsKeywords: ['SELECT'],
@@ -1753,9 +1953,9 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
   });
 
   describe('MSCK', () => {
-    it('should handle "MSCK REPAIR TABLE boo.baa;|"', () => {
+    it('should handle "MSCK REPAIR TABLE boo.baa; |"', () => {
       assertAutoComplete({
-        beforeCursor: 'MSCK REPAIR TABLE boo.baa;',
+        beforeCursor: 'MSCK REPAIR TABLE boo.baa; ',
         afterCursor: '',
         noErrors: true,
         containsKeywords: ['SELECT'],
@@ -1765,9 +1965,9 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
       });
     });
 
-    it('should handle "MSCK REPAIR TABLE boo.baa SYNC PARTITIONS;|"', () => {
+    it('should handle "MSCK REPAIR TABLE boo.baa SYNC PARTITIONS; |"', () => {
       assertAutoComplete({
-        beforeCursor: 'MSCK REPAIR TABLE boo.baa SYNC PARTITIONS;',
+        beforeCursor: 'MSCK REPAIR TABLE boo.baa SYNC PARTITIONS; ',
         afterCursor: '',
         noErrors: true,
         containsKeywords: ['SELECT'],
@@ -1846,9 +2046,9 @@ describe('hiveAutocompleteParser.js ALTER statements', () => {
   });
 
   describe('RELOAD FUNCTION', () => {
-    it('should handle "RELOAD FUNCTION;|"', () => {
+    it('should handle "RELOAD FUNCTION; |"', () => {
       assertAutoComplete({
-        beforeCursor: 'RELOAD FUNCTION;',
+        beforeCursor: 'RELOAD FUNCTION; ',
         afterCursor: '',
         noErrors: true,
         containsKeywords: ['SELECT'],
