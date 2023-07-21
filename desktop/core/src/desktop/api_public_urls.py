@@ -19,6 +19,8 @@ import sys
 
 from desktop import api_public
 from desktop.lib.botserver import api as botserver_api
+from desktop.lib.botserver import views as botserver_views
+from desktop.conf import SLACK
 
 if sys.version_info[0] > 2:
   from django.urls import re_path
@@ -111,6 +113,11 @@ urlpatterns += [
 urlpatterns += [
   re_path(r'^slack/install/?$', botserver_api.generate_slack_install_link, name='botserver.api.slack_install_link'),
 ]
+
+if SLACK.IS_ENABLED.get():
+  urlpatterns += [
+    re_path(r'^unfurl/?$', botserver_views.slack_unfurl, name='botserver.views.slack_unfurl'),
+  ]
 
 urlpatterns += [
   re_path(r'^indexer/guess_format/?$', api_public.guess_format, name='indexer_guess_format'),
