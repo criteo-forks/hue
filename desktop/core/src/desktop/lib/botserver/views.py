@@ -22,6 +22,8 @@ import os
 from urllib.parse import urlsplit
 from tabulate import tabulate
 
+from desktop import conf
+
 from desktop.lib.botserver.slack_client import slack_client, SLACK_VERIFICATION_TOKEN
 from desktop.lib.botserver.api import _send_message
 from desktop.lib.django_util import login_notrequired, JsonResponse
@@ -352,7 +354,7 @@ def _make_unfurl_payload(request, url, id_type, doc, doc_type):
   file_status = False
   result_section = None
 
-  if id_type == 'editor':
+  if (id_type == 'editor') & conf.SLACK.SHARE_QUERY_RESULTS.get():
     max_rows = 2
     unfurl_result = 'Query result has expired or could not be found'
 

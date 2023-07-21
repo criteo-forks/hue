@@ -758,6 +758,12 @@ SLACK = ConfigSection(
       type=coerce_bool,
       default=True,
     ),
+    SHARE_QUERY_RESULTS=Config(
+      key='share_query_results',
+      help=_('Enable data sample when sharing queries on Slack'),
+      type=coerce_bool,
+      default=False,
+    )
   )
 )
 
