@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # Licensed to Cloudera, Inc. under one
-# or m ore contributor license agreements.  See the NOTICE file
+# or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
 # regarding copyright ownership.  Cloudera, Inc. licenses this file
 # to you under the Apache License, Version 2.0 (the
@@ -24,5 +24,5 @@ SLACK_BOT_USER_TOKEN = conf.SLACK.SLACK_BOT_USER_TOKEN.get()
 
 slack_client = None
 if conf.SLACK.IS_ENABLED.get() & sys.version_info[0] > 2:
-    from slack_sdk import WebClient
-    slack_client = WebClient(token=SLACK_BOT_USER_TOKEN)
+  from slack_sdk import WebClient
+  slack_client = WebClient(token=SLACK_BOT_USER_TOKEN)
