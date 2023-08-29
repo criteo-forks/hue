@@ -313,6 +313,8 @@ class HS2Api(Api):
 
   @query_error_handler
   def execute(self, notebook, snippet):
+    # DATADEV-3042
+    # Consul resolution gets done in there
     db = self._get_db(snippet, interpreter=self.interpreter)
 
     statement = self._get_current_statement(notebook, snippet)
@@ -802,6 +804,8 @@ DROP TABLE IF EXISTS `%(table)s`;
     return HiveServerQueryHandle(**handle)
 
 
+  # DATADEV-3042
+  # interpreter may have an option attribute to select DC if configured
   def _get_db(self, snippet, is_async=False, interpreter=None):
     if interpreter and interpreter.get('dialect'):
       dialect = interpreter['dialect']
@@ -822,6 +826,8 @@ DROP TABLE IF EXISTS `%(table)s`;
       name = 'sparksql'
 
     # Note: name is not used if interpreter is present
+    # DATADEV-3042
+    # In dbms.get we do the consul resolution. get_query_server_config
     return dbms.get(self.user, query_server=get_query_server_config(name=name, connector=interpreter))
 
 

@@ -103,13 +103,19 @@ def get(user, query_server=None, cluster=None):
   if query_server is None:
     query_server = get_query_server_config(cluster=cluster)
 
+  # DATADEV-3042
   # ---------------------------------------------------------------------------
   # Consul logic
   # ---------------------------------------------------------------------------
+  # consul string currently defined as http://lb-consul.service.am6.consul.prod.crto.in:8500/v1/health/service/hive-hiveserver2-2-main?passing
   consul = HIVE_SERVER_CONSUL.get()
   nodes = None
   if consul:
-    nodes = get_nodes_from_consul(consul)
+    nodes = get_nodes_from_consul(
+      consul,
+      env=query_server.get('crto_env'),
+      dc=query_server.get('crto_dc'),
+      service=query_server.get('crto_hs2_service'))
     if not nodes:
       LOG.error("No healthy nodes in consul %s" % consul)
   # ---------------------------------------------------------------------------
@@ -177,6 +183,8 @@ def get(user, query_server=None, cluster=None):
     DBMS_CACHE_LOCK.release()
 
 
+# DATADEV-3042
+# The result of this function is passed to dbms.get to do the resolution
 def get_query_server_config(name='beeswax', connector=None):
   if connector and has_connectors(): # TODO: Give empty connector when no connector in use
     LOG.debug("Query via connector %s" % name)
@@ -339,7 +347,20 @@ def get_query_server_config(name='beeswax', connector=None):
 
   return query_server
 
-def get_nodes_from_consul(consul):
+def get_nodes_from_consul(consul, env=None, dc=None, service=None):
+  '''
+  Calls consul to get a list of available nodes.
+  May be able to get a specific dc/env/service if the consul connection string has
+  the correct placeholders (literal '{env}', '{dc}' and '{service}') and the relevant
+  parameters are passed in the option field of the interpretor entry that is configured
+  '''
+  if '{dc}' in consul and dc is not None:
+    consul = consul.replace('{dc}', dc)
+  if '{env}' in consul and env is not None:
+    consul = consul.replace('{env}', env)
+  if '{service}' in consul and service is not None:
+    consul = consul.replace('{service}', service)
+
   jq = requests.get(consul).json()
   result = set()
   for item in jq:
@@ -352,6 +373,9 @@ def get_nodes_from_consul(consul):
 
   return result
 
+# DATADEV-3042
+# Since a hive connector is defined, this is where we end up to create
+# the server configuration that will be used to make the consul resolution
 def get_query_server_config_via_connector(connector):
   # TODO: connector is actually a notebook interpreter
   connector_name = full_connector_name = connector['type']
@@ -373,7 +397,12 @@ def get_query_server_config_via_connector(connector):
   else:
     impersonation_enabled = hiveserver2_impersonation_enabled()
 
-  return {
+
+  # DATADEV-3042
+  # Somewhere in there, allow for more options to be passed through
+  # For example: - hive instance (2-main, iceberg)
+  #              - Target DC
+  server_config = {
       'dialect': connector['dialect'],
       'server_name': full_connector_name,
       'server_host': server_host,
@@ -387,7 +416,20 @@ def get_query_server_config_via_connector(connector):
       'SESSION_TIMEOUT_S': 15 * 60,
       'querycache_rows': 1000,
       'QUERY_TIMEOUT_S': 15 * 60,
+      # Prefixed custom server config
+      'crto_service': connector['options'][''],
   }
+
+  if 'service' in connector['options']:
+    server_config['crto_hs2_service'] = connector['options']['service']
+
+  if 'dc' in connector['options']:
+    server_config['crto_dc'] = connector['options']['dc']
+
+  if 'env' in connector['options']:
+    server_config['crto_env'] = connector['options']['env']
+
+  return server_config
 
 
 class QueryServerException(Exception):

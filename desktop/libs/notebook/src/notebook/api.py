@@ -150,6 +150,8 @@ def _execute_notebook(request, notebook, snippet):
         history = _historify(notebook, request.user)
         notebook = Notebook(document=history).get_data()
 
+      # DATADEV-3042
+      # Gets the interpreter from the list defined in hue.ini
       interpreter = get_api(request, snippet)
       if snippet.get('interface') == 'sqlalchemy':
         interpreter.options['session'] = sessions[0]
@@ -158,6 +160,8 @@ def _execute_notebook(request, notebook, snippet):
         # interpreter.execute needs the sessions, but we don't want to persist them
         pre_execute_sessions = notebook['sessions']
         notebook['sessions'] = sessions
+        # DATADEV-3042
+        # In case of hive query, resolves to notebook.connectors.hiveserver2.HS2Api.execute
         response['handle'] = interpreter.execute(notebook, snippet)
         notebook['sessions'] = pre_execute_sessions
 
