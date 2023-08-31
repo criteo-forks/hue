@@ -716,7 +716,13 @@ DROP TABLE IF EXISTS `%(table)s`;
     if session:
       session_id = session.get('id')
       if session_id:
-        filters = {'id': session_id, 'application': 'beeswax' if type == 'hive' or type == 'llap' or type.startswith('hive') else type}
+        filters = {
+          'id': session_id,
+          'application': 'beeswax' if type == 'hive'
+                                   or type == 'llap'
+                                   or self.interpreter['interface'] == 'hiveserver2'
+                                   else type
+        }
         if not is_admin(self.user):
           filters['owner'] = self.user
         return Session.objects.get(**filters)
