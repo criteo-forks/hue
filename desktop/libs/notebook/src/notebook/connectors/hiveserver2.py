@@ -716,7 +716,7 @@ DROP TABLE IF EXISTS `%(table)s`;
     if session:
       session_id = session.get('id')
       if session_id:
-        filters = {'id': session_id, 'application': 'beeswax' if type == 'hive' or type == 'llap' else type}
+        filters = {'id': session_id, 'application': 'beeswax' if type == 'hive' or type == 'llap' or type.startswith('hive') else type}
         if not is_admin(self.user):
           filters['owner'] = self.user
         return Session.objects.get(**filters)
@@ -807,7 +807,12 @@ DROP TABLE IF EXISTS `%(table)s`;
   # DATADEV-3042
   # interpreter may have an option attribute to select DC if configured
   def _get_db(self, snippet, is_async=False, interpreter=None):
-    if interpreter and interpreter.get('dialect'):
+    # Needed to support multiple hive instances, when the name of the interpreter != hive.
+    # eg. for an interpreter named hiveprod, dialect would be hiveprod, which would then
+    # default to "sparksql, which we don't want"
+    if interpreter and interpreter.get('interface') == 'hiveserver2':
+      dialect = 'hive'
+    elif interpreter and interpreter.get('dialect'):
       dialect = interpreter['dialect']
     else:
       dialect = snippet['type']  # Backward compatibility without connectors
@@ -827,7 +832,7 @@ DROP TABLE IF EXISTS `%(table)s`;
 
     # Note: name is not used if interpreter is present
     # DATADEV-3042
-    # In dbms.get we do the consul resolution. get_query_server_config
+    # In dbms.get we do the consul resolution. get_query_server_config# DATADEV-3042
     return dbms.get(self.user, query_server=get_query_server_config(name=name, connector=interpreter))
 
 

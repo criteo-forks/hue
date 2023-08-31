@@ -666,7 +666,14 @@ class HiveServerClient(object):
         'username': user.username,  # If SASL or LDAP, it gets the username from the authentication mechanism since it dependents on it.
         'configuration': {},
     }
-    connector_type = 'hive' if self.query_server['server_name'] == 'beeswax' else self.query_server['server_name']
+    ## Bug there
+    connector_type = None
+    if self.query_server['crto_connector_type']:
+      connector_type = self.query_server['crto_connector_type']
+    elif self.query_server['server_name'] == 'beeswax':
+      connector_type = 'hive'
+    else:
+      connector_type = self.query_server['server_name']
     interpreter = get_interpreter(connector_type=connector_type, user=self.user)
 
     if self.impersonation_enabled:

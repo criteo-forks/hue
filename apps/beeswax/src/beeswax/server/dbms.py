@@ -338,6 +338,17 @@ def get_query_server_config(name='beeswax', connector=None):
           'use_sasl': SPARK_USE_SASL.get()
       })
 
+    if 'service' in connector['options']:
+      query_server['crto_hs2_service'] = connector['options']['service']
+
+    if 'dc' in connector['options']:
+      query_server['crto_dc'] = connector['options']['dc']
+
+    if 'env' in connector['options']:
+      query_server['crto_env'] = connector['options']['env']
+
+    query_server['crto_connector_type'] = connector['type']
+
   if not query_server.get('dialect'):
     query_server['dialect'] = query_server['server_name']
 
@@ -416,8 +427,6 @@ def get_query_server_config_via_connector(connector):
       'SESSION_TIMEOUT_S': 15 * 60,
       'querycache_rows': 1000,
       'QUERY_TIMEOUT_S': 15 * 60,
-      # Prefixed custom server config
-      'crto_service': connector['options'][''],
   }
 
   if 'service' in connector['options']:
@@ -428,6 +437,8 @@ def get_query_server_config_via_connector(connector):
 
   if 'env' in connector['options']:
     server_config['crto_env'] = connector['options']['env']
+
+  server_config['crto_connector_type'] = connector['type']
 
   return server_config
 
