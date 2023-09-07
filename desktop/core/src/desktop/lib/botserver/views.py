@@ -22,10 +22,14 @@ import os
 from urllib.parse import urlsplit
 from tabulate import tabulate
 
+from desktop import conf
+
 from desktop.lib.botserver.slack_client import slack_client, SLACK_VERIFICATION_TOKEN
 from desktop.lib.botserver.api import _send_message
 from desktop.lib.django_util import login_notrequired, JsonResponse
 from desktop.lib.exceptions_renderable import PopupException
+
+from desktop.decorators import api_error_handler
 from desktop.models import Document2, _get_gist_document, get_cluster_config
 from desktop.api2 import _gist_create
 from desktop.auth.backend import rewrite_user
@@ -260,6 +264,53 @@ def handle_on_link_shared(host_domain, channel_id, message_ts, links, user_id):
       send_result_file(request, channel_id, message_ts, doc, 'xls')
 
 
+@login_notrequired
+@csrf_exempt
+@api_error_handler
+def slack_unfurl(request):
+  try:
+    body = json.loads(request.body)
+    link = body.get('url')
+    user = body.get('user')
+    payload = handle_on_unfurl(link, user)
+  except ValueError as err:
+    raise PopupException(_("Response content is not valid JSON"), detail=err)
+
+  return JsonResponse(payload)
+
+def handle_on_unfurl(url, user):
+  path = urlsplit(url)[2]
+  id_type, qid = urlsplit(url)[3].split('=')
+  query_id = {'id': qid} if qid.isdigit() else {'uuid': qid}
+
+  try:
+    if path == '/hue/editor' and id_type == 'editor':
+      doc = Document2.objects.get(**query_id)
+      doc_type = 'query'
+    elif path == '/hue/gist' and id_type == 'uuid':
+      doc = _get_gist_document(**query_id)
+      doc_type = 'gist'
+    else:
+      err_msg = 'Could not access the query, please check the link again.'
+      raise SlackBotException(_(err_msg))
+  except Document2.DoesNotExist:
+    err_msg = 'Query document not found or does not exist.'
+    raise SlackBotException(_(err_msg))
+
+  try:
+    u = User.objects.get(username=user)
+  except User.DoesNotExist:
+    raise SlackBotException(_("Slack user does not have access to the query"))
+
+  doc.can_read_or_exception(u)
+
+  request = MockRequest(user=rewrite_user(u))
+
+  payload = _make_unfurl_payload(request, url, id_type, doc, doc_type)['payload'][url]
+  return payload
+
+
+
 def get_user(channel_id, slack_user, message_ts):
   try:
     return User.objects.get(username=slack_user.get('user_email_prefix'))
@@ -352,7 +403,7 @@ def _make_unfurl_payload(request, url, id_type, doc, doc_type):
   file_status = False
   result_section = None
 
-  if id_type == 'editor':
+  if (id_type == 'editor') & conf.SLACK.SHARE_QUERY_RESULTS.get():
     max_rows = 2
     unfurl_result = 'Query result has expired or could not be found'
 
@@ -379,7 +430,7 @@ def _make_unfurl_payload(request, url, id_type, doc, doc_type):
     'name': doc.name,
     'doc_type': doc_type,
     'dialect': dialect,
-    'user': doc.owner.get_full_name() or doc.owner.username,
+    'user': doc.owner.username,
     'query': statement if len(statement) < 150 else (statement[:150] + '...'),
   }
 

@@ -15,12 +15,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import sys
+
 from desktop import conf
 
 SLACK_VERIFICATION_TOKEN = conf.SLACK.SLACK_VERIFICATION_TOKEN.get()
 SLACK_BOT_USER_TOKEN = conf.SLACK.SLACK_BOT_USER_TOKEN.get()
 
 slack_client = None
-if conf.SLACK.IS_ENABLED.get():
+if conf.SLACK.IS_ENABLED.get() & sys.version_info[0] > 2:
   from slack_sdk import WebClient
   slack_client = WebClient(token=SLACK_BOT_USER_TOKEN)
