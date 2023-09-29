@@ -298,7 +298,7 @@ def handle_on_unfurl(url, user):
     raise SlackBotException(_(err_msg))
 
   try:
-    u = User.objects.get(username=user)
+    u = User.objects.get(email=user)
   except User.DoesNotExist:
     raise SlackBotException(_("Slack user does not have access to the query"))
 
