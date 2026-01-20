@@ -387,7 +387,7 @@ def get_nodes_from_consul(consul):
     port =  item['Service']['Port']
     result.add((address, port))
 
-  return result
+  return list(result)
 
 def get_query_server_config_via_connector(connector):
   # TODO: connector is actually a notebook interpreter
