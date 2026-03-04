@@ -1,0 +1,4 @@
+# build-time constraints to prevent setuptools 82+ from breaking cx-oracle
+# see: https://github.com/oracle/python-cx_oracle/blob/main/setup.py (imports pkg_resources)
+# setuptools 82+ removed pkg_resources, causing build failures
+setuptools<82
