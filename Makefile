@@ -149,10 +149,11 @@ $(BLD_DIR_ENV)/stamp:
 	  echo '--- Finished $(REQUIREMENT_PPC64LE_FILE) into virtual-env'; \
 	 else \
 	  echo '--- Installing $(REQUIREMENT_FILE) into virtual-env via $(ENV_PIP)'; \
-	  $(ENV_PIP) install -r $(REQUIREMENT_FILE); \
+		echo "--- Using build constraints to prevent setuptools 82+ (cx-Oracle compatibility) ---"; \
+	  PIP_CONSTRAINT=$(ROOT)/desktop/core/build-constraints.txt $(ENV_PIP) install -r $(REQUIREMENT_FILE); \
 	  echo '--- Finished $(REQUIREMENT_FILE) into virtual-env'; \
          fi
-	@$(ENV_PIP) install $(NAVOPTAPI_WHL)
+	PIP_CONSTRAINT=$(ROOT)/desktop/core/build-constraints.txt $(ENV_PIP) install $(NAVOPTAPI_WHL)
 	@echo '--- Finished $(NAVOPTAPI_WHL) into virtual-env'
 	@touch $(REQUIREMENT_DOT_FILE)
 ###################################
