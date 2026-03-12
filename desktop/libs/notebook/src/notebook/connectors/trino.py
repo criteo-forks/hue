@@ -35,6 +35,53 @@ from desktop.lib.rest.http_client import HttpClient, RestException
 from desktop.lib.rest.resource import Resource
 from notebook.connectors.base import Api, ExecutionWrapper, QueryError, ResultWrapper
 
+LOG_STATUS_CACHE = {}
+STAGE_LINE = '{stage:10s}{state:1s}  {rows:5s}  {rows_per_sec:6s}  {bytes:5s}  {bytes_per_sec:7s}  {queued:6s}  {run:5s}  {done:5s}'
+
+
+def _format_human_readable(amount, divisor=1000.0, suffix=''):
+  for unit in ['', 'K', 'M', 'G', 'T', 'P']:
+    if amount < divisor or unit == 'P':
+      if amount < 10:
+        fmt = "{:.2f}{}{}"
+      elif amount < 100:
+        fmt = "{:.1f}{}{}"
+      else:
+        fmt = "{:.0f}{}{}"
+      return fmt.format(amount, unit, suffix)
+    amount /= divisor
+
+
+def _append_stage_lines(elapsed_time_sec, lines, indent, stage_info, first_line_index):
+  name = indent + str(len(lines) - first_line_index)
+  name += ''.join('.' for _ in range(max(0, 10 - len(name))))
+
+  if stage_info['done']:
+    bytes_per_sec = '0'
+    rows_per_sec = '0'
+  else:
+    bytes_per_sec = _format_human_readable(stage_info['processedBytes'] / elapsed_time_sec, 1024.0)
+    rows_per_sec = _format_human_readable(stage_info['processedRows'] / elapsed_time_sec)
+
+  if stage_info['state'] == 'FAILED':
+    state = 'X'
+  else:
+    state = stage_info['state'][0]
+
+  lines.append(STAGE_LINE.format(
+    stage=name,
+    state=state,
+    rows=_format_human_readable(stage_info['processedRows']),
+    rows_per_sec=rows_per_sec,
+    bytes=_format_human_readable(stage_info['processedBytes'], 1024.0),
+    bytes_per_sec=bytes_per_sec,
+    queued=str(stage_info['queuedSplits']),
+    run=str(stage_info['runningSplits']),
+    done=str(stage_info['completedSplits']),
+  ))
+  for stage in stage_info['subStages']:
+    _append_stage_lines(elapsed_time_sec, lines, indent + '  ', stage, first_line_index)
+
 
 def query_error_handler(func):
   def decorator(*args, **kwargs):
@@ -54,21 +101,27 @@ def query_error_handler(func):
 
 
 class TrinoApi(Api):
-  def __init__(self, user, interpreter=None):
-    Api.__init__(self, user, interpreter=interpreter)
+  def __init__(self, user, interpreter=None, request=None):
+    Api.__init__(self, user, interpreter=interpreter, request=request)
     self.options = interpreter['options']
     self.server_host, self.server_port, self.http_scheme = self.parse_api_url(self.options.get('url'))
+    self.catalog = self.options.get('catalog')
     self.auth = None
 
     auth_username = self.options.get('auth_username', DEFAULT_AUTH_USERNAME.get())
     auth_password = self.options.get('auth_password', self.get_auth_password())
+
+    if 'password' in self.request.session:
+         auth_password = self.request.session['password']
+         auth_username = self.user.username
 
     if auth_username and auth_password:
       self.auth_username = auth_username
       self.auth_password = auth_password
       self.auth = BasicAuthentication(self.auth_username, self.auth_password)
 
-    trino_session = ClientSession(user.username)
+
+    trino_session = ClientSession(user.username, catalog=self.catalog)
     self.trino_request = TrinoRequest(
       host=self.server_host,
       port=self.server_port,
@@ -158,10 +211,15 @@ class TrinoApi(Api):
     else:
       _response = self.trino_request.get(next_uri)
       _status = self.trino_request.process(_response)
+      guid = snippet['result']['handle'].get('guid')
+      if guid:
+        LOG_STATUS_CACHE[guid] = _status
       if _status.stats['state'] == 'QUEUED':
         status = 'waiting'
+      elif _status.stats['state'] == 'RUNNING' and _status.rows:
+        status = 'available'
       elif _status.stats['state'] == 'RUNNING':
-        status = 'available'  # need to verify
+        status = 'running'
       else:
         status = 'available'
 
@@ -275,6 +333,9 @@ class TrinoApi(Api):
     return statement
 
   def close_statement(self, notebook, snippet):
+    guid = snippet['result']['handle'].get('guid')
+    if guid and guid in LOG_STATUS_CACHE:
+      del LOG_STATUS_CACHE[guid]
     try:
       if snippet['result']['handle']['next_uri']:
         self.trino_request.delete(snippet['result']['handle']['next_uri'])
@@ -292,14 +353,34 @@ class TrinoApi(Api):
     # Avoid closing session on page refresh or editor close for now
     pass
 
+  def cancel(self, notebook, snippet):
+    guid = snippet['result']['handle'].get('guid')
+    if guid in LOG_STATUS_CACHE:
+      del LOG_STATUS_CACHE[guid]
+    try:
+      if snippet['result']['handle']['next_uri']:
+        self.trino_request.delete(snippet['result']['handle']['next_uri'])
+      else:
+        return {'status': -1}
+    except Exception as e:
+      if 'does not exist in current session:' in str(e):
+        return {'status': -1}  # skipped
+      else:
+        raise e
+
   def _show_databases(self):
     catalogs = self._show_catalogs()
     databases = []
 
-    for catalog in catalogs:
-      query_client = TrinoQuery(self.trino_request, 'SHOW SCHEMAS FROM ' + catalog)
+    if self.catalog:
+      query_client = TrinoQuery(self.trino_request, 'SHOW SCHEMAS FROM ' + self.catalog)
       response = query_client.execute()
-      databases += [f'{catalog}.{item}' for sublist in response.rows for item in sublist]
+      databases += [f'{item}' for sublist in response.rows for item in sublist]
+    else:
+      for catalog in catalogs:
+        query_client = TrinoQuery(self.trino_request, 'SHOW SCHEMAS FROM ' + catalog)
+        response = query_client.execute()
+        databases += [f'{catalog}.{item}' for sublist in response.rows for item in sublist]
 
     return databases
 
@@ -346,7 +427,58 @@ class TrinoApi(Api):
   def get_log(self, notebook, snippet, startFrom=None, size=None):
     guid = snippet['result']['handle']['guid'] if snippet.get('result') and snippet['result'].get('handle') and \
       snippet['result']['handle'].get('guid') else None
-    return f"query_id: {guid}"
+    trino_status = LOG_STATUS_CACHE.get(guid) if guid else None
+
+    if trino_status:
+      stats = trino_status.stats
+      elapsed_time_sec = stats.get('elapsedTimeMillis', 0) / 1000
+
+      lines = []
+      lines.append('Info url: {}'.format(trino_status.info_uri))
+      lines.append('Query {query_id}, {state}, {nodes:,d} nodes'.format(
+        query_id=trino_status.id,
+        state=stats.get('state', 'UNKNOWN'),
+        nodes=stats.get('nodes', 0),
+      ))
+
+      if elapsed_time_sec > 0:
+        duration_sec = int(elapsed_time_sec) % 60
+        duration_min = int(elapsed_time_sec / 60)
+
+        status_line = '{duration_min}:{duration_sec:02d} [{rows:5s} rows, {processed_bytes:6s}] [{rows_per_sec:5s} rows/s, {bytes_per_sec:8s}]'.format(
+          duration_sec=duration_sec,
+          duration_min=duration_min,
+          rows=_format_human_readable(stats.get('processedRows', 0)),
+          processed_bytes=_format_human_readable(stats.get('processedBytes', 0), 1024.0, 'B'),
+          rows_per_sec=_format_human_readable(stats.get('processedRows', 0) / elapsed_time_sec),
+          bytes_per_sec=_format_human_readable(stats.get('processedBytes', 0) / elapsed_time_sec, 1024.0, 'B/s'),
+        )
+        if stats.get('state') == 'FINISHED':
+          status_line += ' 100%'
+        elif stats.get('scheduled') and stats.get('totalSplits'):
+          status_line += ' {split_percent}%'.format(
+            split_percent=int(min(99, stats['completedSplits'] * 100.0 / stats['totalSplits']))
+          )
+        lines.append(status_line)
+
+      if stats.get('rootStage'):
+        lines.append('')
+        lines.append(STAGE_LINE.format(
+          stage='STAGE',
+          state='S',
+          rows='ROWS',
+          rows_per_sec='ROWS/s',
+          bytes='BYTES',
+          bytes_per_sec='BYTES/s',
+          queued='QUEUED',
+          run='RUN',
+          done='DONE',
+        ))
+        _append_stage_lines(elapsed_time_sec, lines, '', stats['rootStage'], len(lines))
+
+      return '\n'.join(lines)
+    else:
+      return ''
 
   @query_error_handler
   def explain(self, notebook, snippet):
