@@ -106,6 +106,7 @@ class TrinoApi(Api):
     self.options = interpreter['options']
     self.server_host, self.server_port, self.http_scheme = self.parse_api_url(self.options.get('url'))
     self.catalog = self.options.get('catalog')
+    self.source = self.options.get('source')
     self.auth = None
 
     auth_username = self.options.get('auth_username', DEFAULT_AUTH_USERNAME.get())
@@ -121,7 +122,11 @@ class TrinoApi(Api):
       self.auth = BasicAuthentication(self.auth_username, self.auth_password)
 
 
-    trino_session = ClientSession(user.username, catalog=self.catalog)
+    trino_session = ClientSession(
+      user.username,
+      catalog=self.catalog,
+      source=self.source,
+    )
     self.trino_request = TrinoRequest(
       host=self.server_host,
       port=self.server_port,
