@@ -16,6 +16,7 @@
 # limitations under the License.
 
 import json
+import logging
 import time
 import textwrap
 from urllib.parse import urlparse
@@ -35,6 +36,7 @@ from desktop.lib.rest.http_client import HttpClient, RestException
 from desktop.lib.rest.resource import Resource
 from notebook.connectors.base import Api, ExecutionWrapper, QueryError, ResultWrapper
 
+LOG = logging.getLogger()
 LOG_STATUS_CACHE = {}
 STAGE_LINE = '{stage:10s}{state:1s}  {rows:5s}  {rows_per_sec:6s}  {bytes:5s}  {bytes_per_sec:7s}  {queued:6s}  {run:5s}  {done:5s}'
 
@@ -211,6 +213,9 @@ class TrinoApi(Api):
     status = 'expired'
     next_uri = snippet['result']['handle']['next_uri']
 
+    # Do not return "success" as a status - hue frontend will query
+    # "fetch_result_size" which is not implement here. "available"
+    # is the correct status
     if next_uri is None:
       status = 'available'
     else:
@@ -354,6 +359,15 @@ class TrinoApi(Api):
 
     return {'status': 0}
 
+  def close_session_idle(self, notebook, session):
+    for snippet in notebook.get('snippets', []):
+      try:
+        if snippet.get('result') and snippet['result'].get('handle') and snippet['result']['handle'].get('guid'):
+          self.close_statement(notebook, snippet)
+      except Exception as e:
+        LOG.exception('Error closing statement: %s' % str(e))
+    return {'status': 0}
+
   def close_session(self, session):
     # Avoid closing session on page refresh or editor close for now
     pass
@@ -428,6 +442,20 @@ class TrinoApi(Api):
     }
       for col in columns
     ]
+
+  def progress(self, notebook, snippet, logs=None):
+    guid = snippet['result']['handle']['guid'] if snippet.get('result') and snippet['result'].get('handle') and \
+      snippet['result']['handle'].get('guid') else None
+    trino_status = LOG_STATUS_CACHE.get(guid) if guid else None
+
+    if trino_status:
+      stats = trino_status.stats
+      if stats.get('state') == 'FINISHED':
+        return 100
+      if stats.get('scheduled') and stats.get('totalSplits'):
+        return min(99, int(stats['completedSplits'] * 100.0 / stats['totalSplits']))
+
+    return 0
 
   def get_log(self, notebook, snippet, startFrom=None, size=None):
     guid = snippet['result']['handle']['guid'] if snippet.get('result') and snippet['result'].get('handle') and \

@@ -1861,7 +1861,7 @@ class Snippet {
             self.result.handle(data.handle);
             self.result.hasResultset(data.handle.has_result_set);
 
-            if (self.type() === 'trino') {
+            if (self.type() === 'trino' || self.type() === 'presto') {
               const existing_handle = self.result.handle();
               existing_handle.row_count = data.handle.row_count;
               existing_handle.next_uri = data.handle.next_uri;
@@ -2192,7 +2192,7 @@ class Snippet {
                 self.showExecutionAnalysis(true);
                 self.loadData(data.result, rows);
 
-                if (self.type() === 'trino') {
+              if (self.type() === 'trino' || self.type() === 'presto') {
                   const existing_handle = self.result.handle();
                   existing_handle.row_count = data.result.row_count;
                   existing_handle.next_uri = data.result.next_uri;
@@ -2366,7 +2366,7 @@ class Snippet {
                   self.status() == 'starting' ||
                   self.status() == 'waiting'
                 ) {
-                  if (self.type() === 'trino') {
+                if (self.type() === 'trino' || self.type() === 'presto') {
                     const existing_handle = self.result.handle();
                     existing_handle.row_count = 0;
                     existing_handle.next_uri = data.query_status.next_uri;
