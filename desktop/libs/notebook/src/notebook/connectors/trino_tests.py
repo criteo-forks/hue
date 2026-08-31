@@ -15,14 +15,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
+import math
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from django.core.cache import caches
 from django.test import TestCase
 
+from beeswax import data_export
 from desktop.auth.backend import rewrite_user
 from desktop.lib.django_test_util import make_logged_in_client
-from notebook.connectors.trino import TrinoApi
+from desktop.settings import CACHES_TRINO_RESULTS_KEY
+from notebook.connectors.base import QueryError
+from notebook.connectors.trino import TrinoApi, TrinoExecutionWrapper
 from useradmin.models import User
 
 
@@ -164,8 +170,11 @@ class TestTrinoApi(TestCase):
       self.trino_api.trino_request = mock_trino_request
 
       # Configure the MagicMock object to return expected responses
+      # (plain attribute values only: the status fields end up pickled into the result cache)
       mock_trino_request.get.return_value = MagicMock()
-      mock_trino_request.process.return_value = MagicMock(stats={'state': 'FINISHED'}, next_uri='http://url', id=123, rows=[])
+      mock_trino_request.process.return_value = MagicMock(
+        stats={'state': 'FINISHED'}, next_uri='http://url', id=123, rows=[], columns=[], info_uri='http://info'
+      )
 
       # Call the execute method
       snippet = {
@@ -230,15 +239,15 @@ class TestTrinoApi(TestCase):
 
     mock_trino_request.process.side_effect = [
       MagicMock(
-        stats={'state': 'FINISHED'}, next_uri='http://url', id=123,
+        stats={'state': 'RUNNING'}, next_uri='http://url1', id=123,
         rows=[['value1', 'value2'], ['value3', 'value4']], columns=_columns
       ),
       MagicMock(
-        stats={'state': 'FINISHED'}, next_uri='http://url1', id=124,
+        stats={'state': 'RUNNING'}, next_uri='http://url2', id=123,
         rows=[['value5', 'value6'], ['value7', 'value8']], columns=_columns
       ),
       MagicMock(
-        stats={'state': 'FINISHED'}, next_uri=None, id=125,
+        stats={'state': 'FINISHED'}, next_uri=None, id=123,
         rows=[['value9', 'value10'], ['value11', 'value12']], columns=_columns
       )
     ]
@@ -249,7 +258,8 @@ class TestTrinoApi(TestCase):
     )
 
     expected_result = {
-      'row_count': 94,
+      # rows already served of the page the fetch stopped on (the last one here)
+      'row_count': 2,
       'next_uri': None,
       'has_more': False,
       'data': [
@@ -375,8 +385,346 @@ class TestTrinoApi(TestCase):
       }
     }
 
-    # Expected result
-    expected_log = "query_id: 1234-abcd-5678-efgh"
+    # No cached state for this query: no log lines
     result = self.trino_api.get_log(notebook, snippet)
 
-    assert result == expected_log
+    assert result == ''
+
+
+class _FakeTrinoStatus(object):
+  def __init__(self, id, next_uri, rows, columns, stats):
+    self.id = id
+    self.next_uri = next_uri
+    self.rows = rows
+    self.columns = columns
+    self.stats = stats
+    self.info_uri = 'http://info/' + id
+
+
+class _FakeTrinoServer(object):
+  """Enforces the Trino REST protocol: each result page is consumed once; the
+  current page may be re-fetched only until its successor is requested.
+
+  Pages of a SELECT: page 0 (POST response, QUEUED, no rows), page 1 (RUNNING,
+  no rows), pages 2..N (page_size rows each), last data page FINISHED with no
+  next_uri. Non-SELECT statements (USE ...) finish in their POST response.
+  """
+  COLUMNS = [{'name': 'c1', 'type': 'bigint'}, {'name': 'c2', 'type': 'varchar'}]
+
+  def __init__(self, total_rows, page_size, row_value=None):
+    self.total_rows = total_rows
+    self.page_size = page_size
+    self.queries = {}
+    self.qcount = 0
+    self.select_count = 0
+    self.get_count = 0
+    self.row_value = row_value or (lambda i: [i, 'row-%d' % i])
+
+  def _uri(self, qid, page):
+    return 'http://coord/v1/statement/%s/%d' % (qid, page)
+
+  def post(self, sql, additional_http_headers=None):
+    self.qcount += 1
+    qid = 'q%d' % self.qcount
+    if sql.lstrip().upper().startswith('SELECT'):
+      self.select_count += 1
+    self.queries[qid] = {'sql': sql, 'max_served': -1}
+    return ('response', qid, 0)
+
+  def get(self, uri):
+    qid, page = uri.rsplit('/', 2)[-2], int(uri.rsplit('/', 2)[-1])
+    if page < self.queries[qid]['max_served']:
+      raise Exception('410 Gone: page %d of %s already superseded' % (page, qid))
+    self.get_count += 1
+    return ('response', qid, page)
+
+  def delete(self, uri):
+    pass
+
+  def process(self, response):
+    _, qid, page = response
+    q = self.queries[qid]
+    q['max_served'] = max(q['max_served'], page)
+
+    if not q['sql'].lstrip().upper().startswith('SELECT'):
+      return _FakeTrinoStatus(qid, None, [], self.COLUMNS, {'state': 'FINISHED', 'elapsedTimeMillis': 1})
+
+    n_data = max(1, math.ceil(self.total_rows / self.page_size))
+    if page == 0:
+      return _FakeTrinoStatus(qid, self._uri(qid, 1), [], None, {'state': 'QUEUED', 'elapsedTimeMillis': 1})
+    if page == 1:
+      return _FakeTrinoStatus(qid, self._uri(qid, 2), [], self.COLUMNS, {'state': 'RUNNING', 'elapsedTimeMillis': 1})
+    data_idx = page - 2
+    if data_idx < n_data:
+      start = data_idx * self.page_size
+      end = min(start + self.page_size, self.total_rows)
+      rows = [self.row_value(i) for i in range(start, end)]
+      state = 'RUNNING' if data_idx < n_data - 1 else 'FINISHED'
+      next_uri = self._uri(qid, page + 1) if data_idx < n_data - 1 else None
+      return _FakeTrinoStatus(qid, next_uri, rows, self.COLUMNS, {'state': state, 'elapsedTimeMillis': 1})
+    return _FakeTrinoStatus(qid, None, [], self.COLUMNS, {'state': 'FINISHED', 'elapsedTimeMillis': 1})
+
+
+class _FakeTrinoQuery(object):
+  def __init__(self, request, sql):
+    self.request = request
+    self.query = sql
+
+  def execute(self):
+    return self.request.process(self.request.post(self.query))
+
+
+class TestTrinoProtocolFlows(TestCase):
+  """Drives the connector against a protocol-enforcing fake server: any fetch of
+  a superseded page URI raises, so state desynchronization fails the test."""
+
+  @classmethod
+  def setup_class(cls):
+    cls.client = make_logged_in_client(username="hue_test", groupname="default", recreate=True, is_superuser=False)
+    cls.user = User.objects.get(username="hue_test")
+    cls.interpreter = {'options': {'url': 'https://example.com:8080'}}
+
+  def setUp(self):
+    caches[CACHES_TRINO_RESULTS_KEY].clear()
+
+  def _make_api(self, server):
+    api = TrinoApi(self.user, interpreter=self.interpreter)
+    api.trino_request = server
+    return api
+
+  def _execute(self, api, statement='SELECT * FROM t'):
+    with patch('notebook.connectors.trino.TrinoQuery', _FakeTrinoQuery):
+      snippet = {'database': 'db', 'statement': statement, 'result': {'handle': {}}}
+      snippet['result']['handle'] = api.execute({}, snippet)
+      return snippet
+
+  def _poll(self, api, snippet):
+    # the frontend persists next_uri from every check_status response
+    response = api.check_status({}, snippet)
+    snippet['result']['handle']['next_uri'] = response['next_uri']
+    return response['status']
+
+  def _poll_until_available(self, api, snippet):
+    for _ in range(100):
+      if self._poll(api, snippet) not in ('waiting', 'running', 'submitted'):
+        return
+    raise AssertionError('query never became available')
+
+  def _fetch(self, api, snippet, rows=100):
+    # the frontend persists row_count and next_uri from every fetch response
+    result = api.fetch_result({}, snippet, rows, False)
+    snippet['result']['handle']['row_count'] = result['row_count']
+    snippet['result']['handle']['next_uri'] = result['next_uri']
+    return result
+
+  def _fetch_all(self, api, snippet, rows=100):
+    all_rows = []
+    for _ in range(200):
+      result = self._fetch(api, snippet, rows=rows)
+      all_rows.extend(result['data'])
+      if not result['has_more']:
+        return all_rows
+    raise AssertionError('paging never ended')
+
+  def _download(self, api, snippet):
+    # a download is a separate HTTP request: it gets its own copy of the snippet,
+    # the frontend's own handle is never mutated by it
+    snippet = copy.deepcopy(snippet)
+    with patch('notebook.connectors.trino.TrinoQuery', _FakeTrinoQuery), \
+         patch('notebook.connectors.trino.time') as _time:
+      _time.sleep = lambda seconds: None
+      wrapper = TrinoExecutionWrapper(api, {}, snippet)
+      adapter = data_export.DataAdapter(wrapper, max_rows=1000000, max_bytes=-1)
+      rows = []
+      for _headers, data in adapter:
+        rows.extend(data)
+      return rows
+
+  def test_ui_paging_returns_all_rows_in_order(self):
+    server = _FakeTrinoServer(1500, 400)
+    api = self._make_api(server)
+    snippet = self._execute(api)
+    self._poll_until_available(api, snippet)
+
+    rows = self._fetch_all(api, snippet)
+
+    assert [r[0] for r in rows] == list(range(1500))
+
+  def test_ui_paging_with_batches_aligned_to_page_size(self):
+    server = _FakeTrinoServer(2000, 500)
+    api = self._make_api(server)
+    snippet = self._execute(api)
+    self._poll_until_available(api, snippet)
+
+    rows = self._fetch_all(api, snippet, rows=500)
+
+    assert [r[0] for r in rows] == list(range(2000))
+
+  def test_repeated_status_poll_causes_no_duplicates_or_drops(self):
+    server = _FakeTrinoServer(1500, 400)
+    api = self._make_api(server)
+    snippet = self._execute(api)
+    self._poll_until_available(api, snippet)
+    self._poll(api, snippet)  # e.g. a page refresh re-checks the same status URI
+
+    rows = self._fetch_all(api, snippet)
+
+    assert [r[0] for r in rows] == list(range(1500))
+
+  def test_repetitive_row_content_is_not_dropped(self):
+    # Identical rows on every page must not be mistaken for already-seen data
+    server = _FakeTrinoServer(1200, 400, row_value=lambda i: ['x', 'y'])
+    api = self._make_api(server)
+    snippet = self._execute(api)
+    self._poll_until_available(api, snippet)
+
+    rows = self._fetch_all(api, snippet)
+
+    assert len(rows) == 1200
+
+  def test_download_of_complete_cached_result_does_no_network_call(self):
+    server = _FakeTrinoServer(300, 400)  # single data page: complete after polling
+    api = self._make_api(server)
+    snippet = self._execute(api)
+    self._poll_until_available(api, snippet)
+    assert api.can_start_over({}, snippet)
+
+    gets_before, selects_before = server.get_count, server.select_count
+    rows = self._download(api, snippet)
+
+    assert [r[0] for r in rows] == list(range(300))
+    assert server.get_count == gets_before
+    assert server.select_count == selects_before
+
+  def test_download_of_fully_paged_result_is_served_from_cache(self):
+    server = _FakeTrinoServer(1500, 400)
+    api = self._make_api(server)
+    snippet = self._execute(api)
+    self._poll_until_available(api, snippet)
+    self._fetch_all(api, snippet)
+    assert api.can_start_over({}, snippet)
+
+    gets_before, selects_before = server.get_count, server.select_count
+    rows = self._download(api, snippet)
+
+    assert [r[0] for r in rows] == list(range(1500))
+    assert server.get_count == gets_before
+    assert server.select_count == selects_before
+
+  def test_download_resumes_live_query_when_partially_cached(self):
+    server = _FakeTrinoServer(5000, 400)  # 5000 > cache_row_limit
+    api = self._make_api(server)
+    snippet = self._execute(api)
+    self._poll_until_available(api, snippet)
+    self._fetch(api, snippet, rows=100)
+    assert not api.can_start_over({}, snippet)
+
+    rows = self._download(api, snippet)
+
+    assert [r[0] for r in rows] == list(range(5000))
+    assert server.select_count == 1  # cached prefix + live continuation, no re-run
+
+  def test_scroll_after_resumed_download_is_served_from_cache(self):
+    server = _FakeTrinoServer(1500, 400)  # fits in cache_row_limit
+    api = self._make_api(server)
+    snippet = self._execute(api)
+    self._poll_until_available(api, snippet)
+    self._fetch(api, snippet, rows=100)
+
+    rows = self._download(api, snippet)
+    assert [r[0] for r in rows] == list(range(1500))
+    assert server.select_count == 1
+
+    # The download consumed the live pages, but they all fit in the cache:
+    # the grid keeps paging (from where it was) and a new download is free.
+    scrolled = self._fetch_all(api, snippet)
+    assert [r[0] for r in scrolled] == list(range(100, 1500))
+    gets_before = server.get_count
+    assert [r[0] for r in self._download(api, snippet)] == list(range(1500))
+    assert server.get_count == gets_before
+
+  def test_download_resumes_when_first_page_exceeds_cache_limit(self):
+    # A single Trino page can hold more rows than cache_row_limit: the cached
+    # prefix is kept (truncated entry) so the download still resumes.
+    server = _FakeTrinoServer(2800, 2800)
+    api = self._make_api(server)
+    snippet = self._execute(api)
+    self._poll_until_available(api, snippet)
+    self._fetch(api, snippet, rows=100)
+
+    rows = self._download(api, snippet)
+
+    assert [r[0] for r in rows] == list(range(2800))
+    assert server.select_count == 1  # resumed, not re-executed
+
+  def test_scroll_after_resumed_download_of_large_result_expires_past_cache(self):
+    server = _FakeTrinoServer(5000, 400)  # exceeds cache_row_limit
+    api = self._make_api(server)
+    snippet = self._execute(api)
+    self._poll_until_available(api, snippet)
+    self._fetch(api, snippet, rows=100)
+
+    rows = self._download(api, snippet)
+    assert [r[0] for r in rows] == list(range(5000))
+    assert server.select_count == 1
+
+    # Accepted trade-off: the grid keeps paging through the cached prefix, then
+    # surfaces an error instead of silently wrong rows once past the truncation.
+    scrolled = []
+    with pytest.raises(QueryError):
+      for _ in range(200):
+        scrolled.extend(self._fetch(api, snippet, rows=100)['data'])
+    assert scrolled == [[i, 'row-%d' % i] for i in range(100, 100 + len(scrolled))]
+    assert len(scrolled) < 4900  # expired before reaching the end
+
+  def test_download_falls_back_to_reexecute_when_resume_fails(self):
+    server = _FakeTrinoServer(1500, 400)
+    api = self._make_api(server)
+    snippet = self._execute(api)
+    self._poll_until_available(api, snippet)
+    self._fetch(api, snippet, rows=100)
+
+    # Another consumer (e.g. an expired/raced query) makes the resume page unfetchable
+    qid = snippet['result']['handle']['guid']
+    for _ in range(2):
+      server.process(server.get(server._uri(qid, server.queries[qid]['max_served'] + 1)))
+
+    rows = self._download(api, snippet)
+
+    assert [r[0] for r in rows] == list(range(1500))
+    assert server.select_count == 2  # resume probe failed, fell back to a re-run
+
+  def test_download_with_stale_handle_reexecutes_instead_of_serving_old_rows(self):
+    # The frontend can send a snippet whose result handle still points at an older
+    # execution: the rows cached for that older query must never be served.
+    server = _FakeTrinoServer(300, 400)
+    api = self._make_api(server)
+    old_snippet = self._execute(api, statement='SELECT * FROM old_table')
+    self._poll_until_available(api, old_snippet)
+    assert api.can_start_over({}, old_snippet)  # the old result is fully cached
+
+    stale_snippet = {
+      'database': 'db',
+      'statement': 'SELECT * FROM new_table',
+      'result': {'handle': dict(old_snippet['result']['handle'])},
+    }
+    assert not api.can_start_over({}, stale_snippet)
+
+    rows = self._download(api, stale_snippet)
+
+    assert server.select_count == 2  # re-executed the new statement, no cache hit
+    assert [r[0] for r in rows] == list(range(300))
+
+  def test_download_reexecutes_on_worker_without_cached_state(self):
+    server = _FakeTrinoServer(1500, 400)
+    api = self._make_api(server)
+    snippet = self._execute(api)
+    self._poll_until_available(api, snippet)
+    self._fetch_all(api, snippet)
+
+    caches[CACHES_TRINO_RESULTS_KEY].clear()  # download lands on another worker
+
+    rows = self._download(api, snippet)
+
+    assert [r[0] for r in rows] == list(range(1500))
+    assert server.select_count == 2
