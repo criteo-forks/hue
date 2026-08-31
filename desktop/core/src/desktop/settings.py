@@ -455,6 +455,15 @@ CACHES[CACHES_HIVE_DISCOVERY_KEY] = {
     'LOCATION': CACHES_HIVE_DISCOVERY_KEY
 }
 
+CACHES_TRINO_RESULTS_KEY = 'trino_results'
+CACHES[CACHES_TRINO_RESULTS_KEY] = {
+    'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+    'LOCATION': CACHES_TRINO_RESULTS_KEY,
+    # Each entry holds at most `cache_row_limit` rows (2000 by default) plus the
+    # result page that crossed the limit
+    'OPTIONS': {'MAX_ENTRIES': 200},
+}
+
 CACHES_CELERY_KEY = 'celery'
 CACHES_CELERY_QUERY_RESULT_KEY = 'celery_query_results'
 if desktop.conf.TASK_SERVER_V2.ENABLED.get():
