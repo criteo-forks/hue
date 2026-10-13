@@ -802,6 +802,7 @@ export default class DataCatalogEntry {
           const searchPromise = searchEntities({
             query,
             rawQuery: true,
+            connectorId: this.getConnector().id,
             limit: children.length,
             silenceErrors: options?.silenceErrors
           });
@@ -1006,19 +1007,15 @@ export default class DataCatalogEntry {
     if (!(<hueWindow>window).HAS_CATALOG) {
       return false;
     }
-    // TODO: Move to connector attributes
-    return (
-      (this.getDialect() === 'hive' || this.getDialect() === 'impala') &&
-      (this.isDatabase() || this.isTableOrView() || this.isColumn())
-    );
+    // The catalog tells whether it knows the connector: the connector id is sent with the requests
+    return this.isDatabase() || this.isTableOrView() || this.isColumn();
   }
 
   /**
    * Returns the currently known comment without loading any additional metadata
    */
   getResolvedComment(): string {
-    // TODO: Move to connector attributes
-    if (this.navigatorMeta && (this.getDialect() === 'hive' || this.getDialect() === 'impala')) {
+    if (this.navigatorMeta) {
       if (this.navigatorMeta.description) {
         return this.navigatorMeta.description;
       }
