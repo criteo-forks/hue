@@ -597,6 +597,7 @@ export const fetchSourceMetadata = ({
   );
 
 interface SearchOptions {
+  connectorId?: string | number;
   limit?: number;
   query: string;
   rawQuery?: boolean;
@@ -619,6 +620,7 @@ const getAssistConnectorId = (entry: DataCatalogEntry): string | number => {
 };
 
 export const searchEntities = ({
+  connectorId,
   limit,
   query,
   rawQuery,
@@ -631,7 +633,8 @@ export const searchEntities = ({
       query_s: JSON.stringify(query),
       limit: limit || 100,
       raw_query: !!rawQuery,
-      sources: (sources && JSON.stringify(sources)) || '["sql"]'
+      sources: (sources && JSON.stringify(sources)) || '["sql"]',
+      connector_id: connectorId
     },
     { silenceErrors }
   );
