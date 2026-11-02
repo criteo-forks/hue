@@ -20,6 +20,7 @@ import logging
 import sys
 
 from beeswax import data_export
+from desktop.auth.credentials import get_password
 from desktop.lib.i18n import force_unicode, smart_str
 from librdbms.jdbc import Jdbc, query_and_fetch
 
@@ -74,8 +75,9 @@ class JdbcApi(Api):
     props['properties'] = {}  # We don't store passwords
 
     if self.db is None or not self.db.test_connection(throw_exception='password' not in properties):
-      if ('password' not in properties) and ('password' in self.request.session):
-        properties['password'] = self.request.session['password']
+      password = get_password(self.request) if 'password' not in properties else None
+      if password is not None:
+        properties['password'] = password
         properties['user'] = self.user.username
 
       if 'password' in properties:

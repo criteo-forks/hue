@@ -68,6 +68,7 @@ from sqlalchemy import MetaData, Table, create_engine, inspect
 from sqlalchemy.exc import CompileError, NoSuchTableError, OperationalError, ProgrammingError, UnsupportedCompilationError
 
 from beeswax import data_export
+from desktop.auth.credentials import get_password
 from desktop.lib import export_csvxls
 from desktop.lib.i18n import force_unicode
 from librdbms.server import dbms
@@ -152,9 +153,11 @@ class SqlAlchemyApi(Api):
               vars['PASSWORD'] = _prop['value']
               auth_provided = True
 
-        if 'PASSWORD' not in vars and 'password' in self.request.session:
-          vars['PASSWORD'] = self.request.session['password']
-          auth_provided = True
+        if 'PASSWORD' not in vars:
+          password = get_password(self.request)
+          if password is not None:
+            vars['PASSWORD'] = password
+            auth_provided = True
 
         if not auth_provided:
           raise AuthenticationRequired(message='Missing username and/or password')
