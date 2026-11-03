@@ -62,8 +62,9 @@ def get_password(request):
   """
   Returns the password stored at login, or None if none was stored.
 
-  Raises AuthenticationRequired when a password was stored but cannot be decrypted
-  (key cookie missing, or data not matching it), so the user is asked to log in again.
+  Raises QueryError when a password was stored but cannot be decrypted (key cookie missing, or data
+  not matching it). Not AuthenticationRequired: the editor answers it with a credentials prompt whose
+  input never reaches the session, so the user would be asked again and again. Only a new login fixes it.
   """
   session = getattr(request, 'session', None)
   blob = session.get(SESSION_KEY) if session is not None else None
@@ -81,8 +82,8 @@ def get_password(request):
     return AESGCM(base64.urlsafe_b64decode(key)).decrypt(nonce, ciphertext, _associated_data(request.user)).decode('utf-8')
   except (InvalidTag, ValueError) as e:  # binascii.Error and UnicodeDecodeError are ValueErrors
     LOG.warning('Stored credentials of user %s cannot be used: %s' % (request.user.username, e or type(e).__name__))
-    from notebook.connectors.base import AuthenticationRequired  # notebook depends on desktop, not the other way around
-    raise AuthenticationRequired(message=_UNAVAILABLE_MESSAGE)
+    from notebook.connectors.base import QueryError  # notebook depends on desktop, not the other way around
+    raise QueryError(_UNAVAILABLE_MESSAGE)
 
 
 class CredentialCookieMiddleware(MiddlewareMixin):
