@@ -37,6 +37,7 @@ from django.utils.translation import gettext as _
 
 from desktop.auth import forms as auth_forms
 from desktop.auth.backend import OIDCBackend
+from desktop.auth.credentials import store_password
 from desktop.auth.forms import ImpersonationAuthenticationForm, OrganizationAuthenticationForm, OrganizationUserCreationForm
 from desktop.conf import ENABLE_ORGANIZATIONS, OAUTH, SESSION
 from desktop.lib import fsmanager
@@ -137,8 +138,8 @@ def dt_login(request, from_modal=False):
         # If Test cookie exists , it should be deleted
         if request.session.test_cookie_worked():
           request.session.delete_test_cookie()
-        if SESSION.STORE_USER_PASSWORD:
-          request.session['password'] =request.POST.get('password')
+        if SESSION.STORE_USER_PASSWORD.get():
+          store_password(request, request.POST.get('password', ''))
 
         if request.fs is None:
           request.fs = fsmanager.get_filesystem(request.fs_ref)

@@ -997,7 +997,8 @@ SESSION = ConfigSection(
     ),
     STORE_USER_PASSWORD = Config(
       key="store_user_password",
-      help=_("!!! Insecure. Store user password in session, so it can be reused for login to the other services (vertica, presto,...)"),
+      help=_("Store the user password in the session, so it can be reused for login to the other services (vertica, presto,...). "
+        "It is encrypted with a per-login key kept only in a browser cookie. Requires secure=true."),
       type=coerce_bool,
       default=False
     ),

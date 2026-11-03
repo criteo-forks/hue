@@ -141,6 +141,8 @@ MIDDLEWARE = [
     'desktop.middleware.AuditLoggingMiddleware',
     'desktop.middleware.MultipleProxyMiddleware',
     'django.middleware.common.CommonMiddleware',
+    # Before SessionMiddleware: mirrors the session cookie it sets on the response
+    'desktop.auth.credentials.CredentialCookieMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'desktop.middleware.ProxyMiddleware',
@@ -485,6 +487,11 @@ CSRF_COOKIE_AGE = None if desktop.conf.SESSION.CSRF_COOKIE_AGE.get() == 0 else d
 CSRF_COOKIE_SECURE = desktop.conf.SESSION.SECURE.get()
 CSRF_COOKIE_HTTPONLY = desktop.conf.SESSION.HTTP_ONLY.get()
 CSRF_COOKIE_NAME = 'csrftoken'
+
+if desktop.conf.SESSION.STORE_USER_PASSWORD.get() and not SESSION_COOKIE_SECURE:
+  # The key decrypting the stored password travels in a cookie, which must never be sent over plain HTTP.
+  # Not ImproperlyConfigured: manage.py swallows it while loading settings, hiding this message.
+  raise Exception('[desktop] [[session]] store_user_password=true requires secure=true')
 
 TRUSTED_ORIGINS = []
 if desktop.conf.SESSION.TRUSTED_ORIGINS.get():

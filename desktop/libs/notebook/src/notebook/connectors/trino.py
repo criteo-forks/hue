@@ -59,6 +59,7 @@ from trino.client import ClientSession, TrinoQuery, TrinoRequest
 from trino.exceptions import TrinoConnectionError
 
 from beeswax import conf, data_export
+from desktop.auth.credentials import get_password
 from desktop.conf import AUTH_PASSWORD as DEFAULT_AUTH_PASSWORD, AUTH_USERNAME as DEFAULT_AUTH_USERNAME
 from desktop.lib import export_csvxls
 from desktop.lib.conf import coerce_password_from_script
@@ -150,9 +151,10 @@ class TrinoApi(Api):
     auth_username = self.options.get('auth_username', DEFAULT_AUTH_USERNAME.get())
     auth_password = self.options.get('auth_password', self.get_auth_password())
 
-    if self.request is not None and 'password' in self.request.session:
-         auth_password = self.request.session['password']
-         auth_username = self.user.username
+    password = get_password(self.request)
+    if password is not None:
+      auth_password = password
+      auth_username = self.user.username
 
     if auth_username and auth_password:
       self.auth_username = auth_username
